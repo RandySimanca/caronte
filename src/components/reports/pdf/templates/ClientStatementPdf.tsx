@@ -1,5 +1,5 @@
 import { View, Text } from '@react-pdf/renderer';
-import { PdfLayout, pdfStyles } from '../PdfLayout';
+import { PdfLayout, pdfStyles, pdfColors } from '../PdfLayout';
 import { formatCurrency, formatDate } from '../formatters';
 
 interface ClientStatementPdfProps {
@@ -24,7 +24,7 @@ interface ClientStatementPdfProps {
 }
 
 export function ClientStatementPdf({ client, loan, installments }: ClientStatementPdfProps) {
-  const paidCount = installments.filter(i => ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(i.status)).length;
+
   const totalPaidAmount = installments.reduce((sum, i) => sum + (Number(i.paid_amount) || 0), 0);
   const currentBalance = loan.initial_obligation - totalPaidAmount;
 
@@ -74,7 +74,7 @@ export function ClientStatementPdf({ client, loan, installments }: ClientStateme
             <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text>Estado Actual</Text></View>
             <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text style={[pdfStyles.textRight, pdfStyles.textBold, loan.status === 'ACTIVO' ? pdfStyles.textEmerald : {}]}>{loan.status}</Text></View>
           </View>
-          <View style={[pdfStyles.tableRow, { backgroundColor: pdfStyles.slate50 }]}>
+          <View style={[pdfStyles.tableRow, { backgroundColor: pdfColors.slate50 }]}>
             <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text style={pdfStyles.textBold}>Saldo Restante por Pagar</Text></View>
             <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text style={[pdfStyles.textRight, pdfStyles.textBold, pdfStyles.textBlue]}>{formatCurrency(currentBalance)}</Text></View>
           </View>

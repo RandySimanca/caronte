@@ -1,4 +1,4 @@
-import { Bell, ChevronRight, RefreshCw, AlertCircle, Wifi, WifiOff } from 'lucide-react';
+import { Bell, ChevronRight, RefreshCw, AlertCircle, WifiOff } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -14,7 +14,7 @@ export function CollectorDashboard() {
   const capitalizedDate = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  const { isOnline, isSyncing, pendingCount } = useSyncStore();
+  const { isOnline, isSyncing } = useSyncStore();
   const user = useAuthStore(state => state.user);
 
   // Refresca datos del servidor cada vez que el dashboard monta (para ver cambios del admin)

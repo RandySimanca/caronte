@@ -29,7 +29,7 @@ export function LoginPage() {
         .eq('id', data.session.user.id)
         .maybeSingle();
       
-      const roleName = userData?.roles?.name || 'COBRADOR';
+      const roleName = (userData as any)?.roles?.name || 'COBRADOR';
       
       if (roleName === 'COBRADOR') {
         const { data: assignmentData } = await supabase

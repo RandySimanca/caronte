@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Fuel, Wrench, Coffee, Plus, MoreHorizontal } from 'lucide-react';
+import { Fuel, Wrench, Coffee, MoreHorizontal } from 'lucide-react';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';

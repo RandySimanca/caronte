@@ -35,7 +35,7 @@ export function SystemSettingsTab() {
       setSettings(data);
 
       const newValues: Record<string, any> = {};
-      data.forEach(s => {
+      data.forEach((s: any) => {
         newValues[s.key] = s.value;
       });
       setValues(newValues);

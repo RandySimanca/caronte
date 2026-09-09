@@ -29,6 +29,7 @@ export default defineConfig({
                 // Disable web-vitals performance reporting that causes the startTime error on bfcache
                 disableDevLogs: true,
                 navigationPreload: false,
+                maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MB limit
                 runtimeCaching: [
                     {
                         urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/.*/i,

@@ -1,5 +1,5 @@
 import { View, Text } from '@react-pdf/renderer';
-import { PdfLayout, pdfStyles } from '../PdfLayout';
+import { PdfLayout, pdfStyles, pdfColors } from '../PdfLayout';
 import { formatCurrency } from '../formatters';
 
 interface DailyLiquidationPdfProps {
@@ -60,7 +60,7 @@ export function DailyLiquidationPdf({ dateStr, routeName, collectorName, detail,
             <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text style={[pdfStyles.textRight, pdfStyles.textBlue]}>- {formatCurrency(detail.totalPrestado)}</Text></View>
           </View>
           
-          <View style={[pdfStyles.tableRow, { backgroundColor: pdfStyles.slate50 }]}>
+          <View style={[pdfStyles.tableRow, { backgroundColor: pdfColors.slate50 }]}>
             <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text style={pdfStyles.textBold}>TOTAL ESPERADO A ENTREGAR</Text></View>
             <View style={[pdfStyles.tableCol, { width: '50%' }]}>
               <Text style={[pdfStyles.textRight, pdfStyles.textBold, totalEsperadoFinal >= 0 ? pdfStyles.textEmerald : pdfStyles.textRed]}>

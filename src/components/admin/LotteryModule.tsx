@@ -72,7 +72,7 @@ export function LotteryModule({ isOpen, onClose }: LotteryModalProps) {
       const { data: { user } } = await supabase.auth.getUser();
       const adminId = user?.id || 'admin-local';
 
-      const result = await AdminService.processLotteryDraw(winningNumber, adminId);
+      const result = await AdminService.processLotteryDraw(winningNumber, adminId) as any;
       
       if (result.winners_count > 0) {
         toast.success(`¡Sorteo procesado! Hubo ${result.winners_count} ganador(es). Premio total: $${result.total_prize.toLocaleString('es-CO')}`, { duration: 5000 });

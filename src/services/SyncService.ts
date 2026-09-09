@@ -134,7 +134,7 @@ export class SyncService {
                   activeRouteId = routes.length > 0 ? routes[0].id : null;
                }
                client.route_id = activeRouteId;
-               loan.route_id = activeRouteId;
+               loan.route_id = activeRouteId as string;
 
                const { data: { user } } = await supabase.auth.getUser();
                if (user) {

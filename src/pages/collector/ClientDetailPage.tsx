@@ -74,7 +74,7 @@ export function ClientDetailPage() {
     try {
       toast.loading('Generando PDF...', { id: 'pdf' });
       const blob = await pdf(<ClientStatementPdf
-        client={client}
+        client={client as any}
         loan={loan}
         installments={installments}
         payments={[]}

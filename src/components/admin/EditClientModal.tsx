@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Save } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import toast from 'react-hot-toast';

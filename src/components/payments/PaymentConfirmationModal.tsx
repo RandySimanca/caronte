@@ -32,7 +32,6 @@ interface Props {
 export function PaymentConfirmationModal({
   isOpen,
   onClose,
-  clientId,
   clientName,
   clientDocument,
   clientAvatarUrl,

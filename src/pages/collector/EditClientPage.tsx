@@ -48,7 +48,7 @@ export function EditClientPage() {
         // Queue for server sync
         await db.syncQueue.add({
           operation_id: uuidv4(),
-          operation_type: 'UPDATE_CLIENT',
+          operation_type: 'UPDATE_CLIENT' as any,
           payload: {
             clientId: id,
             client: updatedClient,
