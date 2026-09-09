@@ -1,0 +1,876 @@
+import { supabase } from '@/lib/supabase';
+import type { User, Role } from '@/lib/database.types';
+
+export interface UserWithRole extends User {
+  roles: {
+    name: string;
+  };
+}
+
+export class AdminService {
+  /**
+   * Obtiene todos los usuarios del sistema junto con su rol.
+   */
+  static async getUsers(): Promise<UserWithRole[]> {
+    const { data, error } = await supabase
+      .from('users')
+      .select(`
+        *,
+        roles (
+          name
+        )
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return (data as unknown) as UserWithRole[];
+  }
+
+  /**
+   * Obtiene todos los roles disponibles (para el formulario de creación).
+   */
+  static async getRoles(): Promise<Role[]> {
+    const { data, error } = await supabase
+      .from('roles')
+      .select('*')
+      .eq('active', true)
+      .order('name');
+
+    if (error) throw error;
+    return data as unknown as Role[];
+  }
+
+  /**
+   * Llama a la función RPC de PostgreSQL para crear un nuevo usuario
+   * @param payload Datos del nuevo usuario
+   */
+  static async createUser(payload: {
+    email: string;
+    password?: string;
+    full_name: string;
+    phone?: string;
+    role_id: string;
+  }) {
+    // Check connection first
+    if (!navigator.onLine) {
+      throw new Error('No hay conexión a internet. La creación de usuarios requiere conexión.');
+    }
+
+    const { data, error } = await supabase.rpc('admin_create_user', {
+      p_email: payload.email,
+      p_password: payload.password || null,
+      p_full_name: payload.full_name,
+      p_phone: payload.phone || null,
+      p_role_id: payload.role_id
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Error desconocido al crear usuario');
+    }
+
+    return data;
+  }
+
+  // ─── GESTIÓN DE RUTAS ────────────────────────────────────────────────────────
+
+  /**
+   * Obtiene todas las rutas y su asignación activa (si la hay).
+   */
+  static async getRoutes() {
+    const { data, error } = await supabase
+      .from('routes')
+      .select(`
+        *,
+        assignments:route_assignments (
+          id,
+          collector_id,
+          date_start,
+          date_end,
+          collector:users!route_assignments_collector_id_fkey (
+            full_name
+          )
+        )
+      `)
+      .order('name');
+
+    if (error) throw error;
+
+    // Mapear para facilitar el uso en UI
+    return data.map((route: any) => {
+      // Filtrar la asignación activa (date_end is null)
+      const activeAssignment = route.assignments?.find((a: any) => !a.date_end) || null;
+      return {
+        ...route,
+        activeAssignment
+      };
+    });
+  }
+
+  /**
+   * Crea una nueva ruta
+   */
+  static async createRoute(payload: { name: string; description: string; zones: string[] }) {
+    const { data, error } = await supabase
+      .from('routes')
+      .insert([{
+        name: payload.name,
+        description: payload.description,
+        zones: payload.zones,
+        active: true
+      } as any])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as any;
+  }
+
+  /**
+   * Actualiza una ruta existente
+   */
+  static async updateRoute(id: string, payload: { name?: string; description?: string; zones?: string[]; active?: boolean }) {
+    const { data, error } = await supabase
+      .from('routes')
+      .update(payload as any)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as any;
+  }
+
+  /**
+   * Obtiene todos los cobradores activos para poder asignarles una ruta
+   */
+  static async getActiveCollectors() {
+    // Primero obtener el ID del rol de COBRADOR
+    const { data: roleData } = await supabase
+      .from('roles')
+      .select('id')
+      .eq('name', 'COBRADOR')
+      .single();
+
+    if (!roleData) return [];
+
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, full_name, phone')
+      .eq('role_id', roleData.id)
+      .eq('active', true)
+      .order('full_name');
+
+    if (error) throw error;
+    return data as unknown as { id: string; full_name: string; phone: string | null }[];
+  }
+
+  /**
+   * Asigna un cobrador a una ruta.
+   * Si ya había uno activo, cierra esa asignación.
+   */
+  static async assignRoute(routeId: string, collectorId: string, assignedBy: string) {
+    // 1. Cerrar asignación actual si existe
+    await supabase
+      .from('route_assignments')
+      .update({ date_end: new Date().toISOString() })
+      .eq('route_id', routeId)
+      .is('date_end', null);
+
+    // 2. Crear nueva asignación
+    const { data, error } = await supabase
+      .from('route_assignments')
+      .insert([{
+        route_id: routeId,
+        collector_id: collectorId,
+        date_start: new Date().toISOString(),
+        assigned_by: assignedBy
+      } as any])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as any;
+  }
+
+  // ─── CONFIGURACIONES Y PARÁMETROS ──────────────────────────────────────────
+
+  /**
+   * Obtiene todos los feriados
+   */
+  static async getHolidays() {
+    const { data, error } = await supabase
+      .from('holidays')
+      .select('*')
+      .order('holiday_date', { ascending: false });
+
+    if (error) throw error;
+    return data;
+  }
+
+  /**
+   * Crea o actualiza un feriado
+   */
+  static async upsertHoliday(payload: { holiday_date: string; name: string; country_code: string; active?: boolean; id?: string }) {
+    const { data, error } = await supabase
+      .from('holidays')
+      .upsert(payload as any, { onConflict: 'id' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as any;
+  }
+
+  /**
+   * Obtiene las categorías de gastos
+   */
+  static async getExpenseCategories() {
+    const { data, error } = await supabase
+      .from('expense_categories')
+      .select('*')
+      .order('name');
+
+    if (error) throw error;
+    return data;
+  }
+
+  /**
+   * Crea o actualiza una categoría de gastos
+   */
+  static async upsertExpenseCategory(payload: { name: string; description?: string; active?: boolean; is_system?: boolean; id?: string }) {
+    const { data, error } = await supabase
+      .from('expense_categories')
+      .upsert(payload as any, { onConflict: 'id' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as any;
+  }
+
+  /**
+   * Obtiene los parámetros globales del sistema
+   */
+  static async getSystemSettings() {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('*')
+      .order('key');
+
+    if (error) throw error;
+    return data;
+  }
+
+  /**
+   * Actualiza un parámetro del sistema
+   */
+  static async updateSystemSetting(key: string, value: any, updatedBy: string) {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .update({ value, updated_by: updatedBy, updated_at: new Date().toISOString() } as any)
+      .eq('key', key)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as any;
+  }
+
+  // ─── DASHBOARD ───────────────────────────────────────────────────────────
+
+  /**
+   * Obtiene las métricas globales para el dashboard principal, opcionalmente filtradas por ruta
+   */
+  static async getDashboardStats(routeId?: string) {
+    // 1. Start of day and week for filters
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    // Today as YYYY-MM-DD (local date) — used to exclude loans whose first installment starts tomorrow
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    const dayOfWeek = now.getDay();
+    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Monday as first day
+    const startOfWeek = new Date(now.setDate(diff));
+    startOfWeek.setHours(0, 0, 0, 0);
+    const startOfWeekStr = startOfWeek.toISOString();
+
+    // 2. Fetch role COBRADOR id
+    const { data: roleData } = await supabase.from('roles').select('id').eq('name', 'COBRADOR').single();
+    const cobradorRoleId = (roleData as any)?.id;
+
+    // 3. Prepare queries
+    let clientsQuery = supabase.from('clients').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVO');
+    let loansQuery = supabase.from('loans').select('*', { count: 'exact', head: true }).gte('start_date', startOfWeekStr);
+    let paymentsQuery = supabase.from('payments').select('total_amount').gte('collected_at', startOfDay);
+    // Only include loans whose start_date is today or earlier — loans created today have start_date = tomorrow,
+    // so their first installment must NOT appear in today's "Por recoger" total.
+    let expectedQuery = supabase.from('loans').select('daily_installment').eq('status', 'ACTIVO').lte('start_date', todayStr);
+    
+    let alertsQuery = supabase.from('payments').select(`
+      id,
+      total_amount,
+      advance_amount,
+      collected_at,
+      collector_observation,
+      is_above_expected,
+      collector:users!payments_collector_id_fkey(full_name),
+      loan:loans(client:clients(full_name))
+    `)
+    .gte('collected_at', startOfDay)
+    .order('collected_at', { ascending: false });
+    
+    // Apply route filter if provided
+    if (routeId && routeId !== 'all') {
+      clientsQuery = clientsQuery.eq('route_id', routeId);
+      loansQuery = loansQuery.eq('route_id', routeId);
+      paymentsQuery = paymentsQuery.eq('route_id', routeId);
+      expectedQuery = expectedQuery.eq('route_id', routeId);
+      alertsQuery = alertsQuery.eq('route_id', routeId);
+    }
+
+    // 4. Paralell fetch for exact counts and sums
+    const [
+      clientsRes,
+      usersRes,
+      routesRes,
+      loansRes,
+      paymentsRes,
+      expectedRes,
+      alertsRes
+    ] = await Promise.all([
+      clientsQuery,
+      supabase.from('users').select('*', { count: 'exact', head: true }).eq('active', true).eq('role_id', cobradorRoleId),
+      supabase.from('routes').select('*', { count: 'exact', head: true }).eq('active', true),
+      loansQuery,
+      paymentsQuery,
+      expectedQuery,
+      alertsQuery
+    ]);
+
+    const recaudoHoy = paymentsRes.data?.reduce((sum, p: any) => sum + Number(p.total_amount), 0) || 0;
+    const recaudoEsperado = expectedRes.data?.reduce((sum, l: any) => sum + Number(l.daily_installment), 0) || 0;
+
+    const alertsData = alertsRes.data || [];
+    const enrichedAlerts = alertsData
+      .filter((alert: any) => alert.is_above_expected || alert.advance_amount > 0 || (alert.collector_observation && alert.collector_observation.trim() !== ''))
+      .map((alert: any) => ({
+        id: alert.id,
+        amount: Number(alert.total_amount),
+        advance: Number(alert.advance_amount),
+        time: alert.collected_at,
+        clientName: alert.loan?.client?.full_name || 'Cliente desconocido',
+        collectorName: alert.collector?.full_name || 'Cobrador desconocido',
+        observation: alert.collector_observation || null,
+        is_excess: alert.is_above_expected || Number(alert.advance_amount) > 0,
+      }));
+
+    return {
+      clientes: clientsRes.count || 0,
+      nuevos: loansRes.count || 0,
+      recaudo: recaudoHoy,
+      esperado: recaudoEsperado,
+      cobradores: usersRes.count || 0,
+      rutas: routesRes.count || 0,
+      alerts: enrichedAlerts
+    };
+  }
+
+  /**
+   * Obtiene el estado de las rutas y sus cobradores asignados
+   */
+  static async getRouteStates() {
+    const { data, error } = await supabase
+      .from('routes')
+      .select(`
+        id, 
+        name,
+        active,
+        assignments:route_assignments (
+          id,
+          date_end,
+          collector:users!route_assignments_collector_id_fkey(
+            id,
+            full_name
+          )
+        ),
+        clients (id)
+      `)
+      .order('name');
+
+    if (error) throw error;
+
+    return data.map((route: any) => {
+      const activeAssignment = route.assignments?.find((a: any) => !a.date_end) || null;
+      const cobrador = activeAssignment?.collector?.full_name || 'Sin asignar';
+      
+      // Simulando estado de conexión por ahora (en el futuro se puede validar última sync del dispositivo)
+      let estado = route.active ? (activeAssignment ? 'Activo' : 'Sin asignar') : 'Inactiva';
+      
+      return {
+        id: route.id,
+        ruta: route.name,
+        cobrador,
+        clientesCount: route.clients?.length || 0,
+        estado
+      };
+    });
+  }
+
+  // ─── LIQUIDACIONES ────────────────────────────────────────────────────────
+
+  /**
+   * Obtiene la lista de rutas y su estado de liquidación para una fecha
+   */
+  static async getRouteLiquidations(dateStr: string) {
+    // 1. Obtener todas las rutas activas con su cobrador actual
+    const { data: routes, error: routesError } = await supabase
+      .from('routes')
+      .select(`
+        id, 
+        name,
+        assignments:route_assignments (
+          id,
+          date_end,
+          collector:users!route_assignments_collector_id_fkey(
+            id,
+            full_name
+          )
+        )
+      `)
+      .eq('active', true)
+      .order('name');
+    if (routesError) throw routesError;
+
+    // 2. Obtener cierres de caja para esa fecha
+    const { data: closings, error: closingsError } = await supabase
+      .from('daily_closings')
+      .select('route_id, is_closed, total_collected, total_expenses, expected_delivery, actual_delivery')
+      .eq('closing_date', dateStr);
+    if (closingsError) throw closingsError;
+
+    // 3. Mezclar la información
+    return routes.map((route: any) => {
+      const activeAssignment = route.assignments?.find((a: any) => !a.date_end);
+      const closing = (closings as any[])?.find((c: any) => c.route_id === route.id);
+      
+      return {
+        id: route.id,
+        ruta: route.name,
+        cobrador: activeAssignment?.collector?.full_name || 'Sin asignar',
+        cobradorId: activeAssignment?.collector?.id,
+        estado: closing?.is_closed ? 'Liquidado' : 'Pendiente',
+        recaudado: closing?.total_collected || 0,
+        aEntregar: closing?.expected_delivery || 0,
+        closingData: closing || null
+      };
+    });
+  }
+
+  /**
+   * Obtiene el detalle de ingresos, gastos y préstamos para liquidar una ruta
+   */
+  static async getRouteLiquidationDetail(routeId: string, dateStr: string) {
+    const startOfDay = dateStr + 'T00:00:00.000Z';
+    const endOfDay = dateStr + 'T23:59:59.999Z';
+
+    const [paymentsRes, expensesRes, loansRes, settingsRes] = await Promise.all([
+      supabase.from('payments').select('total_amount').eq('route_id', routeId).gte('collected_at', startOfDay).lte('collected_at', endOfDay),
+      supabase.from('expenses').select('amount, category:expense_categories(name)').eq('route_id', routeId).eq('expense_date', dateStr),
+      supabase.from('loans').select('amount_delivered').eq('route_id', routeId).eq('disbursement_date', dateStr),
+      supabase.from('system_settings').select('value').eq('key', 'default_viaticum').maybeSingle()
+    ]);
+
+    const totalCobrado = paymentsRes.data?.reduce((sum, p: any) => sum + Number(p.total_amount), 0) || 0;
+    const totalGastos = expensesRes.data?.reduce((sum, e: any) => sum + Number(e.amount), 0) || 0;
+    const prestamosNuevos = loansRes.data?.length || 0;
+    const totalPrestado = loansRes.data?.reduce((sum, l: any) => sum + Number(l.amount_delivered), 0) || 0;
+    
+    let viaticoDia = 0;
+    if (settingsRes.data && (settingsRes.data as any).value) {
+      viaticoDia = Number((settingsRes.data as any).value);
+    }
+
+    const totalEntregar = totalCobrado - totalGastos - viaticoDia - totalPrestado;
+
+    return {
+      totalCobrado,
+      totalGastos,
+      detalleGastos: expensesRes.data || [],
+      viaticoDia,
+      prestamosNuevos,
+      totalPrestado,
+      totalEntregar
+    };
+  }
+
+  /**
+   * Aprueba la liquidación y la guarda en la base de datos
+   */
+  static async approveLiquidation(payload: any) {
+    const { data, error } = await supabase
+      .from('daily_closings')
+      .upsert({
+        route_id: payload.routeId,
+        collector_id: payload.collectorId,
+        closing_date: payload.date,
+        base_amount: payload.baseAmount || 0,
+        total_collected: payload.totalCobrado,
+        total_expenses: payload.totalGastos + (payload.totalPrestado || 0),
+        viaticum_assigned: payload.viaticoDia,
+        expected_delivery: payload.totalEntregar,
+        actual_delivery: payload.totalEntregar,
+        difference: 0,
+        is_closed: true,
+        has_pending_sync: false,
+        closed_by: payload.adminId,
+        closed_at: new Date().toISOString(),
+        expected_amount: payload.totalCobrado,
+        arrears_amount: 0,
+        arrears_recovered: 0,
+        partial_payments: 0,
+        advance_payments: 0,
+        above_expected_payments: 0,
+        fuel_expenses: 0,
+        oil_expenses: 0,
+        repair_expenses: 0,
+        tire_expenses: 0,
+        chain_expenses: 0,
+        other_expenses: payload.totalGastos + (payload.totalPrestado || 0)
+      } as any, { onConflict: 'route_id,closing_date' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as any;
+  }
+
+  // ─── CLIENTES ────────────────────────────────────────────────────────
+
+  static async updateClient(id: string, data: { full_name?: string; document_id?: string; phone?: string; address?: string }) {
+    const { error } = await supabase
+      .from('clients')
+      .update(data as any)
+      .eq('id', id);
+    if (error) throw error;
+  }
+
+  // ─── CLIENTS & LOANS (Admin Modal) ────────────────────────────────────────────────────────
+
+  /**
+   * Obtiene clientes con filtros opcionales de ruta y fecha de creación.
+   */
+  static async getClients(filters?: { routeId?: string; onlyToday?: boolean; search?: string }) {
+    let query = supabase
+      .from('clients')
+      .select(`
+        id,
+        full_name,
+        document_id,
+        phone,
+        address,
+        neighborhood,
+        municipality,
+        status,
+        photo_face_url,
+        photo_doc_url,
+        created_at,
+        route:routes(id, name),
+        creator:users!clients_created_by_fkey(full_name),
+        loans(
+          id,
+          amount_requested,
+          amount_delivered,
+          interest_amount,
+          initial_obligation,
+          term_days,
+          daily_installment,
+          disbursement_date,
+          status,
+          current_balance,
+          sundays_prepaid_count,
+          receipt_fee,
+          raffle_number
+        )
+      `)
+      .order('created_at', { ascending: false });
+
+    if (filters?.routeId && filters.routeId !== 'all') {
+      query = query.eq('route_id', filters.routeId);
+    }
+
+    if (filters?.onlyToday) {
+      const now = new Date();
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
+      query = query.gte('created_at', startOfDay).lte('created_at', endOfDay);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    // Client-side search filter (simple, avoids ilike complexity)
+    if (filters?.search && filters.search.trim() !== '') {
+      const term = filters.search.toLowerCase();
+      return data.filter((c: any) =>
+        c.full_name?.toLowerCase().includes(term) ||
+        c.document_id?.toLowerCase().includes(term) ||
+        c.phone?.toLowerCase().includes(term)
+      );
+    }
+
+    return data;
+  }
+
+  /**
+   * Obtiene las cuotas de un préstamo para visualizar la tarjeta de cobros
+   */
+  static async getLoanInstallments(loanId: string) {
+    const { data, error } = await supabase
+      .from('loan_installments')
+      .select('*')
+      .eq('loan_id', loanId)
+      .order('scheduled_date', { ascending: true });
+
+    if (error) throw error;
+    return data;
+  }
+
+  /**
+   * Elimina un cliente por su ID
+   */
+  static async deleteClient(clientId: string) {
+    // Primero, obtener los préstamos del cliente para eliminar dependencias
+    const { data: loans } = await supabase.from('loans').select('id').eq('client_id', clientId);
+    
+    if (loans && loans.length > 0) {
+      const loanIds = (loans as unknown as { id: string }[]).map(l => l.id);
+      
+      // Eliminar cuotas
+      await supabase.from('loan_installments').delete().in('loan_id', loanIds);
+      // Eliminar pagos
+      await supabase.from('payments').delete().in('loan_id', loanIds);
+      // Eliminar los préstamos
+      await supabase.from('loans').delete().in('id', loanIds);
+    }
+
+    const { error } = await supabase
+      .from('clients')
+      .delete()
+      .eq('id', clientId);
+
+    if (error) throw error;
+  }
+
+  // ─── LOTERÍA / BOLETAS ──────────────────────────────────────────────
+
+  /**
+   * Procesa un sorteo de boletas
+   */
+  static async processLotteryDraw(winningNumber: string, adminId: string) {
+    const { data, error } = await supabase.rpc('process_lottery_draw', {
+      p_winning_number: winningNumber,
+      p_admin_id: adminId
+    });
+
+    if (error) throw error;
+
+    // Persist the winning number in system_settings so SyncService.pullSettings()
+    // distributes it to collectors on their next sync. Collectors use this to show
+    // a winner notification banner in the payment modal.
+    const drawDate = new Date().toISOString().split('T')[0];
+    await supabase.from('system_settings').upsert(
+      {
+        key: 'lottery_last_draw',
+        value: { winning_number: winningNumber, draw_date: drawDate, processed_at: new Date().toISOString() },
+        description: 'Último sorteo procesado — usado para notificar al cobrador'
+      } as any,
+      { onConflict: 'key' }
+    );
+
+    return data;
+  }
+
+  /**
+   * Obtiene el historial de sorteos y ganadores
+   */
+  static async getLotteryDraws() {
+    const { data, error } = await supabase
+      .from('lottery_draws')
+      .select(`
+        *,
+        processed_by:users(full_name),
+        winners:lottery_winners(
+          prize_amount,
+          loan:loans(
+            id,
+            client:clients(full_name, phone)
+          )
+        )
+      `)
+      .order('draw_date', { ascending: false });
+
+    if (error) throw error;
+    return data;
+  }
+
+  // ─── REPORTES ────────────────────────────────────────────────────────
+
+  /**
+   * Obtiene datos agregados para el módulo de reportes
+   */
+  static async getReportsData(startDate: string, endDate: string, routeId?: string) {
+    const startIso = `${startDate}T00:00:00.000Z`;
+    const endIso = `${endDate}T23:59:59.999Z`;
+
+    // 1. Pagos (Recaudos)
+    let paymentsQuery = supabase
+      .from('payments')
+      .select('total_amount, collected_at')
+      .gte('collected_at', startIso)
+      .lte('collected_at', endIso);
+
+    // 2. Gastos
+    let expensesQuery = supabase
+      .from('expenses')
+      .select('amount, expense_date, category:expense_categories(name)')
+      .gte('expense_date', startDate)
+      .lte('expense_date', endDate);
+
+    // 3. Préstamos Nuevos
+    let loansQuery = supabase
+      .from('loans')
+      .select('amount_delivered, amount_requested, interest_amount, disbursement_date, current_balance, status')
+      .gte('disbursement_date', startDate)
+      .lte('disbursement_date', endDate);
+
+    if (routeId && routeId !== 'all') {
+      paymentsQuery = paymentsQuery.eq('route_id', routeId);
+      expensesQuery = expensesQuery.eq('route_id', routeId);
+      loansQuery = loansQuery.eq('route_id', routeId);
+    }
+
+    const [paymentsRes, expensesRes, loansRes] = await Promise.all([
+      paymentsQuery,
+      expensesQuery,
+      loansQuery
+    ]);
+
+    if (paymentsRes.error) throw paymentsRes.error;
+    if (expensesRes.error) throw expensesRes.error;
+    if (loansRes.error) throw loansRes.error;
+
+    return {
+      payments: paymentsRes.data || [],
+      expenses: expensesRes.data || [],
+      loans: loansRes.data || []
+    };
+  }
+
+  /**
+   * Obtiene el estado de la cartera (préstamos activos y morosidad)
+   */
+  static async getPortfolioState(routeId?: string) {
+    let query = supabase.from('loans').select(`
+      id,
+      amount_requested,
+      amount_delivered,
+      initial_obligation,
+      current_balance,
+      status,
+      route_id,
+      route:routes(name),
+      client:clients(full_name, phone)
+    `).eq('status', 'ACTIVO');
+    
+    if (routeId && routeId !== 'all') {
+      query = query.eq('route_id', routeId);
+    }
+    
+    const { data: loans, error: loansError } = await query;
+    if (loansError) throw loansError;
+    
+    if (!loans || loans.length === 0) {
+      return { loans: [], arrearsInstallments: [] };
+    }
+
+    const loanIds = loans.map((l: any) => l.id);
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    // Split into chunks of 100 if there are many loans to avoid URL too long issues in Supabase/PostgREST
+    const chunkSize = 100;
+    let allInstallments: any[] = [];
+    
+    for (let i = 0; i < loanIds.length; i += chunkSize) {
+      const chunk = loanIds.slice(i, i + chunkSize);
+      const { data: installments, error: instError } = await supabase
+        .from('loan_installments')
+        .select('loan_id, balance, scheduled_date, status')
+        .in('loan_id', chunk)
+        .lt('scheduled_date', todayStr)
+        .in('status', ['PENDIENTE', 'PARCIAL', 'ATRASADA']);
+        
+      if (instError) throw instError;
+      if (installments) {
+        allInstallments = [...allInstallments, ...installments];
+      }
+    }
+    
+    return { loans, arrearsInstallments: allInstallments };
+  }
+
+  /**
+   * Obtiene el Libro Auxiliar de transacciones cronológico
+   */
+  static async getLedgerTransactions(startDate: string, endDate: string, routeId?: string) {
+    const startIso = `${startDate}T00:00:00.000Z`;
+    const endIso = `${endDate}T23:59:59.999Z`;
+
+    let pQuery = supabase.from('payments').select('id, collected_at, total_amount, collector_observation, loan:loans(client:clients(full_name)), collector:users!payments_collector_id_fkey(full_name)').gte('collected_at', startIso).lte('collected_at', endIso);
+    let eQuery = supabase.from('expenses').select('id, expense_date, amount, description, category:expense_categories(name), route:routes(name)').gte('expense_date', startDate).lte('expense_date', endDate);
+    let lQuery = supabase.from('loans').select('id, disbursement_date, amount_delivered, client:clients(full_name), route:routes(name)').gte('disbursement_date', startDate).lte('disbursement_date', endDate);
+
+    if (routeId && routeId !== 'all') {
+      pQuery = pQuery.eq('route_id', routeId);
+      eQuery = eQuery.eq('route_id', routeId);
+      lQuery = lQuery.eq('route_id', routeId);
+    }
+
+    const [pRes, eRes, lRes] = await Promise.all([pQuery, eQuery, lQuery]);
+    
+    if (pRes.error) throw pRes.error;
+    if (eRes.error) throw eRes.error;
+    if (lRes.error) throw lRes.error;
+    
+    const transactions: any[] = [];
+    
+    pRes.data?.forEach((p: any) => transactions.push({
+      id: `p_${p.id}`,
+      date: p.collected_at,
+      type: 'INGRESO',
+      description: `Pago Cuota - ${p.loan?.client?.full_name || 'Desconocido'}`,
+      amount: Number(p.total_amount),
+      observation: p.collector_observation || ''
+    }));
+    
+    eRes.data?.forEach((e: any) => transactions.push({
+      id: `e_${e.id}`,
+      date: `${e.expense_date}T12:00:00.000Z`, // Approximation
+      type: 'GASTO',
+      description: `Gasto: ${e.category?.name || 'Otros'} - ${e.description || ''}`,
+      amount: -Number(e.amount),
+      observation: ''
+    }));
+    
+    lRes.data?.forEach((l: any) => transactions.push({
+      id: `l_${l.id}`,
+      date: `${l.disbursement_date}T08:00:00.000Z`, // Approximation
+      type: 'DESEMBOLSO',
+      description: `Desembolso - ${l.client?.full_name || 'Desconocido'}`,
+      amount: -Number(l.amount_delivered),
+      observation: ''
+    }));
+    
+    return transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }
+
+}

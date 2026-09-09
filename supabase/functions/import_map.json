@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "supabase": "https://esm.sh/@supabase/supabase-js@2.45.4",
+    "cors": "https://deno.land/x/edge_cors@1.2.2/mod.ts",
+    "decimal.js": "https://esm.sh/decimal.js@10.4.3",
+    "date-fns": "https://esm.sh/date-fns@3.6.0"
+  }
+}
