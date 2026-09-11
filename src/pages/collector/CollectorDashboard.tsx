@@ -54,13 +54,13 @@ export function CollectorDashboard() {
       expected += todayQuota + todayArrears;
 
       // Cobrado hoy:
-      // 1. Cuota del día: paid_amount de la cuota con scheduled_date=hoy (sin importar cuándo se pagó)
-      // 2. Adelantos reales: cuotas futuras con paid_date=hoy y is_prepaid=false
-      //    (excluye domingos prepagados al crear el préstamo)
+      // Cualquier cuota (del día, atraso o adelanto futuro) cuyo paid_date sea hoy
+      // y no sea un domingo pre-pagado automáticamente al crear el préstamo.
+      // Esto es equivalente a la lógica del admin (loan_installments WHERE paid_date = hoy).
+      // Una cuota adelantada en días anteriores tiene paid_date != hoy → NO se cuenta.
       const collectedToday = loanInsts
         .filter(i =>
-          (i.scheduled_date === today && i.paid_amount > 0) ||
-          (i.scheduled_date > today && i.paid_date === today && !i.is_prepaid)
+          i.paid_date === today && i.paid_amount > 0 && !i.is_prepaid
         )
         .reduce((s, i) => s + i.paid_amount, 0);
       collected += collectedToday;

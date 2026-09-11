@@ -301,10 +301,31 @@ export class AdminService {
     // 3. Prepare queries
     let clientsQuery = supabase.from('clients').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVO');
     let loansQuery = supabase.from('loans').select('*', { count: 'exact', head: true }).gte('start_date', startOfWeekStr);
-    let paymentsQuery = supabase.from('payments').select('total_amount').gte('collected_at', startOfDay);
-    // Only include loans whose start_date is today or earlier — loans created today have start_date = tomorrow,
-    // so their first installment must NOT appear in today's "Por recoger" total.
-    let expectedQuery = supabase.from('loans').select('daily_installment').eq('status', 'ACTIVO').lte('start_date', todayStr);
+    // ── Recaudo (hoy) ────────────────────────────────────────────────────────
+    // Calculado desde loan_installments (paid_date = hoy) para coincidir
+    // exactamente con la lógica del cobrador: cuota del día + atrasos pagados
+    // hoy + adelantos reales de cuotas futuras (excluyendo domingos pre-pagados).
+    let recaudoInstQuery = supabase
+      .from('loan_installments')
+      .select('paid_amount, scheduled_date, is_prepaid')
+      .eq('paid_date', todayStr)
+      .gt('paid_amount', 0);
+
+    // ── Esperado (hoy) ───────────────────────────────────────────────────────
+    // Only include loans whose start_date is today or earlier.
+    let expectedLoansQuery = supabase
+      .from('loans')
+      .select('id, daily_installment')
+      .eq('status', 'ACTIVO')
+      .lte('start_date', todayStr);
+
+    // Cuotas vencidas pendientes (atrasos) — mismo cálculo que el cobrador
+    let arrearsQuery = supabase
+      .from('loan_installments')
+      .select('balance, loan_id')
+      .lt('scheduled_date', todayStr)
+      .in('status', ['PENDIENTE', 'PARCIAL', 'ATRASADA'])
+      .gt('balance', 0);
     
     let alertsQuery = supabase.from('payments').select(`
       id,
@@ -323,32 +344,49 @@ export class AdminService {
     if (routeId && routeId !== 'all') {
       clientsQuery = clientsQuery.eq('route_id', routeId);
       loansQuery = loansQuery.eq('route_id', routeId);
-      paymentsQuery = paymentsQuery.eq('route_id', routeId);
-      expectedQuery = expectedQuery.eq('route_id', routeId);
+      recaudoInstQuery = (recaudoInstQuery as any).eq('route_id', routeId);
+      expectedLoansQuery = expectedLoansQuery.eq('route_id', routeId);
+      arrearsQuery = (arrearsQuery as any).eq('route_id', routeId);
       alertsQuery = alertsQuery.eq('route_id', routeId);
     }
 
-    // 4. Paralell fetch for exact counts and sums
+    // 4. Parallel fetch for exact counts and sums
     const [
       clientsRes,
       usersRes,
       routesRes,
       loansRes,
-      paymentsRes,
-      expectedRes,
+      recaudoInstRes,
+      expectedLoansRes,
+      arrearsRes,
       alertsRes
     ] = await Promise.all([
       clientsQuery,
       supabase.from('users').select('*', { count: 'exact', head: true }).eq('active', true).eq('role_id', cobradorRoleId),
       supabase.from('routes').select('*', { count: 'exact', head: true }).eq('active', true),
       loansQuery,
-      paymentsQuery,
-      expectedQuery,
+      recaudoInstQuery,
+      expectedLoansQuery,
+      arrearsQuery,
       alertsQuery
     ]);
 
-    const recaudoHoy = paymentsRes.data?.reduce((sum, p: any) => sum + Number(p.total_amount), 0) || 0;
-    const recaudoEsperado = expectedRes.data?.reduce((sum, l: any) => sum + Number(l.daily_installment), 0) || 0;
+    // Recaudo: suma paid_amount de cuotas con paid_date=hoy, excluyendo domingos
+    // pre-pagados al crear el préstamo (is_prepaid=true y scheduled_date > hoy).
+    const recaudoHoy = (recaudoInstRes.data || []).reduce((sum: number, i: any) => {
+      const isFuture = i.scheduled_date > todayStr;
+      if (isFuture && i.is_prepaid) return sum;
+      return sum + Number(i.paid_amount);
+    }, 0);
+
+    // Esperado: cuotas diarias de préstamos activos + saldo de atrasos vencidos
+    const activeLoanIds = new Set((expectedLoansRes.data || []).map((l: any) => l.id));
+    const recaudoEsperadoBase = (expectedLoansRes.data || []).reduce((sum: number, l: any) => sum + Number(l.daily_installment), 0);
+    const arrearsTotal = (arrearsRes.data || []).reduce((sum: number, i: any) => {
+      if (!activeLoanIds.has(i.loan_id)) return sum;
+      return sum + Number(i.balance);
+    }, 0);
+    const recaudoEsperado = recaudoEsperadoBase + arrearsTotal;
 
     const alertsData = alertsRes.data || [];
     const enrichedAlerts = alertsData

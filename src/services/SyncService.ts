@@ -175,8 +175,13 @@ export class SyncService {
             } as any).eq('id', client.id);
 
             if (err) throw err;
-          } else if (op.operation_type === 'PAYMENT') {
-            const p = op.payload;
+          } else if (op.operation_type === 'PAYMENT' || (op.operation_type as string) === 'PAYMENT_BUNDLE') {
+            const isBundle = (op.operation_type as string) === 'PAYMENT_BUNDLE';
+            const p = isBundle ? op.payload.payment : op.payload;
+            const loanId = isBundle ? op.payload.loanId : p.loanId;
+            const updatedInstallments = isBundle ? op.payload.updatedInstallments : [];
+            const newLoanBalance = isBundle ? op.payload.newLoanBalance : undefined;
+
             const { data: { user } } = await supabase.auth.getUser();
             
             let activeRouteId = p.routeId;
@@ -188,17 +193,41 @@ export class SyncService {
             const paymentDb = {
               operation_id: p.operationId,
               device_id: p.deviceId || 'legacy-web',
-              loan_id: p.loanId,
+              loan_id: loanId,
               collector_id: p.collectorId === 'local-user' && user ? user.id : p.collectorId,
               route_id: activeRouteId,
               total_amount: p.totalAmount,
+              advance_amount: p.advance_amount || 0,
+              arrears_amount: p.arrears_amount || 0,
+              day_installment_amount: p.day_installment_amount || 0,
+              is_advance_payment: p.is_advance_payment || false,
+              is_above_expected: p.is_above_expected || false,
+              is_partial_payment: p.is_partial_payment || false,
+              collector_observation: p.collectorObservation || null,
               sync_status: 'synced',
               collected_at: p.collectedAt,
               synced_at: new Date().toISOString(),
               created_by: user?.id || null
             };
+
             const { error } = await supabase.from('payments').upsert(paymentDb as any);
             if (error) throw error;
+
+            // Handle bundle updates (installments and loan balance)
+            if ((op.operation_type as string) === 'PAYMENT_BUNDLE' && updatedInstallments.length > 0) {
+              const { error: instError } = await supabase
+                .from('loan_installments')
+                .upsert(updatedInstallments as any);
+              if (instError) throw instError;
+
+              if (newLoanBalance !== undefined) {
+                const { error: loanError } = await supabase
+                  .from('loans')
+                  .update({ current_balance: newLoanBalance } as any)
+                  .eq('id', loanId);
+                if (loanError) throw loanError;
+              }
+            }
           } else if (op.operation_type === 'EXPENSE') {
             const exp = op.payload;
             const { data: { user } } = await supabase.auth.getUser();
