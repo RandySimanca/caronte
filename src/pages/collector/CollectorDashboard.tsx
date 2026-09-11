@@ -1,4 +1,4 @@
-import { Bell, ChevronRight, RefreshCw, AlertCircle, WifiOff } from 'lucide-react';
+import { Bell, ChevronRight, RefreshCw, AlertCircle, WifiOff, CalendarCheck } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -6,8 +6,9 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { useSyncStore } from '@/stores/syncStore';
 import { SyncService } from '@/services/SyncService';
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
 
 export function CollectorDashboard() {
   const dateStr = format(new Date(), "EEEE, dd MMM yyyy", { locale: es });
@@ -33,6 +34,8 @@ export function CollectorDashboard() {
 
   const routeName = routes.length > 0 ? routes[0].name : 'Cargando ruta...';
 
+  const [isPrepaidModalOpen, setIsPrepaidModalOpen] = useState(false);
+
   const stats = useMemo(() => {
     let expected = 0;
     let collected = 0;
@@ -40,6 +43,7 @@ export function CollectorDashboard() {
     let arrearsClients = 0;
     let visitedCount = 0;
     let newCount = 0;
+    const prepaidTodayClients: { clientName: string; amount: number; paidDate: string }[] = [];
 
     for (const loan of loans) {
       const loanInsts = installments.filter(i => i.loan_id === loan.id);
@@ -48,10 +52,24 @@ export function CollectorDashboard() {
         i.scheduled_date < today && ['PENDIENTE', 'PARCIAL', 'ATRASADA'].includes(i.status)
       );
 
-      const todayQuota = loan.start_date > today ? 0 : loan.daily_installment;
+      // Si la cuota de hoy ya fue adelantada (balance=0), no suma al esperado.
+      // Usamos el balance real de la cuota en vez del daily_installment fijo.
+      const todayBalance = loan.start_date > today
+        ? 0
+        : (todayInst ? todayInst.balance : loan.daily_installment);
       const todayArrears = arrearsInsts.reduce((s, i) => s + i.balance, 0);
 
-      expected += todayQuota + todayArrears;
+      expected += todayBalance + todayArrears;
+
+      // Detectar cuotas adelantadas para hoy: pagadas ANTES de hoy
+      if (todayInst && todayInst.balance <= 0 && todayInst.paid_date && todayInst.paid_date < today) {
+        const client = clients.find(c => c.id === loan.client_id);
+        prepaidTodayClients.push({
+          clientName: client?.full_name || 'Cliente desconocido',
+          amount: loan.daily_installment,
+          paidDate: todayInst.paid_date,
+        });
+      }
 
       // Cobrado hoy:
       // Cualquier cuota (del día, atraso o adelanto futuro) cuyo paid_date sea hoy
@@ -88,6 +106,8 @@ export function CollectorDashboard() {
       clientsPending: clients.length - visitedCount - newCount,
       arrearsAmount: arrearsTotal,
       arrearsClients,
+      prepaidTodayCount: prepaidTodayClients.length,
+      prepaidTodayClients,
     };
   }, [loans, installments, clients, today]);
 
@@ -202,6 +222,30 @@ export function CollectorDashboard() {
         </button>
       )}
 
+      {/* Cuotas adelantadas para hoy */}
+      {stats.prepaidTodayCount > 0 && (
+        <button
+          onClick={() => setIsPrepaidModalOpen(true)}
+          className="w-full bg-white rounded-2xl border-2 border-indigo-200 shadow-sm p-4 hover:shadow-md hover:border-indigo-400 transition-all text-left flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center relative shrink-0">
+              <CalendarCheck className="w-5 h-5 text-indigo-600" />
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-indigo-500 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-sm">
+                {stats.prepaidTodayCount}
+              </span>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 leading-tight">Adelantadas (hoy)</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Ya pagadas en días anteriores
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-indigo-300 group-hover:translate-x-1 transition-transform" />
+        </button>
+      )}
+
       {/* Sync Panel */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
         <div className="flex justify-between items-center mb-4">
@@ -229,6 +273,12 @@ export function CollectorDashboard() {
           </div>
         </div>
       </div>
+
+      <PrepaidTodayModal
+        isOpen={isPrepaidModalOpen}
+        onClose={() => setIsPrepaidModalOpen(false)}
+        clients={stats.prepaidTodayClients}
+      />
     </div>
   );
 }

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy } from 'lucide-react';
+import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { ClientsModal } from '@/components/admin/ClientsModal';
 import { LotteryModule } from '@/components/admin/LotteryModule';
 import { ObservationsModal } from '@/components/admin/ObservationsModal';
+import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
 import toast from 'react-hot-toast';
 
 export function AdminDashboard() {
@@ -15,6 +16,7 @@ export function AdminDashboard() {
   const [clientsModal, setClientsModal] = useState<{ open: boolean; onlyToday: boolean }>({ open: false, onlyToday: false });
   const [isLotteryOpen, setIsLotteryOpen] = useState(false);
   const [isObservationsOpen, setIsObservationsOpen] = useState(false);
+  const [isPrepaidModalOpen, setIsPrepaidModalOpen] = useState(false);
 
   // Load route list only once
   useEffect(() => {
@@ -157,6 +159,33 @@ export function AdminDashboard() {
           <p className="text-xs text-slate-400">{isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas'}</p>
         </div>
       </div>
+
+      {/* Cuotas adelantadas para hoy */}
+      {(stats?.prepaidToday?.count ?? 0) > 0 && (
+        <button
+          onClick={() => setIsPrepaidModalOpen(true)}
+          className="w-full bg-white rounded-2xl border-2 border-indigo-200 shadow-sm p-5 hover:shadow-md hover:border-indigo-400 transition-all text-left flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center relative shrink-0">
+              <CalendarCheck className="w-6 h-6 text-indigo-600" />
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-indigo-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-sm">
+                {stats!.prepaidToday!.count}
+              </span>
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-800 leading-tight">Cuotas Adelantadas (hoy)</h3>
+              <p className="text-sm text-slate-500 mt-0.5">
+                {stats!.prepaidToday!.count} cliente{stats!.prepaidToday!.count !== 1 ? 's' : ''} ya pagaron la cuota de hoy en días anteriores
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 text-indigo-600 font-bold bg-indigo-50 px-4 py-2 rounded-xl">
+            <span>Ver clientes</span>
+            <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+          </div>
+        </button>
+      )}
 
       {/* ─── LOTTERY SHORTCUT ─── */}
       <button
@@ -333,6 +362,12 @@ export function AdminDashboard() {
         isOpen={isObservationsOpen}
         onClose={() => setIsObservationsOpen(false)}
         alerts={stats?.alerts || []}
+      />
+
+      <PrepaidTodayModal
+        isOpen={isPrepaidModalOpen}
+        onClose={() => setIsPrepaidModalOpen(false)}
+        clients={stats?.prepaidToday?.clients || []}
       />
     </div>
   );

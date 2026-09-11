@@ -312,12 +312,14 @@ export class AdminService {
       .gt('paid_amount', 0);
 
     // ── Esperado (hoy) ───────────────────────────────────────────────────────
-    // Only include loans whose start_date is today or earlier.
-    let expectedLoansQuery = supabase
-      .from('loans')
-      .select('id, daily_installment')
-      .eq('status', 'ACTIVO')
-      .lte('start_date', todayStr);
+    // Se suma el balance de las cuotas de HOY que aún tienen saldo pendiente.
+    // Si un cliente adelantó la cuota de hoy en días anteriores, su balance = 0
+    // y no suma al esperado → el cobrador no necesita cobrarle.
+    let todayInstsQuery = supabase
+      .from('loan_installments')
+      .select('balance')
+      .eq('scheduled_date', todayStr)
+      .gt('balance', 0);
 
     // Cuotas vencidas pendientes (atrasos) — mismo cálculo que el cobrador
     let arrearsQuery = supabase
@@ -326,6 +328,20 @@ export class AdminService {
       .lt('scheduled_date', todayStr)
       .in('status', ['PENDIENTE', 'PARCIAL', 'ATRASADA'])
       .gt('balance', 0);
+
+    // ── Adelantadas para hoy ─────────────────────────────────────────────────
+    // Cuotas cuya fecha programada es hoy pero que ya fueron pagadas en días
+    // anteriores (paid_date < hoy). Estas son las que reducen el esperado.
+    let prepaidTodayQuery = supabase
+      .from('loan_installments')
+      .select(`
+        paid_date,
+        scheduled_amount,
+        loan:loans(daily_installment, client:clients(full_name))
+      `)
+      .eq('scheduled_date', todayStr)
+      .eq('status', 'PAGADA')
+      .lt('paid_date', todayStr);
     
     let alertsQuery = supabase.from('payments').select(`
       id,
@@ -345,8 +361,9 @@ export class AdminService {
       clientsQuery = clientsQuery.eq('route_id', routeId);
       loansQuery = loansQuery.eq('route_id', routeId);
       recaudoInstQuery = (recaudoInstQuery as any).eq('route_id', routeId);
-      expectedLoansQuery = expectedLoansQuery.eq('route_id', routeId);
+      todayInstsQuery = (todayInstsQuery as any).eq('route_id', routeId);
       arrearsQuery = (arrearsQuery as any).eq('route_id', routeId);
+      prepaidTodayQuery = (prepaidTodayQuery as any).eq('route_id', routeId);
       alertsQuery = alertsQuery.eq('route_id', routeId);
     }
 
@@ -357,8 +374,9 @@ export class AdminService {
       routesRes,
       loansRes,
       recaudoInstRes,
-      expectedLoansRes,
+      todayInstsRes,
       arrearsRes,
+      prepaidTodayRes,
       alertsRes
     ] = await Promise.all([
       clientsQuery,
@@ -366,8 +384,9 @@ export class AdminService {
       supabase.from('routes').select('*', { count: 'exact', head: true }).eq('active', true),
       loansQuery,
       recaudoInstQuery,
-      expectedLoansQuery,
+      todayInstsQuery,
       arrearsQuery,
+      prepaidTodayQuery,
       alertsQuery
     ]);
 
@@ -379,14 +398,18 @@ export class AdminService {
       return sum + Number(i.paid_amount);
     }, 0);
 
-    // Esperado: cuotas diarias de préstamos activos + saldo de atrasos vencidos
-    const activeLoanIds = new Set((expectedLoansRes.data || []).map((l: any) => l.id));
-    const recaudoEsperadoBase = (expectedLoansRes.data || []).reduce((sum: number, l: any) => sum + Number(l.daily_installment), 0);
-    const arrearsTotal = (arrearsRes.data || []).reduce((sum: number, i: any) => {
-      if (!activeLoanIds.has(i.loan_id)) return sum;
-      return sum + Number(i.balance);
-    }, 0);
-    const recaudoEsperado = recaudoEsperadoBase + arrearsTotal;
+    // Esperado: suma del balance de cuotas de hoy con saldo > 0 (descuenta adelantadas)
+    // + saldo de atrasos vencidos pendientes
+    const todayInstsTotal = (todayInstsRes.data || []).reduce((sum: number, i: any) => sum + Number(i.balance), 0);
+    const arrearsTotal = (arrearsRes.data || []).reduce((sum: number, i: any) => sum + Number(i.balance), 0);
+    const recaudoEsperado = todayInstsTotal + arrearsTotal;
+
+    // Adelantadas para hoy: cuotas de hoy ya pagadas en días anteriores
+    const prepaidTodayData = (prepaidTodayRes.data || []).map((i: any) => ({
+      clientName: (i.loan as any)?.client?.full_name || 'Cliente desconocido',
+      amount: Number((i.loan as any)?.daily_installment || i.scheduled_amount),
+      paidDate: i.paid_date as string,
+    }));
 
     const alertsData = alertsRes.data || [];
     const enrichedAlerts = alertsData
@@ -409,7 +432,11 @@ export class AdminService {
       esperado: recaudoEsperado,
       cobradores: usersRes.count || 0,
       rutas: routesRes.count || 0,
-      alerts: enrichedAlerts
+      alerts: enrichedAlerts,
+      prepaidToday: {
+        count: prepaidTodayData.length,
+        clients: prepaidTodayData,
+      },
     };
   }
 
