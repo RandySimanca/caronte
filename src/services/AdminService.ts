@@ -554,20 +554,32 @@ export class AdminService {
     const startOfDay = dateStr + 'T00:00:00.000Z';
     const endOfDay = dateStr + 'T23:59:59.999Z';
 
+    // Obtener los IDs de administradores para excluirlos de la liquidación del cobrador
+    const { data: roleData } = await supabase.from('roles').select('id').eq('name', 'ADMINISTRADOR').single();
+    let adminUserIds = new Set<string>();
+    if (roleData) {
+      const { data: adminUsers } = await supabase.from('users').select('id').eq('role_id', roleData.id);
+      adminUserIds = new Set(adminUsers?.map(u => u.id) || []);
+    }
+
     const [paymentsRes, expensesRes, loansRes, settingsRes, salarySettingRes, assignmentRes] = await Promise.all([
-      supabase.from('payments').select('total_amount').eq('route_id', routeId).gte('collected_at', startOfDay).lte('collected_at', endOfDay),
+      supabase.from('payments').select('total_amount, collector_id').eq('route_id', routeId).gte('collected_at', startOfDay).lte('collected_at', endOfDay),
       supabase.from('expenses').select('amount, category:expense_categories(name)').eq('route_id', routeId).eq('expense_date', dateStr),
-      supabase.from('loans').select('amount_delivered').eq('route_id', routeId).eq('disbursement_date', dateStr),
+      supabase.from('loans').select('amount_delivered, collector_id').eq('route_id', routeId).eq('disbursement_date', dateStr),
       supabase.from('system_settings').select('value').eq('key', 'default_viaticum').maybeSingle(),
       supabase.from('system_settings').select('value').eq('key', 'default_salary').maybeSingle(),
       // Obtener la asignación activa para leer overrides de viático y salario del cobrador
       supabase.from('route_assignments').select('viaticum, salary').eq('route_id', routeId).is('date_end', null).maybeSingle()
     ]);
 
-    const totalCobrado = paymentsRes.data?.reduce((sum, p: any) => sum + Number(p.total_amount), 0) || 0;
+    // Solo sumar pagos que no fueron hechos por el administrador
+    const totalCobrado = paymentsRes.data?.filter(p => !adminUserIds.has(p.collector_id)).reduce((sum, p: any) => sum + Number(p.total_amount), 0) || 0;
     const totalGastos = expensesRes.data?.reduce((sum, e: any) => sum + Number(e.amount), 0) || 0;
-    const prestamosNuevos = loansRes.data?.length || 0;
-    const totalPrestado = loansRes.data?.reduce((sum, l: any) => sum + Number(l.amount_delivered), 0) || 0;
+    
+    // Solo contar préstamos entregados por el cobrador
+    const collectorLoans = loansRes.data?.filter(l => !adminUserIds.has(l.collector_id)) || [];
+    const prestamosNuevos = collectorLoans.length;
+    const totalPrestado = collectorLoans.reduce((sum, l: any) => sum + Number(l.amount_delivered), 0);
 
     // Viático: primero el override del cobrador, luego el global
     const assignmentData = assignmentRes.data as any;
@@ -1005,4 +1017,272 @@ export class AdminService {
     return { viaticumRate, salaryMonthly };
   }
 
+  // ─── ADMIN TRANSACTIONS ──────────────────────────────────────────────
+
+  /**
+   * Permite al administrador crear un préstamo y asignarlo a cualquier ruta.
+   */
+  static async createAdminLoan(payload: {
+    clientId: string | null;
+    clientData?: { full_name: string; document_id: string; phone: string; address: string };
+    routeId: string;
+    adminId: string;
+    amountRequested: number;
+    termDays: 30 | 40 | 45 | 60;
+    sundaysPrepaidCount: number;
+    receiptFee: number;
+    wantsRaffle: boolean;
+  }) {
+    let clientId = payload.clientId;
+
+    // 1. Create client if needed
+    if (!clientId && payload.clientData) {
+      const { data: newClient, error: clientError } = await supabase
+        .from('clients')
+        .insert([{
+          full_name: payload.clientData.full_name,
+          document_id: payload.clientData.document_id,
+          phone: payload.clientData.phone || null,
+          address: payload.clientData.address || null,
+          status: 'ACTIVO',
+          route_id: payload.routeId,
+          created_by: payload.adminId
+        }] as any)
+        .select('id')
+        .single();
+      
+      if (clientError) throw clientError;
+      clientId = newClient.id;
+    }
+
+    if (!clientId) throw new Error("Cliente no especificado");
+
+    // 2. Calculations
+    const numAmount = payload.amountRequested;
+    const obligation = numAmount * 1.20;
+    const dailyQuota = payload.termDays > 0 ? obligation / payload.termDays : 0;
+    const totalSundaysDiscount = dailyQuota * payload.sundaysPrepaidCount;
+    const delivered = numAmount - totalSundaysDiscount - payload.receiptFee;
+    
+    // Raffle number
+    let raffleNumber = null;
+    if (payload.wantsRaffle) {
+      const { data: activeLoans } = await supabase.from('loans').select('raffle_number').eq('status', 'ACTIVO');
+      const usedNumbers = new Set(activeLoans?.map(l => l.raffle_number).filter(Boolean) || []);
+      let possibleNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+      for (let i = 0; i < 100; i++) {
+        if (!usedNumbers.has(possibleNum)) break;
+        possibleNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+      }
+      raffleNumber = possibleNum;
+    }
+
+    // Dates
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    
+    const addDays = (date: Date, days: number) => {
+      const result = new Date(date);
+      result.setDate(result.getDate() + days);
+      return result;
+    };
+    
+    const startDate = addDays(today, 1).toISOString().split('T')[0];
+    const endDate = addDays(today, payload.termDays).toISOString().split('T')[0];
+    const graceEndDate = addDays(today, payload.termDays + 7).toISOString().split('T')[0];
+
+    // 3. Insert Loan
+    const { data: newLoan, error: loanError } = await supabase
+      .from('loans')
+      .insert([{
+        client_id: clientId,
+        route_id: payload.routeId,
+        collector_id: payload.adminId, // Admin as collector
+        amount_requested: numAmount,
+        interest_rate: 0.2,
+        interest_amount: numAmount * 0.2,
+        initial_obligation: obligation,
+        term_days: payload.termDays,
+        daily_installment: dailyQuota,
+        frequency: 'DIARIO',
+        sundays_prepaid_count: payload.sundaysPrepaidCount,
+        sundays_prepaid_amount: totalSundaysDiscount,
+        receipt_fee: payload.receiptFee,
+        amount_delivered: delivered,
+        current_balance: obligation - totalSundaysDiscount,
+        disbursement_date: todayStr,
+        start_date: startDate,
+        end_date: endDate,
+        grace_end_date: graceEndDate,
+        status: 'ACTIVO',
+        wants_raffle: payload.wantsRaffle,
+        raffle_number: raffleNumber,
+        created_by: payload.adminId
+      }] as any)
+      .select('id')
+      .single();
+
+    if (loanError) throw loanError;
+
+    // 4. Generate Installments
+    const installments = [];
+    let sundaysUsed = 0;
+    for (let i = 0; i < payload.termDays; i++) {
+      const date = addDays(today, i + 1);
+      const dateStr = date.toISOString().split('T')[0];
+      const isSun = date.getDay() === 0;
+      const isPrepaid = isSun && sundaysUsed < payload.sundaysPrepaidCount;
+      if (isPrepaid) sundaysUsed++;
+
+      installments.push({
+        loan_id: newLoan.id,
+        installment_number: i + 1,
+        scheduled_date: dateStr,
+        scheduled_amount: dailyQuota,
+        paid_amount: isPrepaid ? dailyQuota : 0,
+        balance: isPrepaid ? 0 : dailyQuota,
+        status: isPrepaid ? 'PAGADA_ANTICIPADAMENTE' : 'PENDIENTE',
+        day_type: isSun ? 'DOMINGO' : 'NORMAL',
+        is_prepaid: isPrepaid,
+        is_sunday: isSun,
+        is_holiday: false,
+        paid_date: isPrepaid ? todayStr : null
+      });
+    }
+
+    const { error: instError } = await supabase.from('loan_installments').insert(installments as any);
+    if (instError) throw instError;
+
+    return newLoan;
+  }
+
+  /**
+   * Permite al administrador registrar un pago de cualquier préstamo en la oficina.
+   */
+  static async registerAdminPayment(payload: {
+    loanId: string;
+    routeId: string;
+    adminId: string;
+    totalAmount: number;
+    observation?: string;
+  }) {
+    // 1. Get loan to calculate distributions
+    const { data: loan, error: loanErr } = await supabase.from('loans').select('*').eq('id', payload.loanId).single();
+    if (loanErr) throw loanErr;
+
+    // 2. Insert Payment
+    const crypto = window.crypto;
+    const array = new Uint32Array(4);
+    crypto.getRandomValues(array);
+    const operationId = Array.from(array, dec => ('0' + dec.toString(16)).substr(-2)).join('');
+
+    const collectedAt = new Date().toISOString();
+
+    const { data: newPayment, error: paymentError } = await supabase
+      .from('payments')
+      .insert([{
+        operation_id: operationId,
+        device_id: 'admin_panel',
+        loan_id: payload.loanId,
+        collector_id: payload.adminId, // Admin
+        route_id: payload.routeId,
+        total_amount: payload.totalAmount,
+        day_installment_amount: 0,
+        arrears_amount: 0,
+        advance_amount: 0,
+        collector_observation: payload.observation || 'Cobro en oficina',
+        is_partial_payment: false,
+        is_advance_payment: false,
+        is_above_expected: false,
+        sync_status: 'synced',
+        collected_at: collectedAt,
+        synced_at: collectedAt,
+        created_by: payload.adminId
+      }] as any)
+      .select('id')
+      .single();
+
+    if (paymentError) throw paymentError;
+
+    // 3. Process distributions
+    let remainingToDistribute = payload.totalAmount;
+    
+    const { data: pendingInsts, error: instsErr } = await supabase
+      .from('loan_installments')
+      .select('*')
+      .eq('loan_id', payload.loanId)
+      .gt('balance', 0)
+      .order('scheduled_date', { ascending: true });
+    
+    if (instsErr) throw instsErr;
+
+    const allocations = [];
+    const updatedInsts = [];
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    for (const inst of (pendingInsts || [])) {
+      if (remainingToDistribute <= 0) break;
+
+      const balance = Number(inst.balance);
+      const payAmount = Math.min(balance, remainingToDistribute);
+      remainingToDistribute -= payAmount;
+
+      const newPaidAmount = Number(inst.paid_amount) + payAmount;
+      const newBalance = balance - payAmount;
+
+      let newStatus = inst.status;
+      if (newBalance === 0) {
+        if (inst.scheduled_date > todayStr) {
+          newStatus = 'PAGADA_ANTICIPADAMENTE';
+        } else {
+          newStatus = 'PAGADA';
+        }
+      } else if (newPaidAmount > 0) {
+        newStatus = 'PARCIAL';
+      }
+
+      updatedInsts.push({
+        id: inst.id,
+        paid_amount: newPaidAmount,
+        balance: newBalance,
+        status: newStatus,
+        paid_date: todayStr
+      });
+
+      let allocationType = 'DIA_ACTUAL';
+      if (inst.scheduled_date < todayStr) allocationType = 'ATRASO';
+      if (inst.scheduled_date > todayStr) allocationType = 'ADELANTO';
+      if (newStatus === 'PARCIAL') allocationType = 'PARCIAL';
+
+      allocations.push({
+        payment_id: newPayment.id,
+        installment_id: inst.id,
+        allocated_amount: payAmount,
+        allocation_type: allocationType
+      });
+    }
+
+    for (const uInst of updatedInsts) {
+      await supabase.from('loan_installments').update({
+        paid_amount: uInst.paid_amount,
+        balance: uInst.balance,
+        status: uInst.status,
+        paid_date: uInst.paid_date
+      }).eq('id', uInst.id);
+    }
+
+    if (allocations.length > 0) {
+      await supabase.from('payment_allocations').insert(allocations as any);
+    }
+
+    const newLoanBalance = Number(loan.current_balance) - payload.totalAmount;
+    await supabase.from('loans').update({
+      current_balance: Math.max(0, newLoanBalance),
+      status: newLoanBalance <= 0 ? 'CANCELADO' : loan.status
+    }).eq('id', payload.loanId);
+
+    return newPayment;
+  }
 }
+

@@ -4,6 +4,8 @@ import { AdminService } from '@/services/AdminService';
 import toast from 'react-hot-toast';
 import { PaymentCardModal } from './PaymentCardModal';
 import { EditClientModal } from './EditClientModal';
+import { AdminCreateLoanModal } from './AdminCreateLoanModal';
+import { AdminPaymentModal } from './AdminPaymentModal';
 
 interface ClientsModalProps {
   isOpen: boolean;
@@ -46,7 +48,7 @@ function PhotoViewer({ url, label }: { url: string; label: string }) {
 }
 
 // ---------- Expanded loan row ----------
-function LoanDetail({ loan, onOpenPaymentCard }: { loan: any, onOpenPaymentCard: (loanId: string) => void }) {
+function LoanDetail({ loan, onOpenPaymentCard, onAdminPayment }: { loan: any, onOpenPaymentCard: (loanId: string) => void, onAdminPayment: (loan: any) => void }) {
   const fmt = (n: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(n);
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-blue-50 border border-blue-100 rounded-xl text-sm">
@@ -110,7 +112,14 @@ function LoanDetail({ loan, onOpenPaymentCard }: { loan: any, onOpenPaymentCard:
         <p className="text-blue-500 font-bold text-xs uppercase mb-1">Deuda Actual</p>
         <p className="font-black text-red-600">{fmt(loan.current_balance || loan.initial_obligation || 0)}</p>
       </div>
-      <div className="col-span-2 sm:col-span-4 mt-2 flex justify-end">
+      <div className="col-span-2 sm:col-span-4 mt-2 flex justify-end gap-2">
+        <button
+          onClick={(e) => { e.stopPropagation(); onAdminPayment(loan); }}
+          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors"
+        >
+          <DollarSign className="w-4 h-4" />
+          Registrar Cobro (Oficina)
+        </button>
         <button
           onClick={(e) => { e.stopPropagation(); onOpenPaymentCard(loan.id); }}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors"
@@ -133,6 +142,8 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paymentCardLoanId, setPaymentCardLoanId] = useState<string | null>(null);
   const [editClient, setEditClient] = useState<any | null>(null);
+  const [adminPaymentLoan, setAdminPaymentLoan] = useState<any | null>(null);
+  const [isCreateLoanOpen, setIsCreateLoanOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -158,7 +169,7 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
     };
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
-  }, [isOpen, routeId, onlyToday, search, editClient]); // Added editClient dependency to refresh after edit
+  }, [isOpen, routeId, onlyToday, search, editClient, adminPaymentLoan, isCreateLoanOpen]); // Added dependencies to refresh data
 
   const handleDeleteClient = async (clientId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -216,9 +227,18 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors">
-            <X className="w-6 h-6" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setIsCreateLoanOpen(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Nuevo Préstamo
+            </button>
+            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors ml-2">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -386,7 +406,7 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
                       {isExpanded && activeLoan && (
                         <tr key={`${c.id}-detail`} className="bg-blue-50/40">
                           <td colSpan={9} className="px-6 pb-4 pt-1">
-                            <LoanDetail loan={activeLoan} onOpenPaymentCard={setPaymentCardLoanId} />
+                            <LoanDetail loan={activeLoan} onOpenPaymentCard={setPaymentCardLoanId} onAdminPayment={setAdminPaymentLoan} />
                           </td>
                         </tr>
                       )}
@@ -421,6 +441,20 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
       onUpdated={() => {
         setEditClient(null);
       }}
+    />
+
+    <AdminPaymentModal
+      isOpen={!!adminPaymentLoan}
+      onClose={() => setAdminPaymentLoan(null)}
+      loan={adminPaymentLoan}
+      onSuccess={() => {}}
+    />
+
+    <AdminCreateLoanModal
+      isOpen={isCreateLoanOpen}
+      onClose={() => setIsCreateLoanOpen(false)}
+      routeStates={routeStates}
+      onSuccess={() => {}}
     />
     </>
   );
