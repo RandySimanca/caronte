@@ -171,7 +171,7 @@ export class AdminService {
    */
   static async assignRoute(
     routeId: string,
-    collectorId: string,
+    collectorId: string | null,
     assignedBy: string,
     viaticum?: number | null,
     salary?: number | null
@@ -182,6 +182,9 @@ export class AdminService {
       .update({ date_end: new Date().toISOString() })
       .eq('route_id', routeId)
       .is('date_end', null);
+
+    // Si collectorId está vacío, significa que solo querían quitar la asignación (pausar la ruta)
+    if (!collectorId) return null;
 
     // 2. Crear nueva asignación
     const { data, error } = await supabase

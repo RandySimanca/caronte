@@ -24,23 +24,24 @@ export function AssignRouteModal({ isOpen, onClose, onSuccess, route }: AssignRo
 
   useEffect(() => {
     if (isOpen) {
-      setViaticoOverride('');
-      setSalaryOverride('');
+      setViaticoOverride(route?.activeAssignment?.viaticum ? String(route.activeAssignment.viaticum) : '');
+      setSalaryOverride(route?.activeAssignment?.salary ? String(route.activeAssignment.salary) : '');
+      setSelectedCollectorId(route?.activeAssignment?.collector_id || '');
+      
       AdminService.getActiveCollectors()
         .then(data => {
           setCollectors(data);
-          if (data.length > 0) setSelectedCollectorId(data[0].id);
         })
         .catch(err => {
           console.error(err);
           toast.error('Error cargando cobradores');
         });
     }
-  }, [isOpen]);
+  }, [isOpen, route]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!route || !selectedCollectorId || !currentUser) {
+    if (!route || !currentUser) {
       toast.error('Faltan datos para realizar la asignación.');
       return;
     }
@@ -90,21 +91,17 @@ export function AssignRouteModal({ isOpen, onClose, onSuccess, route }: AssignRo
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Seleccionar Cobrador *</label>
-            {collectors.length === 0 ? (
-              <p className="text-sm text-slate-500 py-2">No hay cobradores activos disponibles.</p>
-            ) : (
-              <select
-                required
-                value={selectedCollectorId}
-                onChange={(e) => setSelectedCollectorId(e.target.value)}
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all text-slate-800 font-medium"
-              >
-                {collectors.map(c => (
-                  <option key={c.id} value={c.id}>{c.full_name}</option>
-                ))}
-              </select>
-            )}
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Cobrador Asignado</label>
+            <select
+              value={selectedCollectorId}
+              onChange={(e) => setSelectedCollectorId(e.target.value)}
+              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all text-slate-800 font-medium"
+            >
+              <option value="">-- Pausar ruta (Sin cobrador) --</option>
+              {collectors.map(c => (
+                <option key={c.id} value={c.id}>{c.full_name}</option>
+              ))}
+            </select>
           </div>
 
           {/* Costos de personal por cobrador */}
@@ -159,11 +156,15 @@ export function AssignRouteModal({ isOpen, onClose, onSuccess, route }: AssignRo
             </button>
             <button
               type="submit"
-              disabled={isLoading || collectors.length === 0}
-              className="flex-1 py-3 px-4 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl shadow-lg shadow-brand-500/30 transition-all disabled:opacity-50 flex items-center justify-center"
+              disabled={isLoading}
+              className={`flex-1 py-3 px-4 font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center ${
+                selectedCollectorId === '' ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-500/30' : 'bg-brand-600 hover:bg-brand-700 text-white shadow-brand-500/30'
+              }`}
             >
               {isLoading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : selectedCollectorId === '' ? (
+                'Pausar Ruta'
               ) : (
                 'Confirmar Asignación'
               )}
