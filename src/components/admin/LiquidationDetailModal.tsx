@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, CheckCircle, Calculator, TrendingDown, TrendingUp, HandCoins } from 'lucide-react';
+import { X, CheckCircle, Calculator, TrendingDown, TrendingUp, HandCoins, UserCheck, Info } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { useAuthStore } from '@/stores/authStore';
 import { formatNumberInput, parseNumberInput } from '@/lib/utils';
@@ -106,7 +106,8 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
           { Concepto: 'Gastos Operativos', Valor: -detail.totalGastos },
           { Concepto: 'Viático Asignado', Valor: -detail.viaticoDia },
           { Concepto: 'Préstamos Nuevos', Valor: -detail.totalPrestado },
-          { Concepto: 'Total A Entregar', Valor: detail.totalEntregar + baseAmount }
+          { Concepto: 'Total A Entregar', Valor: detail.totalEntregar + baseAmount },
+          { Concepto: 'Salario Mensual Cobrador (Referencia)', Valor: detail.salarioCobrador || 0 }
         ]},
         { sheetName: 'Detalle Gastos', data: detail.detalleGastos.map((g: any) => ({
           Categoria: g.category?.name || 'Otros',
@@ -210,6 +211,38 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                     {formatCurrency(detail.totalEntregar + baseAmount)}
                   </span>
                 </div>
+              </div>
+
+              {/* Costos de Personal — informativo */}
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2 text-amber-700 font-bold text-sm">
+                  <UserCheck className="w-4 h-4" />
+                  Costos de Personal (referencia)
+                  <div className="ml-auto group relative">
+                    <Info className="w-4 h-4 text-amber-400 cursor-help" />
+                    <div className="hidden group-hover:block absolute right-0 top-5 w-56 bg-slate-800 text-white text-xs rounded-xl p-3 z-10 shadow-xl">
+                      Estos costos son informativos. El salario se paga de forma separada y no se descuenta del monto diario a entregar.
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-white rounded-xl p-3 border border-amber-100">
+                    <p className="text-xs text-slate-500 mb-1">Viático del día</p>
+                    <p className="text-base font-black text-slate-800">{formatCurrency(detail.viaticoDia)}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Descargado del recaudo</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-3 border border-amber-100">
+                    <p className="text-xs text-slate-500 mb-1">Salario mensual</p>
+                    <p className="text-base font-black text-amber-600">{formatCurrency(detail.salarioCobrador || 0)}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Pago por fuera</p>
+                  </div>
+                </div>
+                {(detail.salarioCobrador || 0) > 0 && (
+                  <p className="text-xs text-amber-600 font-medium">
+                    Costo total de personal del día: {formatCurrency(detail.viaticoDia + (detail.salarioCobrador || 0) / 30)}
+                    <span className="text-amber-400 font-normal"> (viático + salario/30)</span>
+                  </p>
+                )}
               </div>
 
               {route.estado === 'Liquidado' ? (

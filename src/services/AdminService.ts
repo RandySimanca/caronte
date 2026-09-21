@@ -167,8 +167,15 @@ export class AdminService {
   /**
    * Asigna un cobrador a una ruta.
    * Si ya había uno activo, cierra esa asignación.
+   * viaticum y salary son opcionales: si se omiten (null) se usan los valores globales del sistema.
    */
-  static async assignRoute(routeId: string, collectorId: string, assignedBy: string) {
+  static async assignRoute(
+    routeId: string,
+    collectorId: string,
+    assignedBy: string,
+    viaticum?: number | null,
+    salary?: number | null
+  ) {
     // 1. Cerrar asignación actual si existe
     await supabase
       .from('route_assignments')
@@ -183,7 +190,9 @@ export class AdminService {
         route_id: routeId,
         collector_id: collectorId,
         date_start: new Date().toISOString(),
-        assigned_by: assignedBy
+        assigned_by: assignedBy,
+        viaticum: viaticum ?? null,
+        salary: salary ?? null
       } as any])
       .select()
       .single();
@@ -542,23 +551,39 @@ export class AdminService {
     const startOfDay = dateStr + 'T00:00:00.000Z';
     const endOfDay = dateStr + 'T23:59:59.999Z';
 
-    const [paymentsRes, expensesRes, loansRes, settingsRes] = await Promise.all([
+    const [paymentsRes, expensesRes, loansRes, settingsRes, salarySettingRes, assignmentRes] = await Promise.all([
       supabase.from('payments').select('total_amount').eq('route_id', routeId).gte('collected_at', startOfDay).lte('collected_at', endOfDay),
       supabase.from('expenses').select('amount, category:expense_categories(name)').eq('route_id', routeId).eq('expense_date', dateStr),
       supabase.from('loans').select('amount_delivered').eq('route_id', routeId).eq('disbursement_date', dateStr),
-      supabase.from('system_settings').select('value').eq('key', 'default_viaticum').maybeSingle()
+      supabase.from('system_settings').select('value').eq('key', 'default_viaticum').maybeSingle(),
+      supabase.from('system_settings').select('value').eq('key', 'default_salary').maybeSingle(),
+      // Obtener la asignación activa para leer overrides de viático y salario del cobrador
+      supabase.from('route_assignments').select('viaticum, salary').eq('route_id', routeId).is('date_end', null).maybeSingle()
     ]);
 
     const totalCobrado = paymentsRes.data?.reduce((sum, p: any) => sum + Number(p.total_amount), 0) || 0;
     const totalGastos = expensesRes.data?.reduce((sum, e: any) => sum + Number(e.amount), 0) || 0;
     const prestamosNuevos = loansRes.data?.length || 0;
     const totalPrestado = loansRes.data?.reduce((sum, l: any) => sum + Number(l.amount_delivered), 0) || 0;
-    
+
+    // Viático: primero el override del cobrador, luego el global
+    const assignmentData = assignmentRes.data as any;
     let viaticoDia = 0;
-    if (settingsRes.data && (settingsRes.data as any).value) {
+    if (assignmentData?.viaticum != null) {
+      viaticoDia = Number(assignmentData.viaticum);
+    } else if (settingsRes.data && (settingsRes.data as any).value) {
       viaticoDia = Number((settingsRes.data as any).value);
     }
 
+    // Salario: primero el override del cobrador, luego el global
+    let salarioCobrador = 0;
+    if (assignmentData?.salary != null) {
+      salarioCobrador = Number(assignmentData.salary);
+    } else if (salarySettingRes.data && (salarySettingRes.data as any).value) {
+      salarioCobrador = Number((salarySettingRes.data as any).value);
+    }
+
+    // El salario es un costo informativo (no se descuenta del monto a entregar diario)
     const totalEntregar = totalCobrado - totalGastos - viaticoDia - totalPrestado;
 
     return {
@@ -566,6 +591,7 @@ export class AdminService {
       totalGastos,
       detalleGastos: expensesRes.data || [],
       viaticoDia,
+      salarioCobrador,
       prestamosNuevos,
       totalPrestado,
       totalEntregar
@@ -940,6 +966,29 @@ export class AdminService {
     }));
     
     return transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }
+
+  /**
+   * Obtiene las tasas de viático y salario por defecto del sistema
+   * para el cálculo de costos de personal en reportes.
+   */
+  static async getPersonnelCostSettings(): Promise<{ viaticumRate: number; salaryMonthly: number }> {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('key, value')
+      .in('key', ['default_viaticum', 'default_salary']);
+
+    if (error) throw error;
+
+    let viaticumRate = 0;
+    let salaryMonthly = 0;
+
+    (data || []).forEach((s: any) => {
+      if (s.key === 'default_viaticum') viaticumRate = Number(s.value) || 0;
+      if (s.key === 'default_salary') salaryMonthly = Number(s.value) || 0;
+    });
+
+    return { viaticumRate, salaryMonthly };
   }
 
 }

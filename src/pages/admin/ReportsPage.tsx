@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { BarChart3, Calendar, Filter, TrendingDown, DollarSign, Activity, FileDown, FileSpreadsheet, Briefcase, BookOpen, Download } from 'lucide-react';
+import { BarChart3, Calendar, Filter, TrendingDown, DollarSign, Activity, FileDown, FileSpreadsheet, Briefcase, BookOpen, Download, UserCheck, Car } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import toast from 'react-hot-toast';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
@@ -26,6 +26,8 @@ export function ReportsPage() {
   const [ledgerData, setLedgerData] = useState<any[]>([]);
   
   const [routeStates, setRouteStates] = useState<any[]>([]);
+  // Costos de personal: viático diario y salario mensual
+  const [personnelCosts, setPersonnelCosts] = useState<{ viaticumRate: number; salaryMonthly: number }>({ viaticumRate: 0, salaryMonthly: 0 });
   
   // Filters
   const [selectedRoute, setSelectedRoute] = useState<string>('all');
@@ -36,6 +38,10 @@ export function ReportsPage() {
     AdminService.getRouteStates()
       .then(setRouteStates)
       .catch(() => toast.error('Error cargando rutas'));
+    // Cargar viático y salario globales
+    AdminService.getPersonnelCostSettings()
+      .then(setPersonnelCosts)
+      .catch(() => {}); // no bloquea si falla
   }, []);
 
   const fetchReports = async () => {
@@ -78,6 +84,19 @@ export function ReportsPage() {
     const interesProyectado = data.loans.reduce((sum, l) => sum + Number(l.interest_amount), 0);
     return { totalRecaudo, totalGastos, totalPrestado, gananciaProyectada: interesProyectado };
   }, [data]);
+
+  // ─── COSTOS DE PERSONAL DEL PERÍODO ───
+  const { totalViaticos, totalSalario } = useMemo(() => {
+    // Días hábiles del período (simple: días calendario, se puede afinar con festivos)
+    const start = parseISO(startDate);
+    const end = parseISO(endDate);
+    const diasPeriodo = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1);
+    // Viático: si hay ruta seleccionada mostramos 1 cobrador, si es 'all' multiplicamos por el número de rutas activas
+    const numCobradores = selectedRoute !== 'all' ? 1 : Math.max(1, routeStates.filter(r => r.cobradorId).length);
+    const totalViaticos = personnelCosts.viaticumRate * diasPeriodo * numCobradores;
+    const totalSalario = personnelCosts.salaryMonthly * numCobradores * (diasPeriodo / 30);
+    return { totalViaticos, totalSalario };
+  }, [startDate, endDate, selectedRoute, routeStates, personnelCosts]);
 
   const dailyRecaudoData = useMemo(() => {
     const grouped: Record<string, number> = {};
@@ -187,8 +206,10 @@ export function ReportsPage() {
           { sheetName: 'Resumen Financiero', data: [
             { Concepto: 'Recaudo Total', Monto: totalRecaudo },
             { Concepto: 'Gastos Operativos', Monto: totalGastos },
+            { Concepto: 'Viáticos del Período', Monto: totalViaticos },
+            { Concepto: 'Salario Estimado del Período', Monto: totalSalario },
             { Concepto: 'Préstamos Entregados', Monto: totalPrestado },
-            { Concepto: 'Flujo Neto', Monto: totalRecaudo - totalGastos - totalPrestado },
+            { Concepto: 'Flujo Neto', Monto: totalRecaudo - totalGastos - totalViaticos - totalSalario - totalPrestado },
             { Concepto: 'Utilidad Proyectada', Monto: gananciaProyectada },
           ]},
           { sheetName: 'Gastos por Categoría', data: expensesByCategory.map(e => ({ Categoría: e.name, Monto: e.value })) },
@@ -336,8 +357,8 @@ export function ReportsPage() {
           {activeTab === 'RESUMEN' && (
             <div className="space-y-8 animate-in fade-in duration-300">
               {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group hover:border-emerald-200 transition-colors">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+                <div className="xl:col-span-2 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group hover:border-emerald-200 transition-colors">
                   <div className="absolute -right-4 -top-4 w-24 h-24 bg-emerald-50 rounded-full blur-2xl group-hover:bg-emerald-100 transition-colors"></div>
                   <div className="flex items-center gap-2 text-emerald-600 font-bold mb-4 relative z-10">
                     <div className="p-2 bg-emerald-100 rounded-lg"><Download className="w-5 h-5" /></div>
@@ -347,7 +368,7 @@ export function ReportsPage() {
                   <p className="text-xs text-slate-400 mt-2 relative z-10">En el período seleccionado</p>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group hover:border-red-200 transition-colors">
+                <div className="xl:col-span-2 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group hover:border-red-200 transition-colors">
                   <div className="absolute -right-4 -top-4 w-24 h-24 bg-red-50 rounded-full blur-2xl group-hover:bg-red-100 transition-colors"></div>
                   <div className="flex items-center gap-2 text-red-600 font-bold mb-4 relative z-10">
                     <div className="p-2 bg-red-100 rounded-lg"><TrendingDown className="w-5 h-5" /></div>
@@ -357,7 +378,7 @@ export function ReportsPage() {
                   <p className="text-xs text-slate-400 mt-2 relative z-10">En el período seleccionado</p>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group hover:border-blue-200 transition-colors">
+                <div className="xl:col-span-2 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group hover:border-blue-200 transition-colors">
                   <div className="absolute -right-4 -top-4 w-24 h-24 bg-blue-50 rounded-full blur-2xl group-hover:bg-blue-100 transition-colors"></div>
                   <div className="flex items-center gap-2 text-blue-600 font-bold mb-4 relative z-10">
                     <div className="p-2 bg-blue-100 rounded-lg"><DollarSign className="w-5 h-5" /></div>
@@ -367,7 +388,27 @@ export function ReportsPage() {
                   <p className="text-xs text-slate-400 mt-2 relative z-10">{data.loans.length} nuevos préstamos</p>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group hover:border-brand-200 transition-colors">
+                <div className="xl:col-span-2 bg-amber-50 p-6 rounded-2xl border border-amber-200 shadow-sm relative overflow-hidden group hover:border-amber-300 transition-colors">
+                  <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-100 rounded-full blur-2xl transition-colors"></div>
+                  <div className="flex items-center gap-2 text-amber-700 font-bold mb-4 relative z-10">
+                    <div className="p-2 bg-amber-200 rounded-lg"><Car className="w-5 h-5" /></div>
+                    Viáticos Período
+                  </div>
+                  <div className="text-3xl font-black text-amber-800 relative z-10">{formatCurrency(totalViaticos)}</div>
+                  <p className="text-xs text-amber-600 mt-2 relative z-10">Costo diario × días</p>
+                </div>
+
+                <div className="xl:col-span-2 bg-purple-50 p-6 rounded-2xl border border-purple-200 shadow-sm relative overflow-hidden group hover:border-purple-300 transition-colors">
+                  <div className="absolute -right-4 -top-4 w-24 h-24 bg-purple-100 rounded-full blur-2xl transition-colors"></div>
+                  <div className="flex items-center gap-2 text-purple-700 font-bold mb-4 relative z-10">
+                    <div className="p-2 bg-purple-200 rounded-lg"><UserCheck className="w-5 h-5" /></div>
+                    Salario Período
+                  </div>
+                  <div className="text-3xl font-black text-purple-800 relative z-10">{formatCurrency(totalSalario)}</div>
+                  <p className="text-xs text-purple-600 mt-2 relative z-10">Proporcional al período</p>
+                </div>
+
+                <div className="xl:col-span-2 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group hover:border-brand-200 transition-colors">
                   <div className="absolute -right-4 -top-4 w-24 h-24 bg-brand-50 rounded-full blur-2xl group-hover:bg-brand-100 transition-colors"></div>
                   <div className="flex items-center gap-2 text-brand-600 font-bold mb-4 relative z-10">
                     <div className="p-2 bg-brand-100 rounded-lg"><Activity className="w-5 h-5" /></div>
@@ -439,6 +480,22 @@ export function ReportsPage() {
                         <td className="py-3 px-4 font-medium">Gastos Operativos</td>
                         <td className="py-3 px-4 text-right font-bold text-red-600">- {formatCurrency(totalGastos)}</td>
                       </tr>
+                      <tr className="hover:bg-amber-50">
+                        <td className="py-3 px-4 font-medium flex items-center gap-2">
+                          <Car className="w-4 h-4 text-amber-500" />
+                          Viáticos del Período
+                          <span className="text-xs text-slate-400 font-normal">({formatCurrency(personnelCosts.viaticumRate)}/día)</span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold text-amber-600">- {formatCurrency(totalViaticos)}</td>
+                      </tr>
+                      <tr className="hover:bg-purple-50">
+                        <td className="py-3 px-4 font-medium flex items-center gap-2">
+                          <UserCheck className="w-4 h-4 text-purple-500" />
+                          Salario Estimado del Período
+                          <span className="text-xs text-slate-400 font-normal">({formatCurrency(personnelCosts.salaryMonthly)}/mes)</span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold text-purple-600">- {formatCurrency(totalSalario)}</td>
+                      </tr>
                       <tr className="hover:bg-slate-50">
                         <td className="py-3 px-4 font-medium">Préstamos Nuevos (Capital)</td>
                         <td className="py-3 px-4 text-right font-bold text-blue-600">- {formatCurrency(totalPrestado)}</td>
@@ -446,13 +503,18 @@ export function ReportsPage() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-slate-200 bg-slate-50">
-                        <td className="py-4 px-4 font-black text-slate-800">Flujo Neto del Período</td>
-                        <td className={`py-4 px-4 text-right font-black text-lg ${(totalRecaudo - totalGastos - totalPrestado) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                          {formatCurrency(totalRecaudo - totalGastos - totalPrestado)}
+                        <td className="py-4 px-4 font-black text-slate-800">Flujo Neto Real del Período</td>
+                        <td className={`py-4 px-4 text-right font-black text-lg ${(totalRecaudo - totalGastos - totalViaticos - totalSalario - totalPrestado) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {formatCurrency(totalRecaudo - totalGastos - totalViaticos - totalSalario - totalPrestado)}
                         </td>
                       </tr>
                     </tfoot>
                   </table>
+                  {(personnelCosts.viaticumRate === 0 && personnelCosts.salaryMonthly === 0) && (
+                    <p className="text-xs text-amber-600 mt-3 flex items-center gap-1">
+                      ⚠️ Los viáticos y salario muestran $0. Configura los valores en <strong>Configuraciones → Parámetros</strong>.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { X, UserCheck } from 'lucide-react';
+import { X, UserCheck, Info } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { useAuthStore } from '@/stores/authStore';
+import { formatNumberInput, parseNumberInput } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
 interface AssignRouteModalProps {
@@ -15,11 +16,16 @@ export function AssignRouteModal({ isOpen, onClose, onSuccess, route }: AssignRo
   const [isLoading, setIsLoading] = useState(false);
   const [collectors, setCollectors] = useState<any[]>([]);
   const [selectedCollectorId, setSelectedCollectorId] = useState('');
-  
+  // Viático y salario opcionales por cobrador (vacío = usar valor global del sistema)
+  const [viaticoOverride, setViaticoOverride] = useState('');
+  const [salaryOverride, setSalaryOverride] = useState('');
+
   const currentUser = useAuthStore(state => state.user);
 
   useEffect(() => {
     if (isOpen) {
+      setViaticoOverride('');
+      setSalaryOverride('');
       AdminService.getActiveCollectors()
         .then(data => {
           setCollectors(data);
@@ -39,9 +45,12 @@ export function AssignRouteModal({ isOpen, onClose, onSuccess, route }: AssignRo
       return;
     }
 
+    const viaticum = viaticoOverride !== '' ? Number(parseNumberInput(viaticoOverride)) : null;
+    const salary = salaryOverride !== '' ? Number(parseNumberInput(salaryOverride)) : null;
+
     setIsLoading(true);
     try {
-      await AdminService.assignRoute(route.id, selectedCollectorId, currentUser.id);
+      await AdminService.assignRoute(route.id, selectedCollectorId, currentUser.id, viaticum, salary);
       toast.success('Ruta asignada exitosamente');
       onSuccess();
       onClose();
@@ -57,7 +66,7 @@ export function AssignRouteModal({ isOpen, onClose, onSuccess, route }: AssignRo
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-0">
       <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      
+
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden transform transition-all">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-3">
@@ -98,7 +107,48 @@ export function AssignRouteModal({ isOpen, onClose, onSuccess, route }: AssignRo
             )}
           </div>
 
-          <div className="pt-4 flex gap-3">
+          {/* Costos de personal por cobrador */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center gap-2 text-amber-700 text-sm font-bold">
+              <Info className="w-4 h-4" />
+              Costos del cobrador (opcional)
+            </div>
+            <p className="text-xs text-amber-600">
+              Déjalo en blanco para usar los valores globales de Configuraciones.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Viático diario</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={viaticoOverride ? formatNumberInput(viaticoOverride) : ''}
+                    onChange={(e) => setViaticoOverride(parseNumberInput(e.target.value))}
+                    className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-brand-500 outline-none"
+                    placeholder="Global"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Salario mensual</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={salaryOverride ? formatNumberInput(salaryOverride) : ''}
+                    onChange={(e) => setSalaryOverride(parseNumberInput(e.target.value))}
+                    className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-brand-500 outline-none"
+                    placeholder="Global"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-2 flex gap-3">
             <button
               type="button"
               onClick={onClose}
