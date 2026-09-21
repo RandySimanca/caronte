@@ -55,14 +55,11 @@ export function DailyClosingPage() {
       const todayArrears = arrearsInsts.reduce((s, i) => s + i.balance, 0);
       exp += todayQuota + todayArrears;
 
-      // Cobrado hoy (misma logica que el dashboard del cobrador):
-      // 1. Cuota del dia: paid_amount con scheduled_date=hoy
-      // 2. Adelantos reales: cuotas futuras con paid_date=hoy y is_prepaid=false
+      // Cobrado hoy: cualquier cuota (normal, atrasada o adelantada) cuyo
+      // paid_date sea hoy y no sea un domingo pre-pagado automáticamente.
+      // Esto incluye días atrasados pagados hoy (scheduled_date < today).
       const collectedToday = loanInsts
-        .filter(i =>
-          (i.scheduled_date === today && i.paid_amount > 0) ||
-          (i.scheduled_date > today && i.paid_date === today && !i.is_prepaid)
-        )
+        .filter(i => i.paid_date === today && i.paid_amount > 0 && !i.is_prepaid)
         .reduce((s, i) => s + i.paid_amount, 0);
       col += collectedToday;
     }

@@ -1,4 +1,6 @@
 import { X, Bell, TrendingUp, AlertCircle, Clock, MessageSquare } from 'lucide-react';
+import { useState } from 'react';
+import { PaymentCardModal } from './PaymentCardModal';
 
 interface ObservationsModalProps {
   isOpen: boolean;
@@ -7,6 +9,8 @@ interface ObservationsModalProps {
 }
 
 export function ObservationsModal({ isOpen, onClose, alerts = [] }: ObservationsModalProps) {
+  const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
+
   if (!isOpen) return null;
 
   const withObs = alerts.filter((a: any) => a.observation);
@@ -21,6 +25,7 @@ export function ObservationsModal({ isOpen, onClose, alerts = [] }: Observations
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-8 pb-4 px-4">
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
       
@@ -69,7 +74,8 @@ export function ObservationsModal({ isOpen, onClose, alerts = [] }: Observations
               {alerts.map((alert: any) => (
                 <div
                   key={alert.id}
-                  className={`bg-white rounded-2xl border-2 shadow-sm p-5 flex flex-col gap-3 hover:shadow-md transition-all relative overflow-hidden ${
+                  onClick={() => setSelectedLoanId(alert.loanId)}
+                  className={`cursor-pointer bg-white rounded-2xl border-2 shadow-sm p-5 flex flex-col gap-3 hover:shadow-md transition-all relative overflow-hidden ${
                     alert.observation ? 'border-emerald-200 hover:border-emerald-400' : 'border-rose-200 hover:border-rose-400'
                   }`}
                 >
@@ -78,7 +84,7 @@ export function ObservationsModal({ isOpen, onClose, alerts = [] }: Observations
                   <div className="pl-2">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="font-bold text-slate-800 leading-tight">{alert.clientName}</p>
+                        <p className="font-bold text-slate-800 leading-tight hover:text-emerald-600 transition-colors">{alert.clientName}</p>
                         <p className="text-xs text-slate-500 mt-0.5">Cobrador: <span className="font-semibold text-slate-700">{alert.collectorName}</span></p>
                       </div>
                       {alert.is_excess ? (
@@ -132,5 +138,13 @@ export function ObservationsModal({ isOpen, onClose, alerts = [] }: Observations
         </div>
       </div>
     </div>
+    {selectedLoanId && (
+      <PaymentCardModal
+        isOpen={!!selectedLoanId}
+        onClose={() => setSelectedLoanId(null)}
+        loanId={selectedLoanId}
+      />
+    )}
+    </>
   );
 }

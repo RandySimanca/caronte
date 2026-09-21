@@ -307,7 +307,7 @@ export class AdminService {
     // hoy + adelantos reales de cuotas futuras (excluyendo domingos pre-pagados).
     let recaudoInstQuery = supabase
       .from('loan_installments')
-      .select('paid_amount, scheduled_date, is_prepaid')
+      .select('paid_amount, scheduled_date, is_prepaid, loan:loans!inner(route_id)')
       .eq('paid_date', todayStr)
       .gt('paid_amount', 0);
 
@@ -317,14 +317,14 @@ export class AdminService {
     // y no suma al esperado → el cobrador no necesita cobrarle.
     let todayInstsQuery = supabase
       .from('loan_installments')
-      .select('balance')
+      .select('balance, loan:loans!inner(route_id)')
       .eq('scheduled_date', todayStr)
       .gt('balance', 0);
 
     // Cuotas vencidas pendientes (atrasos) — mismo cálculo que el cobrador
     let arrearsQuery = supabase
       .from('loan_installments')
-      .select('balance, loan_id')
+      .select('balance, loan_id, loan:loans!inner(route_id)')
       .lt('scheduled_date', todayStr)
       .in('status', ['PENDIENTE', 'PARCIAL', 'ATRASADA'])
       .gt('balance', 0);
@@ -335,9 +335,10 @@ export class AdminService {
     let prepaidTodayQuery = supabase
       .from('loan_installments')
       .select(`
+        loan_id,
         paid_date,
         scheduled_amount,
-        loan:loans(daily_installment, client:clients(full_name))
+        loan:loans!inner(route_id, daily_installment, client:clients(full_name))
       `)
       .eq('scheduled_date', todayStr)
       .eq('status', 'PAGADA')
@@ -345,13 +346,14 @@ export class AdminService {
     
     let alertsQuery = supabase.from('payments').select(`
       id,
+      loan_id,
       total_amount,
       advance_amount,
       collected_at,
       collector_observation,
       is_above_expected,
       collector:users!payments_collector_id_fkey(full_name),
-      loan:loans(client:clients(full_name))
+      loan:loans!inner(route_id, client:clients(full_name))
     `)
     .gte('collected_at', startOfDay)
     .order('collected_at', { ascending: false });
@@ -360,11 +362,11 @@ export class AdminService {
     if (routeId && routeId !== 'all') {
       clientsQuery = clientsQuery.eq('route_id', routeId);
       loansQuery = loansQuery.eq('route_id', routeId);
-      recaudoInstQuery = (recaudoInstQuery as any).eq('route_id', routeId);
-      todayInstsQuery = (todayInstsQuery as any).eq('route_id', routeId);
-      arrearsQuery = (arrearsQuery as any).eq('route_id', routeId);
-      prepaidTodayQuery = (prepaidTodayQuery as any).eq('route_id', routeId);
-      alertsQuery = alertsQuery.eq('route_id', routeId);
+      recaudoInstQuery = (recaudoInstQuery as any).eq('loan.route_id', routeId);
+      todayInstsQuery = (todayInstsQuery as any).eq('loan.route_id', routeId);
+      arrearsQuery = (arrearsQuery as any).eq('loan.route_id', routeId);
+      prepaidTodayQuery = (prepaidTodayQuery as any).eq('loan.route_id', routeId);
+      alertsQuery = (alertsQuery as any).eq('loan.route_id', routeId);
     }
 
     // 4. Parallel fetch for exact counts and sums
@@ -406,6 +408,7 @@ export class AdminService {
 
     // Adelantadas para hoy: cuotas de hoy ya pagadas en días anteriores
     const prepaidTodayData = (prepaidTodayRes.data || []).map((i: any) => ({
+      loanId: i.loan_id,
       clientName: (i.loan as any)?.client?.full_name || 'Cliente desconocido',
       amount: Number((i.loan as any)?.daily_installment || i.scheduled_amount),
       paidDate: i.paid_date as string,
@@ -416,6 +419,7 @@ export class AdminService {
       .filter((alert: any) => alert.is_above_expected || alert.advance_amount > 0 || (alert.collector_observation && alert.collector_observation.trim() !== ''))
       .map((alert: any) => ({
         id: alert.id,
+        loanId: alert.loan_id,
         amount: Number(alert.total_amount),
         advance: Number(alert.advance_amount),
         time: alert.collected_at,

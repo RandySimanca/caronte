@@ -7,12 +7,12 @@ import { SystemSettingsTab } from '@/components/admin/settings/SystemSettingsTab
 type Tab = 'holidays' | 'categories' | 'system';
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('holidays');
+  const [activeTab, setActiveTab] = useState<Tab>('system');
 
   const tabs = [
+    { id: 'system', label: 'Parámetros', icon: SlidersHorizontal },
     { id: 'holidays', label: 'Feriados', icon: Calendar },
     { id: 'categories', label: 'Cat. Gastos', icon: Tags },
-    { id: 'system', label: 'Parámetros', icon: SlidersHorizontal },
   ] as const;
 
   return (

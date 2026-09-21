@@ -160,52 +160,107 @@ export function AdminDashboard() {
         </div>
       </div>
 
-      {/* Cuotas adelantadas para hoy */}
-      {(stats?.prepaidToday?.count ?? 0) > 0 && (
-        <button
-          onClick={() => setIsPrepaidModalOpen(true)}
-          className="w-full bg-white rounded-2xl border-2 border-indigo-200 shadow-sm p-5 hover:shadow-md hover:border-indigo-400 transition-all text-left flex items-center justify-between group"
-        >
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center relative shrink-0">
-              <CalendarCheck className="w-6 h-6 text-indigo-600" />
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-indigo-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-sm">
-                {stats!.prepaidToday!.count}
-              </span>
+      {/* ─── ACTION MODULES GRID ─── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
+        
+        {/* 1. Cuotas adelantadas para hoy */}
+        {(stats?.prepaidToday?.count ?? 0) > 0 && (
+          <button
+            onClick={() => setIsPrepaidModalOpen(true)}
+            className="bg-white rounded-3xl border border-indigo-100 shadow-sm p-6 hover:shadow-md hover:border-indigo-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
+          >
+            <div className="flex items-start justify-between w-full mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center relative shadow-inner">
+                <CalendarCheck className="w-7 h-7 text-indigo-600" />
+                <span className="absolute -top-2 -right-2 w-7 h-7 bg-indigo-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md">
+                  {stats!.prepaidToday!.count}
+                </span>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-indigo-50 transition-colors">
+                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all" />
+              </div>
             </div>
             <div>
-              <h3 className="text-lg font-black text-slate-800 leading-tight">Cuotas Adelantadas (hoy)</h3>
-              <p className="text-sm text-slate-500 mt-0.5">
-                {stats!.prepaidToday!.count} cliente{stats!.prepaidToday!.count !== 1 ? 's' : ''} ya pagaron la cuota de hoy en días anteriores
+              <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Cuotas Adelantadas</h3>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                <strong className="text-indigo-600">{stats!.prepaidToday!.count}</strong> cliente{stats!.prepaidToday!.count !== 1 ? 's' : ''} ya {stats!.prepaidToday!.count !== 1 ? 'pagaron' : 'pagó'} la cuota de hoy en días anteriores.
               </p>
             </div>
+          </button>
+        )}
+
+        {/* 2. Sorteo de boletas */}
+        <button
+          onClick={() => setIsLotteryOpen(true)}
+          className="bg-gradient-to-br from-indigo-900 via-purple-900 to-violet-900 hover:from-indigo-800 hover:via-purple-800 hover:to-violet-800 active:scale-[0.98] transition-all rounded-3xl p-6 flex flex-col justify-between shadow-lg shadow-purple-900/20 group h-full relative overflow-hidden"
+        >
+          {/* Decorative glow */}
+          <div className="absolute top-0 right-0 w-40 h-40 bg-purple-500/30 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+          
+          <div className="flex items-start justify-between w-full mb-6 relative z-10">
+            <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-sm border border-white/10">
+              <Trophy className="w-7 h-7 text-white" />
+            </div>
+            <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-white/20 transition-colors">
+              <ChevronRight className="w-5 h-5 text-purple-200 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 text-indigo-600 font-bold bg-indigo-50 px-4 py-2 rounded-xl">
-            <span>Ver clientes</span>
-            <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+          <div className="relative z-10 text-left">
+            <h3 className="text-xl font-black text-white leading-tight mb-1.5">Sorteo de Boletas</h3>
+            <p className="text-sm text-purple-200/80 leading-relaxed">
+              Digita el número ganador y procesa el sorteo para todas las rutas.
+            </p>
           </div>
         </button>
-      )}
 
-      {/* ─── LOTTERY SHORTCUT ─── */}
-      <button
-        onClick={() => setIsLotteryOpen(true)}
-        className="w-full bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 active:scale-[0.99] transition-all rounded-2xl p-5 flex items-center justify-between shadow-md shadow-purple-500/20 group"
-      >
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-            <Trophy className="w-6 h-6 text-white" />
-          </div>
-          <div className="text-left">
-            <p className="font-black text-white text-base leading-tight">Sorteo de Boletas</p>
-            <p className="text-purple-200 text-xs mt-0.5">Digita el número ganador y procesa el sorteo</p>
-          </div>
-        </div>
-        <ChevronRight className="w-5 h-5 text-purple-300 group-hover:translate-x-1 transition-transform" />
-      </button>
+        {/* 3. Observaciones y Adicionales */}
+        {stats?.alerts && stats.alerts.length > 0 && (() => {
+          const withObs = stats.alerts.filter((a: any) => a.observation);
+          const withoutObs = stats.alerts.filter((a: any) => !a.observation);
+          return (
+            <button
+              onClick={() => setIsObservationsOpen(true)}
+              className="bg-white rounded-3xl border border-amber-100 shadow-sm p-6 hover:shadow-md hover:border-amber-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
+            >
+              <div className="flex items-start justify-between w-full mb-6">
+                <div className="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center relative shadow-inner">
+                  <Bell className="w-7 h-7 text-amber-500" />
+                  <span className="absolute -top-2 -right-2 w-7 h-7 bg-amber-500 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md">
+                    {stats.alerts.length}
+                  </span>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-amber-50 transition-colors">
+                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
+                </div>
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-800 leading-tight mb-3">Observaciones y Alertas</h3>
+                <div className="flex flex-col gap-2">
+                  {withoutObs.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-rose-500"></div>
+                      <span className="text-xs font-bold text-slate-600">
+                        {withoutObs.length} alerta{withoutObs.length !== 1 ? 's' : ''} sin justificar
+                      </span>
+                    </div>
+                  )}
+                  {withObs.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                      <span className="text-xs font-bold text-slate-600">
+                        {withObs.length} {withObs.length !== 1 ? 'justificadas' : 'justificada'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </button>
+          );
+        })()}
+      </div>
 
       {/* Cards Row 2 — changes meaning based on filter */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full md:w-2/3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full md:w-2/3 mb-8">
         {isFiltered ? (
           /* Route-specific context cards */
           <>
@@ -259,46 +314,6 @@ export function AdminDashboard() {
           </>
         )}
       </div>
-
-      {/* ─── ALERTS: Cobros en exceso del día ─── */}
-      {stats?.alerts && stats.alerts.length > 0 && (() => {
-        const withObs = stats.alerts.filter((a: any) => a.observation);
-        const withoutObs = stats.alerts.filter((a: any) => !a.observation);
-        return (
-          <button
-            onClick={() => setIsObservationsOpen(true)}
-            className="w-full bg-white rounded-2xl border-2 border-amber-200 shadow-sm p-5 hover:shadow-md hover:border-amber-400 transition-all text-left flex items-center justify-between group"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center relative shrink-0">
-                <Bell className="w-6 h-6 text-amber-600" />
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-sm">
-                  {stats.alerts.length}
-                </span>
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-800 leading-tight">Observaciones y Adicionales</h3>
-                <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                  {withoutObs.length > 0 && (
-                    <span className="text-xs text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-full font-bold">
-                      {withoutObs.length} sin justificar
-                    </span>
-                  )}
-                  {withObs.length > 0 && (
-                    <span className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">
-                      {withObs.length} con observación
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 text-amber-600 font-bold bg-amber-50 px-4 py-2 rounded-xl">
-              <span>Ver observaciones</span>
-              <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </div>
-          </button>
-        );
-      })()}
 
       {/* Table Section */}
       <div className="pt-4">

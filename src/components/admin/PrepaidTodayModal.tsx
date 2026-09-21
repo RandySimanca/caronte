@@ -3,8 +3,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { formatCurrency } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useState } from 'react';
+import { PaymentCardModal } from './PaymentCardModal';
 
 export interface PrepaidClient {
+  loanId: string;
   clientName: string;
   amount: number;
   paidDate: string; // YYYY-MM-DD
@@ -17,6 +20,8 @@ interface Props {
 }
 
 export function PrepaidTodayModal({ isOpen, onClose, clients }: Props) {
+  const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
+
   if (!isOpen) return null;
 
   const formatDate = (dateStr: string) => {
@@ -30,6 +35,7 @@ export function PrepaidTodayModal({ isOpen, onClose, clients }: Props) {
   const totalPrepaid = clients.reduce((s, c) => s + c.amount, 0);
 
   return (
+    <>
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
         {/* Backdrop */}
@@ -99,12 +105,16 @@ export function PrepaidTodayModal({ isOpen, onClose, clients }: Props) {
               </div>
             ) : (
               clients.map((client, idx) => (
-                <div key={idx} className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors">
+                <div 
+                  key={idx} 
+                  onClick={() => setSelectedLoanId(client.loanId)}
+                  className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors cursor-pointer"
+                >
                   <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
                     <User className="w-4 h-4 text-indigo-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-slate-800 text-sm truncate">{client.clientName}</p>
+                    <p className="font-bold text-slate-800 text-sm truncate hover:text-indigo-600 transition-colors">{client.clientName}</p>
                     <p className="text-xs text-slate-400 capitalize">
                       Pagó el {formatDate(client.paidDate)}
                     </p>
@@ -132,5 +142,13 @@ export function PrepaidTodayModal({ isOpen, onClose, clients }: Props) {
         </motion.div>
       </div>
     </AnimatePresence>
+    {selectedLoanId && (
+      <PaymentCardModal
+        isOpen={!!selectedLoanId}
+        onClose={() => setSelectedLoanId(null)}
+        loanId={selectedLoanId}
+      />
+    )}
+    </>
   );
 }
