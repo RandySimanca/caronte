@@ -43,7 +43,7 @@ export function CollectorDashboard() {
     let arrearsClients = 0;
     let visitedCount = 0;
     let newCount = 0;
-    const prepaidTodayClients: { clientName: string; amount: number; paidDate: string }[] = [];
+    const prepaidTodayClients: { loanId: string; clientName: string; amount: number; paidDate: string }[] = [];
 
     for (const loan of loans) {
       const loanInsts = installments.filter(i => i.loan_id === loan.id);
@@ -65,10 +65,11 @@ export function CollectorDashboard() {
       if (todayInst && todayInst.balance <= 0 && todayInst.paid_date && todayInst.paid_date < today) {
         const client = clients.find(c => c.id === loan.client_id);
         prepaidTodayClients.push({
-          clientName: client?.full_name || 'Cliente desconocido',
-          amount: loan.daily_installment,
-          paidDate: todayInst.paid_date,
-        });
+            loanId: loan.id,
+            clientName: client?.full_name || 'Cliente desconocido',
+            amount: loan.daily_installment,
+            paidDate: todayInst.paid_date,
+          });
       }
 
       // Cobrado hoy:
