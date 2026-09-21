@@ -838,26 +838,37 @@ export class AdminService {
       .gte('disbursement_date', startDate)
       .lte('disbursement_date', endDate);
 
+    // 4. Asignaciones de ruta activas en el periodo
+    let assignmentsQuery = supabase
+      .from('route_assignments')
+      .select('date_start, date_end, viaticum, salary, route_id')
+      .lte('date_start', endDate)
+      .or(`date_end.is.null,date_end.gte.${startDate}`);
+
     if (routeId && routeId !== 'all') {
       paymentsQuery = paymentsQuery.eq('route_id', routeId);
       expensesQuery = expensesQuery.eq('route_id', routeId);
       loansQuery = loansQuery.eq('route_id', routeId);
+      assignmentsQuery = assignmentsQuery.eq('route_id', routeId);
     }
 
-    const [paymentsRes, expensesRes, loansRes] = await Promise.all([
+    const [paymentsRes, expensesRes, loansRes, assignmentsRes] = await Promise.all([
       paymentsQuery,
       expensesQuery,
-      loansQuery
+      loansQuery,
+      assignmentsQuery
     ]);
 
     if (paymentsRes.error) throw paymentsRes.error;
     if (expensesRes.error) throw expensesRes.error;
     if (loansRes.error) throw loansRes.error;
+    if (assignmentsRes.error) throw assignmentsRes.error;
 
     return {
       payments: paymentsRes.data || [],
       expenses: expensesRes.data || [],
-      loans: loansRes.data || []
+      loans: loansRes.data || [],
+      assignments: assignmentsRes.data || []
     };
   }
 

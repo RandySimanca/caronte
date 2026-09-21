@@ -21,7 +21,7 @@ export function ReportsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('RESUMEN');
   
-  const [data, setData] = useState<{ payments: any[], expenses: any[], loans: any[] }>({ payments: [], expenses: [], loans: [] });
+  const [data, setData] = useState<{ payments: any[], expenses: any[], loans: any[], assignments: any[] }>({ payments: [], expenses: [], loans: [], assignments: [] });
   const [portfolioData, setPortfolioData] = useState<{ loans: any[], arrearsInstallments: any[] }>({ loans: [], arrearsInstallments: [] });
   const [ledgerData, setLedgerData] = useState<any[]>([]);
   
@@ -86,17 +86,41 @@ export function ReportsPage() {
   }, [data]);
 
   // ─── COSTOS DE PERSONAL DEL PERÍODO ───
-  const { totalViaticos, totalSalario } = useMemo(() => {
-    // Días hábiles del período (simple: días calendario, se puede afinar con festivos)
+  const { totalViaticos, totalSalario, diasLaborales } = useMemo(() => {
     const start = parseISO(startDate);
     const end = parseISO(endDate);
-    const diasPeriodo = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1);
-    // Viático: si hay ruta seleccionada mostramos 1 cobrador, si es 'all' multiplicamos por el número de rutas activas
-    const numCobradores = selectedRoute !== 'all' ? 1 : Math.max(1, routeStates.filter(r => r.cobradorId).length);
-    const totalViaticos = personnelCosts.viaticumRate * diasPeriodo * numCobradores;
-    const totalSalario = personnelCosts.salaryMonthly * numCobradores * (diasPeriodo / 30);
-    return { totalViaticos, totalSalario };
-  }, [startDate, endDate, selectedRoute, routeStates, personnelCosts]);
+
+    let totalAssignedDays = 0;
+    let computedViaticos = 0;
+    let computedSalario = 0;
+
+    data.assignments.forEach(assignment => {
+      // Intersection of [assignment.date_start, assignment.date_end || today] and [startDate, endDate]
+      const aStart = new Date(Math.max(parseISO(assignment.date_start).getTime(), start.getTime()));
+      
+      const aEndRaw = assignment.date_end ? parseISO(assignment.date_end) : new Date(); // hoy si está activa
+      const aEnd = new Date(Math.min(aEndRaw.getTime(), end.getTime()));
+      
+      // Neutralizar horas para evitar problemas
+      aStart.setHours(12, 0, 0, 0);
+      aEnd.setHours(12, 0, 0, 0);
+
+      if (aStart <= aEnd) {
+        const diffTime = aEnd.getTime() - aStart.getTime();
+        const diffDays = Math.round(diffTime / (1000 * 3600 * 24)) + 1; // inclusivo
+        
+        totalAssignedDays += diffDays;
+
+        const dailyViat = assignment.viaticum != null ? Number(assignment.viaticum) : personnelCosts.viaticumRate;
+        computedViaticos += dailyViat * diffDays;
+
+        const monthlySal = assignment.salary != null ? Number(assignment.salary) : personnelCosts.salaryMonthly;
+        computedSalario += (monthlySal / 30) * diffDays;
+      }
+    });
+
+    return { totalViaticos: computedViaticos, totalSalario: computedSalario, diasLaborales: totalAssignedDays };
+  }, [startDate, endDate, data.assignments, personnelCosts]);
 
   const dailyRecaudoData = useMemo(() => {
     const grouped: Record<string, number> = {};
@@ -395,7 +419,9 @@ export function ReportsPage() {
                     Viáticos Período
                   </div>
                   <div className="text-3xl font-black text-amber-800 relative z-10">{formatCurrency(totalViaticos)}</div>
-                  <p className="text-xs text-amber-600 mt-2 relative z-10">Costo diario × días</p>
+                  <p className="text-xs text-amber-600 mt-2 relative z-10">
+                    <strong>{diasLaborales} días asignados</strong> en total
+                  </p>
                 </div>
 
                 <div className="xl:col-span-2 bg-purple-50 p-6 rounded-2xl border border-purple-200 shadow-sm relative overflow-hidden group hover:border-purple-300 transition-colors">
@@ -405,7 +431,9 @@ export function ReportsPage() {
                     Salario Período
                   </div>
                   <div className="text-3xl font-black text-purple-800 relative z-10">{formatCurrency(totalSalario)}</div>
-                  <p className="text-xs text-purple-600 mt-2 relative z-10">Proporcional al período</p>
+                  <p className="text-xs text-purple-600 mt-2 relative z-10">
+                    Calculado por días exactos de asignación (/ 30)
+                  </p>
                 </div>
 
                 <div className="xl:col-span-2 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group hover:border-brand-200 transition-colors">
@@ -481,12 +509,16 @@ export function ReportsPage() {
                         <td className="py-3 px-4 text-right font-bold text-red-600">- {formatCurrency(totalGastos)}</td>
                       </tr>
                       <tr className="hover:bg-amber-50">
-                        <td className="py-3 px-4 font-medium flex items-center gap-2">
-                          <Car className="w-4 h-4 text-amber-500" />
-                          Viáticos del Período
-                          <span className="text-xs text-slate-400 font-normal">({formatCurrency(personnelCosts.viaticumRate)}/día)</span>
+                        <td className="py-3 px-4 font-medium">
+                          <div className="flex items-center gap-2">
+                            <Car className="w-4 h-4 text-amber-500" />
+                            Viáticos del Período
+                          </div>
+                          <div className="text-xs text-slate-400 mt-0.5 pl-6">
+                            {diasLaborales} días exactos asignados
+                          </div>
                         </td>
-                        <td className="py-3 px-4 text-right font-bold text-amber-600">- {formatCurrency(totalViaticos)}</td>
+                        <td className="py-3 px-4 text-right font-bold text-amber-600 align-top">- {formatCurrency(totalViaticos)}</td>
                       </tr>
                       <tr className="hover:bg-purple-50">
                         <td className="py-3 px-4 font-medium flex items-center gap-2">
