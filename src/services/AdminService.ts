@@ -1310,9 +1310,18 @@ export class AdminService {
     const daysInMonth = endDate.getDate();
     let workedDays = 0;
     
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // Permitir contar el día de hoy completo
+    
     for (let day = 1; day <= daysInMonth; day++) {
-      // Usamos el locale local para armar el string ISO del día
       const d = new Date(year, month - 1, day);
+      
+      // No contar días en el futuro
+      if (d > today) {
+        continue;
+      }
+
+      // Usamos el locale local para armar el string ISO del día
       const yyyy = d.getFullYear();
       const mm = String(d.getMonth() + 1).padStart(2, '0');
       const dd = String(d.getDate()).padStart(2, '0');
