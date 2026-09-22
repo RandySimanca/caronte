@@ -1284,5 +1284,72 @@ export class AdminService {
 
     return newPayment;
   }
+
+  /**
+   * Calcula la nómina de un trabajador en un mes específico
+   */
+  static async getWorkerPayroll(userId: string, year: number, month: number) {
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+    
+    // Obtener asignaciones
+    const { data: assignments, error } = await supabase
+      .from('route_assignments')
+      .select('date_start, date_end, salary, viaticum')
+      .eq('collector_id', userId)
+      .lte('date_start', endDate.toISOString())
+      .or(`date_end.is.null,date_end.gte.${startDate.toISOString()}`);
+      
+    if (error) throw error;
+    
+    // Obtener configuraciones globales de salario y viático
+    const { viaticumRate, salaryMonthly } = await AdminService.getPersonnelCostSettings();
+    
+    // Para simplificar, calculamos día por día en el mes
+    // si el trabajador estuvo asignado a *alguna* ruta.
+    const daysInMonth = endDate.getDate();
+    let workedDays = 0;
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+      // Usamos el locale local para armar el string ISO del día
+      const d = new Date(year, month - 1, day);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const dayStr = `${yyyy}-${mm}-${dd}`;
+      
+      const wasAssigned = assignments?.some(a => {
+        const start = a.date_start.split('T')[0];
+        const end = a.date_end ? a.date_end.split('T')[0] : null;
+        return dayStr >= start && (!end || dayStr <= end);
+      });
+      
+      if (wasAssigned) {
+        workedDays++;
+      }
+    }
+    
+    // ¿Cuál es el salario base de este trabajador?
+    // Si la última asignación tiene un override, usar ese. Si no, global.
+    const sortedAssignments = (assignments || []).sort((a, b) => 
+      new Date(b.date_start).getTime() - new Date(a.date_start).getTime()
+    );
+    
+    const latestAssignment = sortedAssignments[0];
+    const workerSalary = latestAssignment?.salary ?? salaryMonthly;
+    const workerViaticum = latestAssignment?.viaticum ?? viaticumRate;
+    
+    const payrollAmount = (workerSalary / 30) * workedDays;
+    const totalViaticum = workerViaticum * workedDays;
+    
+    return {
+      workedDays,
+      workerSalary, // salario base mensual
+      payrollAmount,
+      totalViaticum,
+      workerViaticum, // viatico base por dia
+      daysInMonth
+    };
+  }
 }
 

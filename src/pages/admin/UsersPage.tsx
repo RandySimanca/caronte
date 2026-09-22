@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { AdminService, UserWithRole } from '@/services/AdminService';
 import { CreateUserModal } from '@/components/admin/CreateUserModal';
-import { UserPlus, Search } from 'lucide-react';
+import { UserPayrollModal } from '@/components/admin/UserPayrollModal';
+import { UserPlus, Search, Calculator } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -11,6 +12,7 @@ export function UsersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [payrollModalUser, setPayrollModalUser] = useState<UserWithRole | null>(null);
 
   const fetchUsers = async () => {
     setIsLoading(true);
@@ -73,7 +75,8 @@ export function UsersPage() {
                 <th className="p-4">Rol</th>
                 <th className="p-4">Contacto</th>
                 <th className="p-4">Estado</th>
-                <th className="p-4 text-right">Registro</th>
+                <th className="p-4">Registro</th>
+                <th className="p-4 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -86,7 +89,7 @@ export function UsersPage() {
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-500">
+                  <td colSpan={6} className="p-8 text-center text-slate-500">
                     No se encontraron usuarios.
                   </td>
                 </tr>
@@ -124,10 +127,22 @@ export function UsersPage() {
                         </span>
                       </div>
                     </td>
-                    <td className="p-4 text-right">
+                    <td className="p-4">
                       <p className="text-sm text-slate-500">
                         {format(new Date(user.created_at), 'dd MMM yyyy', { locale: es })}
                       </p>
+                    </td>
+                    <td className="p-4 text-right">
+                      {user.roles?.name === 'COBRADOR' && (
+                        <button
+                          onClick={() => setPayrollModalUser(user)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-brand-700 hover:bg-brand-100 rounded-lg text-sm font-bold transition-colors"
+                          title="Calcular Nómina"
+                        >
+                          <Calculator className="w-4 h-4" />
+                          <span>Nómina</span>
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -143,6 +158,12 @@ export function UsersPage() {
         onSuccess={() => {
           fetchUsers();
         }}
+      />
+      
+      <UserPayrollModal
+        isOpen={!!payrollModalUser}
+        onClose={() => setPayrollModalUser(null)}
+        user={payrollModalUser}
       />
     </div>
   );
