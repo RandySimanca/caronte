@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { X, CheckSquare, Square, Info, AlertTriangle, Trophy, Ticket, Smartphone, Image, Trash2 } from 'lucide-react';
+import { X, CheckSquare, Square, Info, AlertTriangle, Trophy, Ticket, Smartphone, Image, Trash2, MessageCircle } from 'lucide-react';
 import { formatCurrency, cn, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
 import { db, type LocalLoan } from '@/db/schema';
@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useSyncStore } from '@/stores/syncStore';
+import { buildCreditStatusMessage, openWhatsAppWithMessage } from '@/lib/whatsapp';
 
 interface FinancialState {
   todayQuota: number;
@@ -25,6 +26,7 @@ interface Props {
   clientName: string;
   clientDocument: string;
   clientAvatarUrl: string | null;
+  clientPhone: string | null;
   loan: LocalLoan;
   financialState: FinancialState;
 }
@@ -35,6 +37,7 @@ export function PaymentConfirmationModal({
   clientName,
   clientDocument,
   clientAvatarUrl,
+  clientPhone,
   loan,
   financialState,
 }: Props) {
@@ -46,6 +49,12 @@ export function PaymentConfirmationModal({
   const [isTransfer, setIsTransfer] = useState(false);
   const [voucherBase64, setVoucherBase64] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // WhatsApp post-payment state
+  const [whatsappData, setWhatsappData] = useState<{
+    message: string;
+    phone: string | null;
+  } | null>(null);
 
   const { isOnline } = useSyncStore();
 
@@ -121,6 +130,7 @@ export function PaymentConfirmationModal({
       setLotteryWinner(null);
       setIsTransfer(false);
       setVoucherBase64(null);
+      setWhatsappData(null);
 
       // Check if this loan won the lottery by reading the last draw from Dexie settings
       const checkLotteryWinner = async () => {
@@ -177,7 +187,10 @@ export function PaymentConfirmationModal({
         transferVoucherBase64: isTransfer ? voucherBase64 : null,
       };
 
-        // 1. Update local installments in Dexie
+      // Calcular nuevo saldo antes de la transacción para reutilizarlo después
+      const newLoanBalance = Math.max(loan.current_balance - distribution.numAmount, 0);
+
+      // 1. Update local installments in Dexie
       await db.transaction('rw', db.installments, db.loans, db.syncQueue, db.settings, async () => {
         let remaining = distribution.numAmount;
         const updatedInstallments: any[] = [];
@@ -238,7 +251,6 @@ export function PaymentConfirmationModal({
         }
 
         // Update loan balance locally
-        const newLoanBalance = Math.max(loan.current_balance - distribution.numAmount, 0);
         await db.loans.update(loan.id, { current_balance: newLoanBalance });
 
         // 2. Queue sync operation with PAYMENT_BUNDLE
@@ -271,13 +283,32 @@ export function PaymentConfirmationModal({
       });
 
       toast.success(`Cobro de ${formatCurrency(distribution.numAmount)} registrado${isOnline ? ' y sincronizado' : ' (se sincronizará en línea)'}`);
-      onClose();
+
+      // --- WhatsApp: preparar datos para que el cobrador decida si enviar ---
+      const arrearsAfterPayment = Math.max((financialState.arrears ?? 0) - (distribution.arrearsAmount ?? 0), 0);
+      const waMessage = buildCreditStatusMessage({
+        clientName,
+        amountPaidToday: distribution.numAmount,
+        currentBalance: newLoanBalance,
+        arrearsAfterPayment,
+      });
+      setWhatsappData({ message: waMessage, phone: clientPhone ?? null });
+      // No cerramos el modal todavía — mostramos el paso de WhatsApp
     } catch (error: any) {
       console.error('Error saving payment:', error);
       toast.error('Error al guardar el cobro. Inténtalo de nuevo.');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleSendWhatsApp = () => {
+    if (!whatsappData) return;
+    const sent = openWhatsAppWithMessage(whatsappData.phone, whatsappData.message);
+    if (!sent) {
+      toast.error('El cliente no tiene un teléfono válido registrado.');
+    }
+    onClose();
   };
 
   if (!isOpen) return null;
@@ -550,7 +581,8 @@ export function PaymentConfirmationModal({
             </button>
           </div>
 
-          {showDuplicateWarning && (
+          {/* ── PANEL: Doble pago ── */}
+          {showDuplicateWarning && !whatsappData && (
             <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-6 text-center rounded-t-3xl sm:rounded-2xl">
               <div className="max-w-xs w-full flex flex-col items-center">
                 <div className="w-20 h-20 rounded-full bg-amber-100 flex items-center justify-center mb-5">
@@ -574,6 +606,39 @@ export function PaymentConfirmationModal({
                     disabled={isSaving}
                   >
                     {isSaving ? 'Guardando...' : 'Sí, registrar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── PANEL: WhatsApp post-pago ── */}
+          {whatsappData && (
+            <div className="absolute inset-0 bg-white/97 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-6 text-center rounded-t-3xl sm:rounded-2xl">
+              <div className="max-w-xs w-full flex flex-col items-center">
+                <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mb-4">
+                  <MessageCircle className="w-10 h-10 text-emerald-500" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-2">¡Cobro guardado!</h3>
+                <p className="text-sm text-slate-500 mb-5 leading-relaxed">
+                  ¿Deseas notificar al cliente por WhatsApp con el resumen del pago?
+                </p>
+                <pre className="w-full text-left text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl p-3 mb-6 whitespace-pre-wrap font-sans leading-relaxed">
+                  {whatsappData.message}
+                </pre>
+                <div className="w-full flex flex-col gap-3">
+                  <button
+                    onClick={handleSendWhatsApp}
+                    className="w-full flex items-center justify-center gap-2 py-3.5 font-bold text-white bg-[#25D366] hover:bg-[#1ebe5d] rounded-xl shadow-md transition-colors"
+                  >
+                    <MessageCircle className="w-5 h-5" />
+                    Enviar por WhatsApp
+                  </button>
+                  <button
+                    onClick={onClose}
+                    className="w-full py-3 font-semibold text-slate-500 hover:text-slate-700 text-sm transition-colors"
+                  >
+                    No, cerrar
                   </button>
                 </div>
               </div>

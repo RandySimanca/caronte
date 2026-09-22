@@ -296,6 +296,7 @@ export function ClientDetailPage() {
           clientName={client.full_name}
           clientDocument={client.document_id}
           clientAvatarUrl={client.photo_face_url}
+          clientPhone={client.phone ?? null}
           loan={loan}
           financialState={financialState}
         />
