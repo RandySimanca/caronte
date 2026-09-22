@@ -39,6 +39,7 @@ export function NewLoanWizard() {
   // Step 2: Loan Data
   const [amount, setAmount] = useState(() => localStorage.getItem('nlw_amount') || '');
   const [term, setTerm] = useState<30 | 40 | 45 | 60>(() => (Number(localStorage.getItem('nlw_term')) as any) || 40);
+  const [interestRate, setInterestRate] = useState<0.20 | 0.30>(() => (Number(localStorage.getItem('nlw_interestRate')) as any) || 0.20);
   const [sundays, setSundays] = useState(() => Number(localStorage.getItem('nlw_sundays')) || 0);
   const [receiptFee, setReceiptFee] = useState(() => Number(localStorage.getItem('nlw_receiptFee')) || 0);
   const [wantsRaffle, setWantsRaffle] = useState(() => localStorage.getItem('nlw_wantsRaffle') === 'true');
@@ -52,14 +53,15 @@ export function NewLoanWizard() {
     localStorage.setItem('nlw_address', address);
     localStorage.setItem('nlw_amount', amount);
     localStorage.setItem('nlw_term', term.toString());
+    localStorage.setItem('nlw_interestRate', interestRate.toString());
     localStorage.setItem('nlw_sundays', sundays.toString());
     localStorage.setItem('nlw_receiptFee', receiptFee.toString());
     localStorage.setItem('nlw_wantsRaffle', wantsRaffle.toString());
-  }, [clientName, document, phone, address, amount, term, sundays, receiptFee, wantsRaffle]);
+  }, [clientName, document, phone, address, amount, term, interestRate, sundays, receiptFee, wantsRaffle]);
 
   // Calculations (Rule 1: exact, no rounding)
   const numAmount = parseFloat(amount) || 0;
-  const obligation = numAmount * 1.20;
+  const obligation = numAmount * (1 + interestRate);
   const dailyQuota = term > 0 ? obligation / term : 0;
   const totalSundaysDiscount = dailyQuota * sundays;
   const delivered = numAmount - totalSundaysDiscount - receiptFee;
@@ -150,8 +152,8 @@ export function NewLoanWizard() {
           route_id: null, // Will be set by SyncService
           collector_id: currentUserId,
           amount_requested: numAmount,
-          interest_rate: 0.2,
-          interest_amount: numAmount * 0.2,
+          interest_rate: interestRate,
+          interest_amount: numAmount * interestRate,
           initial_obligation: obligation,
           term_days: term,
           daily_installment: dailyQuota,
@@ -197,7 +199,7 @@ export function NewLoanWizard() {
       });
 
       // Clear draft upon successful creation
-      ['nlw_clientName', 'nlw_document', 'nlw_phone', 'nlw_address', 'nlw_amount', 'nlw_term', 'nlw_sundays', 'nlw_receiptFee', 'nlw_wantsRaffle'].forEach(key => localStorage.removeItem(key));
+      ['nlw_clientName', 'nlw_document', 'nlw_phone', 'nlw_address', 'nlw_amount', 'nlw_term', 'nlw_interestRate', 'nlw_sundays', 'nlw_receiptFee', 'nlw_wantsRaffle'].forEach(key => localStorage.removeItem(key));
 
       toast.success(`Préstamo de ${formatCurrency(numAmount)} creado para ${clientName}${isOnline ? '' : ' (se sincronizará en línea)'}`);
       navigate('/route');
@@ -339,6 +341,28 @@ export function NewLoanWizard() {
                   </div>
                 </div>
                 <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-2">Tasa de interés</label>
+                  <div className="flex space-x-2">
+                    {([0.20, 0.30] as const).map(r => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setInterestRate(r)}
+                        className={cn(
+                          'flex-1 py-2 rounded-xl text-sm font-bold transition-all border',
+                          interestRate === r
+                            ? r === 0.20
+                              ? 'bg-brand-600 text-white border-brand-600 shadow-md shadow-brand-500/20'
+                              : 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/20'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        )}
+                      >
+                        {(r * 100).toFixed(0)}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-2">Plazo (días calendario)</label>
                   <div className="flex space-x-2">
                     {([30, 40, 45, 60] as const).map(t => (
@@ -363,7 +387,7 @@ export function NewLoanWizard() {
                 </label>
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Obligación total (+20%)</span>
+                    <span className="text-slate-500">Obligación total (+{(interestRate * 100).toFixed(0)}%)</span>
                     <span className="font-bold text-slate-800">{formatCurrency(obligation)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -386,7 +410,7 @@ export function NewLoanWizard() {
                 <div className="flex justify-between text-sm"><span className="text-slate-500">Cliente</span><span className="font-bold text-slate-800">{clientName}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-slate-500">Cédula</span><span className="font-bold text-slate-800">{document}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-slate-500">Monto solicitado</span><span className="font-bold text-slate-800">{formatCurrency(numAmount)}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-slate-500">Obligación total (+20%)</span><span className="font-bold text-slate-800">{formatCurrency(obligation)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-500">Obligación total (+{(interestRate * 100).toFixed(0)}%)</span><span className="font-bold text-slate-800">{formatCurrency(obligation)}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-slate-500">Plazo</span><span className="font-bold text-slate-800">{term} días</span></div>
                 <div className="flex justify-between text-sm"><span className="text-slate-500">Cuota diaria exacta</span><span className="font-bold text-brand-600">{formatCurrency(dailyQuota)}</span></div>
                 {sundays > 0 && <div className="flex justify-between text-sm text-rose-600"><span>Domingos descontados</span><span className="font-semibold">{sundays} (-{formatCurrency(totalSundaysDiscount)})</span></div>}

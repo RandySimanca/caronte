@@ -1122,6 +1122,7 @@ export class AdminService {
     routeId: string;
     adminId: string;
     amountRequested: number;
+    interestRate?: number;
     termDays: 30 | 40 | 45 | 60;
     sundaysPrepaidCount: number;
     receiptFee: number;
@@ -1153,7 +1154,8 @@ export class AdminService {
 
     // 2. Calculations
     const numAmount = payload.amountRequested;
-    const obligation = numAmount * 1.20;
+    const rate = payload.interestRate ?? 0.20;
+    const obligation = numAmount * (1 + rate);
     const dailyQuota = payload.termDays > 0 ? obligation / payload.termDays : 0;
     const totalSundaysDiscount = dailyQuota * payload.sundaysPrepaidCount;
     const delivered = numAmount - totalSundaysDiscount - payload.receiptFee;
@@ -1193,8 +1195,8 @@ export class AdminService {
         route_id: payload.routeId,
         collector_id: payload.adminId, // Admin as collector
         amount_requested: numAmount,
-        interest_rate: 0.2,
-        interest_amount: numAmount * 0.2,
+        interest_rate: rate,
+        interest_amount: numAmount * rate,
         initial_obligation: obligation,
         term_days: payload.termDays,
         daily_installment: dailyQuota,

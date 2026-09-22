@@ -31,6 +31,7 @@ export function AdminCreateLoanModal({ isOpen, onClose, routeStates, onSuccess }
   
   // Loan Data
   const [amount, setAmount] = useState('');
+  const [interestRate, setInterestRate] = useState<0.20 | 0.30>(0.20);
   const [termDays, setTermDays] = useState<30 | 40 | 45 | 60>(40);
   const [sundays, setSundays] = useState('');
   const [receiptFee, setReceiptFee] = useState('');
@@ -48,7 +49,7 @@ export function AdminCreateLoanModal({ isOpen, onClose, routeStates, onSuccess }
   const numSundays = Number(parseNumberInput(sundays)) || 0;
   const numReceipt = Number(parseNumberInput(receiptFee)) || 0;
 
-  const obligation = numAmount * 1.20;
+  const obligation = numAmount * (1 + interestRate);
   const dailyQuota = termDays > 0 ? obligation / termDays : 0;
   const totalSundaysDiscount = dailyQuota * numSundays;
   const delivered = numAmount - totalSundaysDiscount - numReceipt;
@@ -75,6 +76,7 @@ export function AdminCreateLoanModal({ isOpen, onClose, routeStates, onSuccess }
         routeId,
         adminId: user.id,
         amountRequested: numAmount,
+        interestRate,
         termDays,
         sundaysPrepaidCount: numSundays,
         receiptFee: numReceipt,
@@ -92,6 +94,7 @@ export function AdminCreateLoanModal({ isOpen, onClose, routeStates, onSuccess }
       setPhone('');
       setAddress('');
       setAmount('');
+      setInterestRate(0.20);
       setTermDays(40);
       setSundays('');
       setReceiptFee('');
@@ -178,6 +181,28 @@ export function AdminCreateLoanModal({ isOpen, onClose, routeStates, onSuccess }
             {/* Right Col: Loan Data */}
             <div className="space-y-4">
               <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Tasa de Interés</label>
+                <div className="flex space-x-2 mb-4">
+                  {([0.20, 0.30] as const).map(r => (
+                    <button
+                      type="button"
+                      key={r}
+                      onClick={() => setInterestRate(r)}
+                      className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all border ${
+                        interestRate === r
+                          ? r === 0.20
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20'
+                            : 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/20'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {(r * 100).toFixed(0)}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">Monto Solicitado *</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">$</span>
@@ -220,7 +245,7 @@ export function AdminCreateLoanModal({ isOpen, onClose, routeStates, onSuccess }
 
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2 mt-4">
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">Obligación total (+20%)</span>
+                  <span className="text-slate-500">Obligación total (+{(interestRate * 100).toFixed(0)}%)</span>
                   <span className="font-bold text-slate-800">{formatCurrency(obligation)}</span>
                 </div>
                 <div className="flex justify-between text-sm pt-2 border-t border-slate-200">
