@@ -65,11 +65,11 @@ export function CollectorDashboard() {
       if (todayInst && todayInst.balance <= 0 && todayInst.paid_date && todayInst.paid_date < today) {
         const client = clients.find(c => c.id === loan.client_id);
         prepaidTodayClients.push({
-            loanId: loan.id,
-            clientName: client?.full_name || 'Cliente desconocido',
-            amount: loan.daily_installment,
-            paidDate: todayInst.paid_date,
-          });
+          loanId: loan.id,
+          clientName: client?.full_name || 'Cliente desconocido',
+          amount: loan.daily_installment,
+          paidDate: todayInst.paid_date,
+        });
       }
 
       // Cobrado hoy:
@@ -136,11 +136,10 @@ export function CollectorDashboard() {
           </div>
         </div>
         <div className="flex items-center space-x-3">
-          <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium border ${
-            isOnline
-              ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
-              : 'text-rose-600 bg-rose-50 border-rose-100'
-          }`}>
+          <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium border ${isOnline
+            ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
+            : 'text-rose-600 bg-rose-50 border-rose-100'
+            }`}>
             {isOnline ? (
               <>
                 <span className="relative flex h-2 w-2">
@@ -252,7 +251,10 @@ export function CollectorDashboard() {
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-sm font-semibold text-slate-800">Operaciones pendientes</h3>
           <div className="flex items-center gap-2">
-            <button
+
+            {/*monstrar el boton Forzar limpieza en la pantalla del cobrador*/}
+
+            {/* <button
               onClick={async () => {
                 if (window.confirm('¿Forzar limpieza y resincronizar? ADVERTENCIA: Perderás cobros offline no enviados.')) {
                   await db.syncQueue.clear();
@@ -265,7 +267,22 @@ export function CollectorDashboard() {
               className="text-slate-500 hover:text-rose-600 text-xs font-medium flex items-center bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-full transition-colors"
             >
               Forzar limpieza
-            </button>
+            </button>*/}
+
+            {/*<button
+              onClick={async () => {
+                if (window.confirm('¿Forzar limpieza y resincronizar? ADVERTENCIA: Perderás cobros offline no enviados.')) {
+                  await db.syncQueue.clear();
+                  useSyncStore.getState().setPendingCount(0);
+                  if (user?.id) {
+                    await SyncService.pullInitialData(user.id);
+                  }
+                }
+              }}
+              className="text-slate-500 hover:text-rose-600 text-xs font-medium flex items-center bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-full transition-colors"
+            >
+              Forzar limpieza
+            </button>*/}
             <button
               onClick={handleSync}
               disabled={!isOnline || isSyncing || pendingOps === 0}
