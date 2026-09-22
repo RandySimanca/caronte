@@ -177,11 +177,10 @@ export function AdminDashboard() {
             <div className={`text-sm font-bold text-brand-600 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
               Oficina: {formatCurrency(stats?.recaudoOficina ?? 0)}
             </div>
-            <button 
+            <button
               onClick={() => setIsTransferModalOpen(true)}
               className={`text-sm font-bold text-indigo-600 mb-2 hover:text-indigo-700 transition-all text-left flex items-center gap-1 ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}
             >
-              <Smartphone className="w-3 h-3" />
               Transferencias: {formatCurrency(stats?.recaudoTransferencias ?? 0)}
             </button>
           </div>
@@ -202,7 +201,7 @@ export function AdminDashboard() {
 
       {/* ─── ACTION MODULES GRID ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
-        
+
         {/* 1. Cuotas adelantadas para hoy */}
         {(stats?.prepaidToday?.count ?? 0) > 0 && (
           <button
@@ -236,7 +235,7 @@ export function AdminDashboard() {
         >
           {/* Decorative glow */}
           <div className="absolute top-0 right-0 w-40 h-40 bg-purple-500/30 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-          
+
           <div className="flex items-start justify-between w-full mb-6 relative z-10">
             <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-sm border border-white/10">
               <Trophy className="w-7 h-7 text-white" />
@@ -379,8 +378,8 @@ export function AdminDashboard() {
                   <td className="py-4 px-6">
                     <div className="flex items-center gap-2">
                       <div className={`w-3 h-3 rounded-full ${route.estado === 'Activo' ? 'bg-emerald-500' :
-                          route.estado === 'Sin asignar' ? 'bg-amber-500' :
-                            'bg-slate-300'
+                        route.estado === 'Sin asignar' ? 'bg-amber-500' :
+                          'bg-slate-300'
                         }`} />
                       <span className="text-sm font-semibold text-slate-700">{route.estado}</span>
                     </div>
