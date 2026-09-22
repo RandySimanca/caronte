@@ -281,11 +281,18 @@ export class SyncService {
           await db.syncQueue.update(op.id!, { status: 'synced' });
         } catch (error: any) {
           console.error(`Failed to sync operation ${op.operation_id}:`, error);
-          await db.syncQueue.update(op.id!, {
-            status: 'failed',
-            error_message: error.message || 'Unknown error',
-            retry_count: (op.retry_count || 0) + 1,
-          });
+          const newRetryCount = (op.retry_count || 0) + 1;
+          
+          if (newRetryCount >= 5) {
+            console.error(`Operación ${op.operation_id} descartada permanentemente tras 5 intentos fallidos.`);
+            await db.syncQueue.delete(op.id!);
+          } else {
+            await db.syncQueue.update(op.id!, {
+              status: 'failed',
+              error_message: error.message || 'Unknown error',
+              retry_count: newRetryCount,
+            });
+          }
         }
       }
 

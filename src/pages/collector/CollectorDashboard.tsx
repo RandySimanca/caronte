@@ -251,14 +251,29 @@ export function CollectorDashboard() {
       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-sm font-semibold text-slate-800">Operaciones pendientes</h3>
-          <button
-            onClick={handleSync}
-            disabled={!isOnline || isSyncing || pendingOps === 0}
-            className="text-brand-600 text-xs font-medium flex items-center bg-brand-50 px-3 py-1.5 rounded-full disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <RefreshCw className={`w-3 h-3 mr-1.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
-          </button>
+          <div className="flex items-center gap-2">
+            {pendingOps > 0 && (
+              <button
+                onClick={async () => {
+                  if (window.confirm('¿Descartar operaciones atascadas? ADVERTENCIA: Perderás los cobros que no se hayan sincronizado.')) {
+                    await db.syncQueue.clear();
+                    useSyncStore.getState().setPendingCount(0);
+                  }
+                }}
+                className="text-slate-500 hover:text-rose-600 text-xs font-medium flex items-center bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-full transition-colors"
+              >
+                Forzar limpieza
+              </button>
+            )}
+            <button
+              onClick={handleSync}
+              disabled={!isOnline || isSyncing || pendingOps === 0}
+              className="text-brand-600 text-xs font-medium flex items-center bg-brand-50 px-3 py-1.5 rounded-full disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-3 h-3 mr-1.5 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
+            </button>
+          </div>
         </div>
         <div className="flex justify-around items-center text-center">
           <div className="flex-1">
