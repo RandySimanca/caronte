@@ -1251,13 +1251,13 @@ export class AdminService {
 
     const collectedAt = new Date().toISOString();
 
-    const { data: newPayment, error: paymentError } = await supabase
+    const { error: paymentError } = await supabase
       .from('payments')
-      .insert([{
+      .upsert([{
         operation_id: operationId,
         device_id: 'admin_panel',
         loan_id: payload.loanId,
-        collector_id: payload.adminId, // Admin
+        collector_id: payload.adminId,
         route_id: payload.routeId,
         total_amount: payload.totalAmount,
         day_installment_amount: 0,
@@ -1271,9 +1271,7 @@ export class AdminService {
         collected_at: collectedAt,
         synced_at: collectedAt,
         created_by: payload.adminId
-      }] as any)
-      .select('id')
-      .single();
+      }] as any);
 
     if (paymentError) throw paymentError;
 
