@@ -1275,6 +1275,14 @@ export class AdminService {
 
     if (paymentError) throw paymentError;
 
+    // Fetch the payment id by operation_id (upsert doesn't return data)
+    const { data: savedPayment } = await supabase
+      .from('payments')
+      .select('id')
+      .eq('operation_id', operationId)
+      .maybeSingle();
+    const paymentId = savedPayment?.id ?? null;
+
     // 3. Process distributions
     let remainingToDistribute = payload.totalAmount;
     
@@ -1327,7 +1335,7 @@ export class AdminService {
       if (newStatus === 'PARCIAL') allocationType = 'PARCIAL';
 
       allocations.push({
-        payment_id: newPayment.id,
+        payment_id: paymentId,
         installment_id: inst.id,
         allocated_amount: payAmount,
         allocation_type: allocationType
@@ -1353,7 +1361,7 @@ export class AdminService {
       status: newLoanBalance <= 0 ? 'CANCELADO' : loan.status
     }).eq('id', payload.loanId);
 
-    return newPayment;
+    return { operation_id: operationId };
   }
 
   /**
