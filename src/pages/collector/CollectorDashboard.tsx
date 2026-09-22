@@ -252,19 +252,20 @@ export function CollectorDashboard() {
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-sm font-semibold text-slate-800">Operaciones pendientes</h3>
           <div className="flex items-center gap-2">
-            {pendingOps > 0 && (
-              <button
-                onClick={async () => {
-                  if (window.confirm('¿Descartar operaciones atascadas? ADVERTENCIA: Perderás los cobros que no se hayan sincronizado.')) {
-                    await db.syncQueue.clear();
-                    useSyncStore.getState().setPendingCount(0);
+            <button
+              onClick={async () => {
+                if (window.confirm('¿Forzar limpieza y resincronizar? ADVERTENCIA: Perderás cobros offline no enviados.')) {
+                  await db.syncQueue.clear();
+                  useSyncStore.getState().setPendingCount(0);
+                  if (user?.id) {
+                    await SyncService.pullInitialData(user.id);
                   }
-                }}
-                className="text-slate-500 hover:text-rose-600 text-xs font-medium flex items-center bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-full transition-colors"
-              >
-                Forzar limpieza
-              </button>
-            )}
+                }
+              }}
+              className="text-slate-500 hover:text-rose-600 text-xs font-medium flex items-center bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-full transition-colors"
+            >
+              Forzar limpieza
+            </button>
             <button
               onClick={handleSync}
               disabled={!isOnline || isSyncing || pendingOps === 0}
