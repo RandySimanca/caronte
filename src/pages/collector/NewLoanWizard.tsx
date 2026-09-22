@@ -38,7 +38,7 @@ export function NewLoanWizard() {
 
   // Step 2: Loan Data
   const [amount, setAmount] = useState(() => localStorage.getItem('nlw_amount') || '');
-  const [term, setTerm] = useState<30 | 40 | 45 | 60>(() => (Number(localStorage.getItem('nlw_term')) as any) || 40);
+  const [term, setTerm] = useState<number>(() => Number(localStorage.getItem('nlw_term')) || 40);
   const [interestRate, setInterestRate] = useState<0.20 | 0.30>(() => (Number(localStorage.getItem('nlw_interestRate')) as any) || 0.20);
   const [sundays, setSundays] = useState(() => Number(localStorage.getItem('nlw_sundays')) || 0);
   const [receiptFee, setReceiptFee] = useState(() => Number(localStorage.getItem('nlw_receiptFee')) || 0);
@@ -363,11 +363,17 @@ export function NewLoanWizard() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-2">Plazo (días calendario)</label>
-                  <div className="flex space-x-2">
-                    {([30, 40, 45, 60] as const).map(t => (
-                      <button key={t} onClick={() => setTerm(t)} className={cn("flex-1 py-2 rounded-xl text-sm font-bold transition-all border", term === t ? "bg-brand-600 text-white border-brand-600 shadow-md shadow-brand-500/20" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50")}>{t}</button>
-                    ))}
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Plazo (días calendario) *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={term === 0 ? '' : term}
+                      onChange={e => setTerm(parseInt(e.target.value.replace(/\D/g, '')) || 0)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-lg font-bold focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                      placeholder="Ej: 40"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">días</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">

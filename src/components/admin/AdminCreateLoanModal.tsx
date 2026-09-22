@@ -32,7 +32,7 @@ export function AdminCreateLoanModal({ isOpen, onClose, routeStates, onSuccess }
   // Loan Data
   const [amount, setAmount] = useState('');
   const [interestRate, setInterestRate] = useState<0.20 | 0.30>(0.20);
-  const [termDays, setTermDays] = useState<30 | 40 | 45 | 60>(40);
+  const [termDays, setTermDays] = useState<number>(40);
   const [sundays, setSundays] = useState('');
   const [receiptFee, setReceiptFee] = useState('');
   const [wantsRaffle, setWantsRaffle] = useState(false);
@@ -219,11 +219,21 @@ export function AdminCreateLoanModal({ isOpen, onClose, routeStates, onSuccess }
               </div>
 
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Plazo (Días)</label>
-                <div className="flex space-x-2">
-                  {([30, 40, 45, 60] as const).map(t => (
-                    <button type="button" key={t} onClick={() => setTermDays(t)} className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-all border ${termDays === t ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}>{t}</button>
-                  ))}
+                <label className="block text-sm font-bold text-slate-700 mb-2">Plazo (Días) *</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    required
+                    value={termDays === 0 ? '' : termDays}
+                    onChange={e => {
+                      const val = parseInt(e.target.value.replace(/\D/g, '')) || 0;
+                      setTermDays(val);
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-lg font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="Ej: 40"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">días</span>
                 </div>
               </div>
 

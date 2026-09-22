@@ -1123,7 +1123,7 @@ export class AdminService {
     adminId: string;
     amountRequested: number;
     interestRate?: number;
-    termDays: 30 | 40 | 45 | 60;
+    termDays: number;
     sundaysPrepaidCount: number;
     receiptFee: number;
     wantsRaffle: boolean;
