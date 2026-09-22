@@ -412,19 +412,31 @@ export class SyncService {
         .from('daily_closings')
         .select('is_closed')
         .in('route_id', routeIds)
-        .eq('closing_date', today)
-        .eq('is_closed', true);
+        .eq('closing_date', today);
+
+      let isClosedOnServer = false;
+      let hasServerRecord = false;
 
       if (closings && closings.length > 0) {
-        localSettings.push({ key: `day_closed_${today}`, value: true });
+        hasServerRecord = true;
+        if (closings[0].is_closed) {
+          isClosedOnServer = true;
+          localSettings.push({ key: `day_closed_${today}`, value: true });
+        }
       }
 
       // Retrieve local settings we MUST preserve (like transfer proofs generated offline today)
       const existingSettings = await db.settings.toArray();
-      const settingsToKeep = existingSettings.filter(s => 
-        s.key.startsWith('transfer_') || 
-        s.key.startsWith('day_closed_')
-      );
+      const settingsToKeep = existingSettings.filter(s => {
+        if (s.key.startsWith('transfer_')) return true;
+        if (s.key.startsWith('day_closed_')) {
+          // If the server explicitly has a record but it's NOT closed, it means admin reopened it.
+          // So we discard the local closed setting.
+          if (hasServerRecord && !isClosedOnServer) return false;
+          return true;
+        }
+        return false;
+      });
 
       // Save to Dexie Transactionally
       await db.transaction('rw', db.routes, db.clients, db.loans, db.installments, db.settings, async () => {
@@ -511,24 +523,43 @@ export class SyncService {
         .limit(1);
         
       const routeIdData = (routeIdRes.data || []) as { route_id: string }[];
+      
+      let isClosedOnServer = false;
+      let hasServerRecord = false;
+
       if (routeIdData.length > 0) {
         const activeRouteId = routeIdData[0].route_id;
         const { data: closings } = await supabase
           .from('daily_closings')
           .select('is_closed')
           .eq('route_id', activeRouteId)
-          .eq('closing_date', today)
-          .eq('is_closed', true);
+          .eq('closing_date', today);
 
         if (closings && closings.length > 0) {
-          localSettings.push({ key: `day_closed_${today}`, value: true });
+          hasServerRecord = true;
+          if (closings[0].is_closed) {
+            isClosedOnServer = true;
+            localSettings.push({ key: `day_closed_${today}`, value: true });
+          }
         }
       }
+
+      // Retrieve local settings we MUST preserve
+      const existingSettings = await db.settings.toArray();
+      const settingsToKeep = existingSettings.filter(s => {
+        if (s.key.startsWith('transfer_')) return true;
+        if (s.key.startsWith('day_closed_')) {
+          if (hasServerRecord && !isClosedOnServer) return false;
+          return true;
+        }
+        return false;
+      });
 
       // Reemplaza solo la tabla de settings en Dexie
       await db.transaction('rw', db.settings, async () => {
         await db.settings.clear();
         if (localSettings.length > 0) await db.settings.bulkAdd(localSettings);
+        if (settingsToKeep.length > 0) await db.settings.bulkAdd(settingsToKeep);
       });
     } catch (error) {
       console.error('Error refreshing settings:', error);
