@@ -1261,7 +1261,7 @@ export class AdminService {
         collector_id: payload.adminId,
         route_id: payload.routeId,
         total_amount: payload.totalAmount,
-        day_installment_amount: 0,
+        day_installment_amount: payload.totalAmount,
         arrears_amount: 0,
         advance_amount: 0,
         collector_observation: payload.observation || 'Cobro en oficina',
