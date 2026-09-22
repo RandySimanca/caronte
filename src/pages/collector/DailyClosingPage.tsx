@@ -222,26 +222,22 @@ export function DailyClosingPage() {
             )}
 
             {/* Transferencias */}
-            {totalTransfers > 0 && (
-              <div className="flex justify-between items-center text-sm">
-                <div className="flex items-center gap-1.5 text-indigo-500 font-semibold">
-                  <Smartphone className="w-4 h-4" />
-                  (-) Tus cobros por transferencia
-                </div>
-                <span className="font-semibold text-indigo-500">-{formatCurrency(totalTransfers)}</span>
+            <div className="flex justify-between items-center text-sm">
+              <div className="flex items-center gap-1.5 text-indigo-500 font-semibold">
+                <Smartphone className="w-4 h-4" />
+                (-) Tus cobros por transferencia
               </div>
-            )}
+              <span className="font-semibold text-indigo-500">-{formatCurrency(totalTransfers)}</span>
+            </div>
 
             {/* Cobros en oficina */}
-            {totalOfficePayments > 0 && (
-              <div className="flex justify-between items-center text-sm">
-                <div className="flex items-center gap-1.5 text-orange-500 font-semibold">
-                  <TrendingDown className="w-4 h-4 opacity-0" />
-                  (-) Cobros en oficina (Admin)
-                </div>
-                <span className="font-semibold text-orange-500">-{formatCurrency(totalOfficePayments)}</span>
+            <div className="flex justify-between items-center text-sm">
+              <div className="flex items-center gap-1.5 text-orange-500 font-semibold">
+                <TrendingDown className="w-4 h-4 opacity-0" />
+                (-) Cobros en oficina (Admin)
               </div>
-            )}
+              <span className="font-semibold text-orange-500">-{formatCurrency(totalOfficePayments)}</span>
+            </div>
 
             {/* Total a entregar */}
             <div className="flex justify-between items-center border-t-2 border-slate-200 pt-4 mt-2">
