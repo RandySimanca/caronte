@@ -696,6 +696,7 @@ export class AdminService {
         creator:users!clients_created_by_fkey(full_name),
         loans(
           id,
+          route_id,
           amount_requested,
           amount_delivered,
           interest_amount,
