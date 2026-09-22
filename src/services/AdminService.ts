@@ -873,6 +873,26 @@ export class AdminService {
       expensesQuery = expensesQuery.eq('route_id', routeId);
       loansQuery = loansQuery.eq('route_id', routeId);
       assignmentsQuery = assignmentsQuery.eq('route_id', routeId);
+    } else {
+      // Si es 'all', filtrar las rutas pausadas (las que no tienen asignación activa)
+      const { data: activeAssignments } = await supabase
+        .from('route_assignments')
+        .select('route_id')
+        .is('date_end', null);
+      const activeRouteIds = activeAssignments?.map((a: any) => a.route_id) || [];
+      
+      if (activeRouteIds.length > 0) {
+        paymentsQuery = paymentsQuery.in('route_id', activeRouteIds);
+        expensesQuery = expensesQuery.in('route_id', activeRouteIds);
+        loansQuery = loansQuery.in('route_id', activeRouteIds);
+        assignmentsQuery = assignmentsQuery.in('route_id', activeRouteIds);
+      } else {
+        // Si no hay ninguna ruta activa, forzamos que no devuelva nada
+        paymentsQuery = paymentsQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
+        expensesQuery = expensesQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
+        loansQuery = loansQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
+        assignmentsQuery = assignmentsQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
+      }
     }
 
     const [paymentsRes, expensesRes, loansRes, assignmentsRes] = await Promise.all([
@@ -913,6 +933,18 @@ export class AdminService {
     
     if (routeId && routeId !== 'all') {
       query = query.eq('route_id', routeId);
+    } else {
+      const { data: activeAssignments } = await supabase
+        .from('route_assignments')
+        .select('route_id')
+        .is('date_end', null);
+      const activeRouteIds = activeAssignments?.map((a: any) => a.route_id) || [];
+      
+      if (activeRouteIds.length > 0) {
+        query = query.in('route_id', activeRouteIds);
+      } else {
+        query = query.eq('route_id', '00000000-0000-0000-0000-000000000000');
+      }
     }
     
     const { data: loans, error: loansError } = await query;
@@ -962,6 +994,22 @@ export class AdminService {
       pQuery = pQuery.eq('route_id', routeId);
       eQuery = eQuery.eq('route_id', routeId);
       lQuery = lQuery.eq('route_id', routeId);
+    } else {
+      const { data: activeAssignments } = await supabase
+        .from('route_assignments')
+        .select('route_id')
+        .is('date_end', null);
+      const activeRouteIds = activeAssignments?.map((a: any) => a.route_id) || [];
+      
+      if (activeRouteIds.length > 0) {
+        pQuery = pQuery.in('route_id', activeRouteIds);
+        eQuery = eQuery.in('route_id', activeRouteIds);
+        lQuery = lQuery.in('route_id', activeRouteIds);
+      } else {
+        pQuery = pQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
+        eQuery = eQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
+        lQuery = lQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
+      }
     }
 
     const [pRes, eRes, lRes] = await Promise.all([pQuery, eQuery, lQuery]);
