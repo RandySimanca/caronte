@@ -43,17 +43,27 @@ export function DailyClosingPage() {
   const syncQueue = useLiveQuery(() => db.syncQueue.toArray(), []) || [];
 
   // Pagos por transferencia del día (guardados en settings con prefijo transfer_)
-  const transferSettings = useLiveQuery(() => db.settings.toArray(), []) || [];
+  // Y también obtenemos los pagos de oficina descargados en pullInitialData
+  const allSettings = useLiveQuery(() => db.settings.toArray(), []) || [];
+  
   const totalTransfers = useMemo(() => {
     const todayPrefix = `transfer_`;
-    return transferSettings
+    return allSettings
       .filter(s => s.key.startsWith(todayPrefix))
       .filter(s => {
         const val = s.value as { collectedAt?: string };
         return val?.collectedAt?.startsWith(today);
       })
       .reduce((sum, s) => sum + ((s.value as any).amount || 0), 0);
-  }, [transferSettings, today]);
+  }, [allSettings, today]);
+
+  const { officeCash, officeTransfers } = useMemo(() => {
+    const cash = allSettings.find(s => s.key === `office_cash_${today}`)?.value as number || 0;
+    const transfers = allSettings.find(s => s.key === `office_transfers_${today}`)?.value as number || 0;
+    return { officeCash: cash, officeTransfers: transfers };
+  }, [allSettings, today]);
+  
+  const totalOfficePayments = officeCash + officeTransfers;
 
   const { expected, collected, newLoansDelivered, newLoansCount } = useMemo(() => {
     let exp = 0;
@@ -88,8 +98,8 @@ export function DailyClosingPage() {
   const pendingSync = syncQueue.filter(op => op.status === 'pending' || op.status === 'failed').length;
 
   // Formula identica al admin:
-  // Total a entregar = Base inicial + Total cobrado - Gastos - Viaticos - Prestamos nuevos - Transferencias
-  const totalEntregar = baseAmount + collected - totalExpenses - viaticumAsignado - newLoansDelivered - totalTransfers;
+  // Total a entregar = Base inicial + Total cobrado - Gastos - Viaticos - Prestamos nuevos - Transferencias cobrador - Pagos Oficina
+  const totalEntregar = baseAmount + collected - totalExpenses - viaticumAsignado - newLoansDelivered - totalTransfers - totalOfficePayments;
 
   const handleClose = async () => {
     if (!baseAmount || baseAmount <= 0) {
@@ -216,9 +226,20 @@ export function DailyClosingPage() {
               <div className="flex justify-between items-center text-sm">
                 <div className="flex items-center gap-1.5 text-indigo-500 font-semibold">
                   <Smartphone className="w-4 h-4" />
-                  (-) Pagos por transferencia
+                  (-) Tus cobros por transferencia
                 </div>
                 <span className="font-semibold text-indigo-500">-{formatCurrency(totalTransfers)}</span>
+              </div>
+            )}
+
+            {/* Cobros en oficina */}
+            {totalOfficePayments > 0 && (
+              <div className="flex justify-between items-center text-sm">
+                <div className="flex items-center gap-1.5 text-orange-500 font-semibold">
+                  <TrendingDown className="w-4 h-4 opacity-0" />
+                  (-) Cobros en oficina (Admin)
+                </div>
+                <span className="font-semibold text-orange-500">-{formatCurrency(totalOfficePayments)}</span>
               </div>
             )}
 

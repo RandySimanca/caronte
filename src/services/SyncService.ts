@@ -375,8 +375,32 @@ export class SyncService {
         localSettings.push({ key: 'collector_viaticum', value: collectorViaticum });
       }
 
-      // Check if day is already closed by admin liquidation
       const today = format(new Date(), 'yyyy-MM-dd');
+      const todayStart = today + 'T00:00:00.000Z';
+      const todayEnd = today + 'T23:59:59.999Z';
+
+      // 7. Fetch Admin Office Payments for these routes for today
+      // This is crucial so the collector isn't charged for money the admin collected in the office.
+      const { data: adminPayments } = await supabase
+        .from('payments')
+        .select('total_amount, is_transfer')
+        .in('route_id', routeIds)
+        .eq('device_id', 'admin_panel')
+        .gte('collected_at', todayStart)
+        .lte('collected_at', todayEnd);
+
+      let officeCash = 0;
+      let officeTransfers = 0;
+      if (adminPayments) {
+        for (const p of adminPayments) {
+           if (p.is_transfer) officeTransfers += p.total_amount;
+           else officeCash += p.total_amount;
+        }
+      }
+      localSettings.push({ key: `office_cash_${today}`, value: officeCash });
+      localSettings.push({ key: `office_transfers_${today}`, value: officeTransfers });
+
+      // Check if day is already closed by admin liquidation
       const { data: closings } = await supabase
         .from('daily_closings')
         .select('is_closed')
@@ -387,6 +411,13 @@ export class SyncService {
       if (closings && closings.length > 0) {
         localSettings.push({ key: `day_closed_${today}`, value: true });
       }
+
+      // Retrieve local settings we MUST preserve (like transfer proofs generated offline today)
+      const existingSettings = await db.settings.toArray();
+      const settingsToKeep = existingSettings.filter(s => 
+        s.key.startsWith('transfer_') || 
+        s.key.startsWith('day_closed_')
+      );
 
       // Save to Dexie Transactionally
       await db.transaction('rw', db.routes, db.clients, db.loans, db.installments, db.settings, async () => {
@@ -402,6 +433,7 @@ export class SyncService {
         if (loans) await db.loans.bulkAdd(loans as any[]);
         if (installments) await db.installments.bulkAdd(installments as any[]);
         if (localSettings.length > 0) await db.settings.bulkAdd(localSettings);
+        if (settingsToKeep.length > 0) await db.settings.bulkAdd(settingsToKeep);
       });
 
     } catch (error) {
