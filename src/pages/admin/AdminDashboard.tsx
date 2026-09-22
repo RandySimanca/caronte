@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck, Plus, Building2 } from 'lucide-react';
+import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck, Plus, Building2, Smartphone } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { ClientsModal } from '@/components/admin/ClientsModal';
 import { LotteryModule } from '@/components/admin/LotteryModule';
 import { ObservationsModal } from '@/components/admin/ObservationsModal';
 import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
 import { AdminCreateLoanModal } from '@/components/admin/AdminCreateLoanModal';
+import { TransferVouchersModal } from '@/components/admin/TransferVouchersModal';
 import toast from 'react-hot-toast';
 
 export function AdminDashboard() {
@@ -19,6 +20,7 @@ export function AdminDashboard() {
   const [isObservationsOpen, setIsObservationsOpen] = useState(false);
   const [isPrepaidModalOpen, setIsPrepaidModalOpen] = useState(false);
   const [isCreateLoanOpen, setIsCreateLoanOpen] = useState(false);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
 
   // Load route list only once
   useEffect(() => {
@@ -121,6 +123,16 @@ export function AdminDashboard() {
             <Building2 className="w-5 h-5" />
           </div>
           <span className="text-base">Registrar Cobro (Oficina)</span>
+        </button>
+
+        <button
+          onClick={() => setIsTransferModalOpen(true)}
+          className="flex-1 flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-indigo-500/20 transition-all group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors shrink-0">
+            <Smartphone className="w-5 h-5" />
+          </div>
+          <span className="text-base">Transferencias del Dia</span>
         </button>
       </div>
 
@@ -420,6 +432,13 @@ export function AdminDashboard() {
         onClose={() => setIsCreateLoanOpen(false)}
         routeStates={routeStates}
         onSuccess={() => setIsCreateLoanOpen(false)}
+      />
+
+      <TransferVouchersModal
+        isOpen={isTransferModalOpen}
+        onClose={() => setIsTransferModalOpen(false)}
+        routeStates={routeStates}
+        initialRouteId={selectedRoute}
       />
     </div>
   );

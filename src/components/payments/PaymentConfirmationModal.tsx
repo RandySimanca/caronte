@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { X, CheckSquare, Square, Info, AlertTriangle, Trophy, Ticket } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { X, CheckSquare, Square, Info, AlertTriangle, Trophy, Ticket, Smartphone, Image, Trash2 } from 'lucide-react';
 import { formatCurrency, cn, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
 import { db, type LocalLoan } from '@/db/schema';
@@ -43,6 +43,9 @@ export function PaymentConfirmationModal({
   const [isSaving, setIsSaving] = useState(false);
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
   const [lotteryWinner, setLotteryWinner] = useState<{ winning_number: string; draw_date: string } | null>(null);
+  const [isTransfer, setIsTransfer] = useState(false);
+  const [voucherBase64, setVoucherBase64] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { isOnline } = useSyncStore();
 
@@ -100,6 +103,15 @@ export function PaymentConfirmationModal({
     };
   }, [amount, financialState]);
 
+  // Capture voucher from file input
+  const handleVoucherChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setVoucherBase64(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
   // Auto-fill expected amount when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -107,6 +119,8 @@ export function PaymentConfirmationModal({
       setObservation('');
       setShowDuplicateWarning(false);
       setLotteryWinner(null);
+      setIsTransfer(false);
+      setVoucherBase64(null);
 
       // Check if this loan won the lottery by reading the last draw from Dexie settings
       const checkLotteryWinner = async () => {
@@ -144,6 +158,12 @@ export function PaymentConfirmationModal({
       const deviceId = 'web-' + (navigator.userAgent.substring(0, 20).replace(/\s/g, '-'));
       const today = format(new Date(), 'yyyy-MM-dd');
 
+      if (isTransfer && !voucherBase64) {
+        toast.error('Debes adjuntar el comprobante de transferencia.');
+        setIsSaving(false);
+        return;
+      }
+
       const paymentPayload = {
         operationId,
         deviceId,
@@ -153,6 +173,8 @@ export function PaymentConfirmationModal({
         totalAmount: distribution.numAmount,
         collectorObservation: observation || null,
         collectedAt,
+        isTransfer,
+        transferVoucherBase64: isTransfer ? voucherBase64 : null,
       };
 
         // 1. Update local installments in Dexie
@@ -241,6 +263,11 @@ export function PaymentConfirmationModal({
           local_timestamp: collectedAt,
           retry_count: 0,
         });
+
+        // Store transfer flag locally for DailyClosing to read
+        if (isTransfer) {
+          await db.settings.put({ key: `transfer_${operationId}`, value: { amount: distribution.numAmount, operationId, collectedAt } });
+        }
       });
 
       toast.success(`Cobro de ${formatCurrency(distribution.numAmount)} registrado${isOnline ? ' y sincronizado' : ' (se sincronizará en línea)'}`);
@@ -429,6 +456,69 @@ export function PaymentConfirmationModal({
                   <p className="text-[11px] text-emerald-700 font-medium">
                     El excedente de {formatCurrency(distribution.advanceAmount)} se aplicará a las cuotas de los días siguientes.
                   </p>
+                </div>
+              )}
+            </div>
+
+            {/* Transfer Toggle */}
+            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
+              <button
+                type="button"
+                onClick={() => { setIsTransfer(v => !v); setVoucherBase64(null); }}
+                className={cn(
+                  'w-full flex items-center justify-between px-4 py-3 rounded-xl font-bold text-sm transition-all border',
+                  isTransfer
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20'
+                    : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4" />
+                  Pago por Transferencia
+                </div>
+                <div className={cn(
+                  'w-10 h-6 rounded-full transition-colors relative',
+                  isTransfer ? 'bg-white/30' : 'bg-slate-200'
+                )}>
+                  <div className={cn(
+                    'absolute top-1 w-4 h-4 rounded-full transition-all shadow-sm',
+                    isTransfer ? 'left-5 bg-white' : 'left-1 bg-white'
+                  )} />
+                </div>
+              </button>
+
+              {isTransfer && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-blue-700">Adjunta el comprobante de transferencia *</p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleVoucherChange}
+                  />
+                  {voucherBase64 ? (
+                    <div className="relative rounded-xl overflow-hidden border-2 border-blue-300">
+                      <img src={voucherBase64} alt="Voucher" className="w-full max-h-48 object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => { setVoucherBase64(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                        className="absolute top-2 right-2 bg-rose-500 text-white rounded-full p-1.5 shadow-lg"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full flex flex-col items-center justify-center gap-2 py-5 border-2 border-dashed border-blue-300 rounded-xl bg-white text-blue-500 hover:bg-blue-50 transition-colors"
+                    >
+                      <Image className="w-6 h-6" />
+                      <span className="text-xs font-bold">Tomar foto o seleccionar imagen</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>

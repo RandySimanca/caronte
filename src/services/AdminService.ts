@@ -1440,5 +1440,40 @@ export class AdminService {
       daysInMonth
     };
   }
+
+  /**
+   * Obtiene los pagos por transferencia del día para el administrador.
+   */
+  static async getTransferPayments(date: string, routeId?: string) {
+    const startOfDay = `${date}T00:00:00.000Z`;
+    const endOfDay = `${date}T23:59:59.999Z`;
+
+    let query = supabase
+      .from('payments')
+      .select(`
+        id,
+        total_amount,
+        collected_at,
+        transfer_voucher_url,
+        collector_observation,
+        collector:users!payments_collector_id_fkey(full_name),
+        loan:loans!payments_loan_id_fkey(
+          route_id,
+          client:clients!loans_client_id_fkey(full_name, document_id)
+        )
+      `)
+      .eq('is_transfer', true)
+      .gte('collected_at', startOfDay)
+      .lte('collected_at', endOfDay)
+      .order('collected_at', { ascending: false });
+
+    if (routeId && routeId !== 'all') {
+      query = (query as any).eq('loan.route_id', routeId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  }
 }
 

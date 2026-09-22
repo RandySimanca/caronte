@@ -89,6 +89,25 @@ export class SyncService {
                activeRouteId = routes.length > 0 ? routes[0].id : null;
             }
 
+            // Upload voucher image if this is a transfer payment
+            let transferVoucherUrl: string | null = null;
+            if (payment.isTransfer && payment.transferVoucherBase64) {
+              try {
+                const res = await fetch(payment.transferVoucherBase64);
+                const blob = await res.blob();
+                const voucherPath = `vouchers/${payment.operationId || payment.operation_id}.jpg`;
+                const { error: uploadErr } = await supabase.storage
+                  .from('clients_photos')
+                  .upload(voucherPath, blob, { contentType: blob.type, upsert: true });
+                if (!uploadErr) {
+                  const { data: urlData } = supabase.storage.from('clients_photos').getPublicUrl(voucherPath);
+                  transferVoucherUrl = urlData.publicUrl;
+                }
+              } catch (uploadEx) {
+                console.error('Error uploading transfer voucher:', uploadEx);
+              }
+            }
+
             const paymentDb = {
               operation_id: payment.operationId || payment.operation_id,
               device_id: payment.deviceId || payment.device_id,
@@ -103,6 +122,8 @@ export class SyncService {
               is_partial_payment: payment.is_partial_payment,
               is_advance_payment: payment.is_advance_payment,
               is_above_expected: payment.is_above_expected,
+              is_transfer: payment.isTransfer || false,
+              transfer_voucher_url: transferVoucherUrl,
               sync_status: 'synced',
               collected_at: payment.collectedAt || payment.collected_at,
               synced_at: new Date().toISOString(),
