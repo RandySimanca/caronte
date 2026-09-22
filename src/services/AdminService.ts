@@ -365,6 +365,7 @@ export class AdminService {
       collected_at,
       collector_observation,
       is_above_expected,
+      is_transfer,
       collector:users!payments_collector_id_fkey(id, full_name, role_id),
       loan:loans!inner(route_id, client:clients(full_name))
     `)
@@ -434,6 +435,11 @@ export class AdminService {
       .filter((p: any) => p.collector?.role_id === adminRoleId)
       .reduce((sum: number, p: any) => sum + Number(p.total_amount), 0);
 
+    // Calcular recaudo por transferencias
+    const recaudoTransferencias = alertsData
+      .filter((p: any) => p.is_transfer)
+      .reduce((sum: number, p: any) => sum + Number(p.total_amount), 0);
+
     const enrichedAlerts = alertsData
       .filter((alert: any) => alert.is_above_expected || alert.advance_amount > 0 || (alert.collector_observation && alert.collector_observation.trim() !== ''))
       .map((alert: any) => ({
@@ -453,6 +459,7 @@ export class AdminService {
       nuevos: loansRes.count || 0,
       recaudo: recaudoHoy,
       recaudoOficina,
+      recaudoTransferencias,
       esperado: recaudoEsperado,
       cobradores: usersRes.count || 0,
       rutas: routesRes.count || 0,

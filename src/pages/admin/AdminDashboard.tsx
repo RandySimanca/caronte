@@ -125,15 +125,6 @@ export function AdminDashboard() {
           <span className="text-base">Registrar Cobro (Oficina)</span>
         </button>
 
-        <button
-          onClick={() => setIsTransferModalOpen(true)}
-          className="flex-1 flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-indigo-500/20 transition-all group"
-        >
-          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors shrink-0">
-            <Smartphone className="w-5 h-5" />
-          </div>
-          <span className="text-base">Transferencias del Dia</span>
-        </button>
       </div>
 
       {/* Cards Row 1 — always filtered by selected route */}
@@ -183,9 +174,16 @@ export function AdminDashboard() {
             <div className={`text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
               {formatCurrency(stats?.recaudo ?? 0)}
             </div>
-            <div className={`text-sm font-bold text-brand-600 mb-2 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+            <div className={`text-sm font-bold text-brand-600 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
               Oficina: {formatCurrency(stats?.recaudoOficina ?? 0)}
             </div>
+            <button 
+              onClick={() => setIsTransferModalOpen(true)}
+              className={`text-sm font-bold text-indigo-600 mb-2 hover:text-indigo-700 transition-all text-left flex items-center gap-1 ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}
+            >
+              <Smartphone className="w-3 h-3" />
+              Transferencias: {formatCurrency(stats?.recaudoTransferencias ?? 0)}
+            </button>
           </div>
           <p className="text-xs text-slate-400">{isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas'}</p>
         </div>
