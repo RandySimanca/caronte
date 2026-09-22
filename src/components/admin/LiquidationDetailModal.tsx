@@ -70,6 +70,20 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
     }
   };
 
+  const handleReopen = async () => {
+    if (!route || !dateStr) return;
+    if (!window.confirm('¿Estás seguro de que deseas reabrir este día?')) return;
+    
+    try {
+      await AdminService.reopenLiquidation(route.id, dateStr);
+      toast.success('Día reabierto exitosamente');
+      onSuccess();
+      onClose();
+    } catch (error: any) {
+      toast.error(error.message || 'Error al reabrir el día');
+    }
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-CO', {
       style: 'currency',
@@ -246,9 +260,17 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
               </div>
 
               {route.estado === 'Liquidado' ? (
-                <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded-xl flex items-center justify-center font-bold">
-                  <CheckCircle className="w-5 h-5 mr-2" />
-                  Esta ruta ya fue liquidada hoy.
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded-xl flex flex-col items-center justify-center font-bold space-y-3">
+                  <div className="flex items-center">
+                    <CheckCircle className="w-5 h-5 mr-2" />
+                    Esta ruta ya fue liquidada hoy.
+                  </div>
+                  <button
+                    onClick={handleReopen}
+                    className="px-4 py-2 bg-white text-emerald-700 border border-emerald-300 rounded-lg text-sm hover:bg-emerald-100 transition-colors"
+                  >
+                    Reabrir Día
+                  </button>
                 </div>
               ) : (
                 <button

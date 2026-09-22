@@ -662,6 +662,19 @@ export class AdminService {
     return data as any;
   }
 
+  /**
+   * Reabre una liquidación (elimina o marca como no cerrada la liquidación de un día)
+   */
+  static async reopenLiquidation(routeId: string, dateStr: string) {
+    const { error } = await supabase
+      .from('daily_closings')
+      .update({ is_closed: false, closed_by: null, closed_at: null } as any)
+      .eq('route_id', routeId)
+      .eq('closing_date', dateStr);
+
+    if (error) throw error;
+  }
+
   // ─── CLIENTES ────────────────────────────────────────────────────────
 
   static async updateClient(id: string, data: { full_name?: string; document_id?: string; phone?: string; address?: string }) {
