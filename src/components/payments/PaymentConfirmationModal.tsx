@@ -178,7 +178,7 @@ export function PaymentConfirmationModal({
       };
 
         // 1. Update local installments in Dexie
-      await db.transaction('rw', db.installments, db.loans, db.syncQueue, async () => {
+      await db.transaction('rw', db.installments, db.loans, db.syncQueue, db.settings, async () => {
         let remaining = distribution.numAmount;
         const updatedInstallments: any[] = [];
 
