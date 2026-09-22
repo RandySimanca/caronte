@@ -137,13 +137,18 @@ export function AdminDashboard() {
           <p className="text-xs text-slate-400">{isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas'}</p>
         </button>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-          <div className="flex items-center gap-2 text-slate-500 font-bold mb-4">
-            <DollarSign className="w-5 h-5 text-emerald-500" />
-            Recaudo (hoy)
-          </div>
-          <div className={`text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
-            {formatCurrency(stats?.recaudo ?? 0)}
+        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-slate-500 font-bold mb-4">
+              <DollarSign className="w-5 h-5 text-emerald-500" />
+              Recaudo (hoy)
+            </div>
+            <div className={`text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+              {formatCurrency(stats?.recaudo ?? 0)}
+            </div>
+            <div className={`text-sm font-bold text-brand-600 mb-2 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+              Oficina: {formatCurrency(stats?.recaudoOficina ?? 0)}
+            </div>
           </div>
           <p className="text-xs text-slate-400">{isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas'}</p>
         </div>

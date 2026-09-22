@@ -306,9 +306,10 @@ export class AdminService {
     startOfWeek.setHours(0, 0, 0, 0);
     const startOfWeekStr = startOfWeek.toISOString();
 
-    // 2. Fetch role COBRADOR id
-    const { data: roleData } = await supabase.from('roles').select('id').eq('name', 'COBRADOR').single();
-    const cobradorRoleId = (roleData as any)?.id;
+    // 2. Fetch role COBRADOR and ADMINISTRADOR ids
+    const { data: rolesData } = await supabase.from('roles').select('id, name').in('name', ['COBRADOR', 'ADMINISTRADOR']);
+    const cobradorRoleId = rolesData?.find((r: any) => r.name === 'COBRADOR')?.id;
+    const adminRoleId = rolesData?.find((r: any) => r.name === 'ADMINISTRADOR')?.id;
 
     // 3. Prepare queries
     let clientsQuery = supabase.from('clients').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVO');
@@ -364,7 +365,7 @@ export class AdminService {
       collected_at,
       collector_observation,
       is_above_expected,
-      collector:users!payments_collector_id_fkey(full_name),
+      collector:users!payments_collector_id_fkey(id, full_name, role_id),
       loan:loans!inner(route_id, client:clients(full_name))
     `)
     .gte('collected_at', startOfDay)
@@ -427,6 +428,12 @@ export class AdminService {
     }));
 
     const alertsData = alertsRes.data || [];
+    
+    // Calcular recaudo en oficina (Admin)
+    const recaudoOficina = alertsData
+      .filter((p: any) => p.collector?.role_id === adminRoleId)
+      .reduce((sum: number, p: any) => sum + Number(p.total_amount), 0);
+
     const enrichedAlerts = alertsData
       .filter((alert: any) => alert.is_above_expected || alert.advance_amount > 0 || (alert.collector_observation && alert.collector_observation.trim() !== ''))
       .map((alert: any) => ({
@@ -445,6 +452,7 @@ export class AdminService {
       clientes: clientsRes.count || 0,
       nuevos: loansRes.count || 0,
       recaudo: recaudoHoy,
+      recaudoOficina,
       esperado: recaudoEsperado,
       cobradores: usersRes.count || 0,
       rutas: routesRes.count || 0,
