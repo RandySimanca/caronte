@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
 import { useSyncStore } from '@/stores/syncStore';
 import { SyncService } from '@/services/SyncService';
+import { db } from '@/db/schema';
 
 import { CollectorLayout } from '@/components/layout/CollectorLayout';
 import { CollectorDashboard } from '@/pages/collector/CollectorDashboard';
@@ -29,7 +30,7 @@ function RequireAuth({ children, allowedRoles }: { children: React.ReactNode, al
   const { session, role, isLoading } = useAuthStore();
   if (isLoading) return <SplashScreen />;
   if (!session) return <LoginPage />;
-  
+
   // Wait for role to be loaded
   if (!role) return <SplashScreen />;
 
@@ -74,7 +75,7 @@ const router = createBrowserRouter([
   { path: '/client/:id', element: <RequireAuth allowedRoles={['COBRADOR']}><ClientDetailPage /></RequireAuth> },
   { path: '/client/:id/edit', element: <RequireAuth allowedRoles={['COBRADOR']}><EditClientPage /></RequireAuth> },
   { path: '/loan/new', element: <RequireAuth allowedRoles={['COBRADOR']}><NewLoanWizard /></RequireAuth> },
-  
+
   // RUTAS DEL ADMINISTRADOR
   {
     path: '/admin',
@@ -119,7 +120,14 @@ export function App() {
       _syncInProgress = true;
       try {
         // Push any pending operations first, then pull fresh data from server.
-        await SyncService.pushPendingOperations();
+        // El evento 'online' suele dispararse antes de que la red sea estable: si algo queda
+        // pendiente se reintenta a los 10 s, 20 s y 40 s en vez de esperar al ciclo de 5 minutos.
+        for (let attempt = 0; attempt < 4; attempt++) {
+          await SyncService.pushPendingOperations();
+          const stillPending = await db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing']).count();
+          if (stillPending === 0 || !navigator.onLine) break;
+          if (attempt < 3) await new Promise(r => setTimeout(r, 10000 * 2 ** attempt));
+        }
         const userId = useAuthStore.getState().user?.id;
         const role = useAuthStore.getState().role;
         if (userId && role === 'COBRADOR') {

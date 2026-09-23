@@ -3,6 +3,44 @@ import { db } from '@/db/schema';
 import { supabase } from '@/lib/supabase';
 import { useSyncStore } from '@/stores/syncStore';
 
+/** Usuario de la sesión local (no hace request de red, funciona con conexión inestable). */
+async function getCurrentUser() {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.user ?? null;
+}
+
+const CHUNK_SIZE = 100;   // ids por request (evita URLs gigantes en .in())
+const PAGE_SIZE = 1000;   // max_rows de PostgREST
+
+/**
+ * Descarga TODAS las filas de una tabla filtrando por una lista de ids,
+ * en bloques y con paginación (PostgREST corta en 1000 filas por request).
+ * Si cualquier request falla lanza el error: así el pull NO toca la BD local.
+ */
+async function fetchAllByIds<T = any>(
+  table: string,
+  column: string,
+  ids: string[],
+  build?: (q: any) => any
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + CHUNK_SIZE);
+    let from = 0;
+    while (true) {
+      let q: any = (supabase as any).from(table).select('*').in(column, chunk);
+      if (build) q = build(q);
+      const { data, error } = await q.order('id', { ascending: true }).range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      const rows = (data || []) as T[];
+      out.push(...rows);
+      if (rows.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+  }
+  return out;
+}
+
 export class SyncService {
   /**
    * Pushes all pending operations from Dexie to Supabase.
@@ -10,10 +48,15 @@ export class SyncService {
   static async pushPendingOperations() {
     const isOnline = useSyncStore.getState().isOnline;
     if (!isOnline) return;
+    if (useSyncStore.getState().isSyncing) return; // ya hay una sincronización en curso
 
     useSyncStore.getState().setSyncing(true);
 
     try {
+      // Si la app se cerró/cayó a mitad de una sincronización, esas operaciones quedaron
+      // en 'syncing' para siempre. Aquí ya sabemos que no hay otro push corriendo: se reintentan.
+      await db.syncQueue.where('status').equals('syncing').modify({ status: 'pending' });
+
       const pendingOps = await db.syncQueue
         .where('status')
         .anyOf(['pending', 'failed'])
@@ -42,51 +85,75 @@ export class SyncService {
             }
           };
 
+          // Sube una foto base64; si no se puede, LANZA error (antes se guardaba el cliente sin foto y se daba por sincronizado).
+          const uploadPhotoOrThrow = async (dataUrl: string | null, path: string): Promise<string | null> => {
+            if (!dataUrl || !dataUrl.startsWith('data:image')) return dataUrl;
+            const url = await uploadBase64Image(dataUrl, path);
+            if (!url) throw new Error('No se pudo subir la foto del cliente');
+            return url;
+          };
+
           if (op.operation_type === 'NEW_LOAN_BUNDLE') {
             const { client, loan, installments } = op.payload;
-            
+
             // Fix route_id if null or local
             let activeRouteId = client.route_id;
             if (!activeRouteId || activeRouteId === 'local') {
-               const routes = await db.routes.toArray();
-               activeRouteId = routes.length > 0 ? routes[0].id : null;
+              const routes = await db.routes.toArray();
+              activeRouteId = routes.length > 0 ? routes[0].id : null;
             }
             client.route_id = activeRouteId;
             loan.route_id = activeRouteId;
 
             // Get user to satisfy RLS
-            const { data: { user } } = await supabase.auth.getUser();
+            const user = await getCurrentUser();
             if (user) {
               client.created_by = user.id;
               loan.created_by = user.id;
             }
 
-            // Upload photos if they are base64
-            client.photo_face_url = await uploadBase64Image(client.photo_face_url, `faces/${client.id}-${Date.now()}.jpg`);
-            client.photo_doc_url = await uploadBase64Image(client.photo_doc_url, `docs/${client.id}-${Date.now()}.jpg`);
+            // Upload photos if they are base64 (ruta estable => reintentos idempotentes)
+            client.photo_face_url = await uploadPhotoOrThrow(client.photo_face_url, `faces/${client.id}.jpg`);
+            client.photo_doc_url = await uploadPhotoOrThrow(client.photo_doc_url, `docs/${client.id}.jpg`);
 
             if (loan.collector_id === 'local-user' && user) {
               loan.collector_id = user.id;
             }
 
-            const { error: clientError } = await supabase.from('clients').upsert(client as any);
-            if (clientError && clientError.code !== '42501') throw clientError;
+            // ignoreDuplicates => INSERT ... ON CONFLICT DO NOTHING: los reintentos son idempotentes
+            // y NO requieren permiso de UPDATE. Ningún error se ignora: si algo falla, la operación
+            // queda 'failed' y se reintenta, en vez de marcarse como sincronizada.
+            const { error: clientError } = await supabase.from('clients')
+              .upsert(client as any, { onConflict: 'id', ignoreDuplicates: true });
+            if (clientError) throw clientError;
 
-            const { error: loanError } = await supabase.from('loans').upsert(loan as any);
-            if (loanError && loanError.code !== '42501') throw loanError;
+            const { error: loanError } = await supabase.from('loans')
+              .upsert(loan as any, { onConflict: 'id', ignoreDuplicates: true });
+            if (loanError) throw loanError;
 
-            const { error: instError } = await supabase.from('loan_installments').upsert(installments as any[]);
+            const { error: instError } = await supabase.from('loan_installments')
+              .upsert(installments as any[], { onConflict: 'id', ignoreDuplicates: true });
             if (instError) throw instError;
+
+            // Verificación: solo se da por sincronizado si TODAS las cuotas están en el servidor.
+            const { count: serverInstCount, error: countError } = await supabase
+              .from('loan_installments')
+              .select('id', { count: 'exact', head: true })
+              .eq('loan_id', loan.id);
+            if (countError) throw countError;
+            if ((serverInstCount ?? 0) < installments.length) {
+              throw new Error(`Cuotas incompletas en el servidor (${serverInstCount ?? 0}/${installments.length})`);
+            }
 
           } else if (op.operation_type === 'PAYMENT_BUNDLE') {
             const { payment, loanId, newLoanBalance, updatedInstallments } = op.payload;
-            
-            const { data: { user } } = await supabase.auth.getUser();
+
+            const user = await getCurrentUser();
 
             let activeRouteId = payment.routeId || payment.route_id;
             if (!activeRouteId || activeRouteId === 'local') {
-               const routes = await db.routes.toArray();
-               activeRouteId = routes.length > 0 ? routes[0].id : null;
+              const routes = await db.routes.toArray();
+              activeRouteId = routes.length > 0 ? routes[0].id : null;
             }
 
             // Upload voucher image if this is a transfer payment
@@ -130,16 +197,18 @@ export class SyncService {
               created_by: user?.id || null
             };
 
-            const { error: paymentError } = await supabase.from('payments').upsert(paymentDb as any);
+            // operation_id es UNIQUE: el reintento no debe duplicar ni fallar por conflicto
+            const { error: paymentError } = await supabase.from('payments')
+              .upsert(paymentDb as any, { onConflict: 'operation_id', ignoreDuplicates: true });
             if (paymentError) throw paymentError;
 
             const { error: loanError } = await supabase.from('loans').update({ current_balance: newLoanBalance } as any).eq('id', loanId);
-            if (loanError && loanError.code !== '42501') throw loanError;
+            if (loanError) throw loanError;
 
             for (const inst of updatedInstallments) {
               const { id, ...updateData } = inst;
               const { error: instError } = await supabase.from('loan_installments').update(updateData as any).eq('id', id);
-              if (instError && instError.code !== '42501') throw instError;
+              if (instError) throw instError;
             }
           } else if (op.operation_type === 'LOAN') {
             const clientId = op.payload.clientId;
@@ -147,43 +216,42 @@ export class SyncService {
             const client = await db.clients.get(clientId);
             const loan = await db.loans.get(loanId);
             const installments = await db.installments.where('loan_id').equals(loanId).toArray();
-            
+
             if (client && loan && installments.length > 0) {
-               let activeRouteId = client.route_id;
-               if (!activeRouteId || activeRouteId === 'local') {
-                  const routes = await db.routes.toArray();
-                  activeRouteId = routes.length > 0 ? routes[0].id : null;
-               }
-               client.route_id = activeRouteId;
-               loan.route_id = activeRouteId as string;
+              let activeRouteId = client.route_id;
+              if (!activeRouteId || activeRouteId === 'local') {
+                const routes = await db.routes.toArray();
+                activeRouteId = routes.length > 0 ? routes[0].id : null;
+              }
+              client.route_id = activeRouteId;
+              loan.route_id = activeRouteId as string;
 
-               const { data: { user } } = await supabase.auth.getUser();
-               if (user) {
-                 (client as any).created_by = user.id;
-                 (loan as any).created_by = user.id;
-                 if (loan.collector_id === 'local-user') loan.collector_id = user.id;
-               }
+              const user = await getCurrentUser();
+              if (user) {
+                (client as any).created_by = user.id;
+                (loan as any).created_by = user.id;
+                if (loan.collector_id === 'local-user') loan.collector_id = user.id;
+              }
 
-               // Upload photos if they are base64
-               client.photo_face_url = await uploadBase64Image(client.photo_face_url, `faces/${client.id}-${Date.now()}.jpg`);
-               client.photo_doc_url = await uploadBase64Image(client.photo_doc_url, `docs/${client.id}-${Date.now()}.jpg`);
+              client.photo_face_url = await uploadPhotoOrThrow(client.photo_face_url, `faces/${client.id}.jpg`);
+              client.photo_doc_url = await uploadPhotoOrThrow(client.photo_doc_url, `docs/${client.id}.jpg`);
 
-               const { error: err1 } = await supabase.from('clients').upsert(client as any);
-               if (err1 && err1.code !== '42501') throw err1;
-               const { error: err2 } = await supabase.from('loans').upsert(loan as any);
-               if (err2 && err2.code !== '42501') throw err2;
-               const { error: err3 } = await supabase.from('loan_installments').upsert(installments as any[]);
-               if (err3) throw err3;
+              const { error: err1 } = await supabase.from('clients').upsert(client as any, { onConflict: 'id', ignoreDuplicates: true });
+              if (err1) throw err1;
+              const { error: err2 } = await supabase.from('loans').upsert(loan as any, { onConflict: 'id', ignoreDuplicates: true });
+              if (err2) throw err2;
+              const { error: err3 } = await supabase.from('loan_installments').upsert(installments as any[], { onConflict: 'id', ignoreDuplicates: true });
+              if (err3) throw err3;
             }
           } else if ((op.operation_type as string) === 'UPDATE_CLIENT') {
             const client = op.payload.client;
-            
+
             // Re-upload photos if needed (though edit page doesn't edit photos yet)
             if (client.photo_face_url && client.photo_face_url.startsWith('data:image')) {
-               client.photo_face_url = await uploadBase64Image(client.photo_face_url, `faces/${client.id}-${Date.now()}.jpg`);
+              client.photo_face_url = await uploadBase64Image(client.photo_face_url, `faces/${client.id}-${Date.now()}.jpg`);
             }
             if (client.photo_doc_url && client.photo_doc_url.startsWith('data:image')) {
-               client.photo_doc_url = await uploadBase64Image(client.photo_doc_url, `docs/${client.id}-${Date.now()}.jpg`);
+              client.photo_doc_url = await uploadBase64Image(client.photo_doc_url, `docs/${client.id}-${Date.now()}.jpg`);
             }
 
             const { error: err } = await supabase.from('clients').update({
@@ -203,12 +271,12 @@ export class SyncService {
             const updatedInstallments = isBundle ? op.payload.updatedInstallments : [];
             const newLoanBalance = isBundle ? op.payload.newLoanBalance : undefined;
 
-            const { data: { user } } = await supabase.auth.getUser();
-            
+            const user = await getCurrentUser();
+
             let activeRouteId = p.routeId;
             if (!activeRouteId || activeRouteId === 'local') {
-               const routes = await db.routes.toArray();
-               activeRouteId = routes.length > 0 ? routes[0].id : null;
+              const routes = await db.routes.toArray();
+              activeRouteId = routes.length > 0 ? routes[0].id : null;
             }
 
             const paymentDb = {
@@ -251,12 +319,12 @@ export class SyncService {
             }
           } else if (op.operation_type === 'EXPENSE') {
             const exp = op.payload;
-            const { data: { user } } = await supabase.auth.getUser();
+            const user = await getCurrentUser();
 
             let activeRouteId = exp.route_id;
             if (!activeRouteId || activeRouteId === 'local') {
-               const routes = await db.routes.toArray();
-               activeRouteId = routes.length > 0 ? routes[0].id : null;
+              const routes = await db.routes.toArray();
+              activeRouteId = routes.length > 0 ? routes[0].id : null;
             }
 
             const expenseDb = {
@@ -272,7 +340,7 @@ export class SyncService {
 
             const { error } = await supabase.from('expenses').upsert(expenseDb as any, { onConflict: 'operation_id' });
             if (error) throw error;
-            
+
             // Actualizar localmente el estado del gasto
             await db.expenses.update(exp.id, { sync_status: 'synced' });
           }
@@ -282,17 +350,14 @@ export class SyncService {
         } catch (error: any) {
           console.error(`Failed to sync operation ${op.operation_id}:`, error);
           const newRetryCount = (op.retry_count || 0) + 1;
-          
-          if (newRetryCount >= 5) {
-            console.error(`Operación ${op.operation_id} descartada permanentemente tras 5 intentos fallidos.`);
-            await db.syncQueue.delete(op.id!);
-          } else {
-            await db.syncQueue.update(op.id!, {
-              status: 'failed',
-              error_message: error.message || 'Unknown error',
-              retry_count: newRetryCount,
-            });
-          }
+
+          // Antes, tras 5 fallos la operación se BORRABA (el préstamo nunca llegaba al servidor y
+          // la app decía "todo sincronizado"). Ahora se conserva como 'failed' con su error.
+          await db.syncQueue.update(op.id!, {
+            status: 'failed',
+            error_message: error.message || 'Unknown error',
+            retry_count: newRetryCount,
+          });
         }
       }
 
@@ -344,7 +409,7 @@ export class SyncService {
 
       if (assignmentError) throw assignmentError;
       const assignments = (assignmentsRaw || []) as { route_id: string; viaticum: number | null }[];
-      
+
       const routeIds = assignments.map(a => a.route_id);
       // Grab the viaticum from the first active assignment (null = use global default)
       const collectorViaticum = assignments.length > 0 ? assignments[0].viaticum : null;
@@ -356,35 +421,21 @@ export class SyncService {
         .select('*')
         .in('id', routeIds);
 
-      // 3. Fetch Clients in those routes
-      const { data: clients } = await supabase
-        .from('clients')
-        .select('*')
-        .in('route_id', routeIds)
-        .eq('status', 'ACTIVO');
+      // 3-5. Clientes, préstamos y cuotas: por bloques + paginación, y si algo falla se lanza el
+      // error y NO se modifica la BD local (antes un error dejaba las listas vacías y se borraban datos locales).
+      const clients = await fetchAllByIds<any>('clients', 'route_id', routeIds, q => q.eq('status', 'ACTIVO'));
+      const clientIds = clients.map(c => c.id as string);
 
-      const clientIds = ((clients || []) as { id: string }[]).map(c => c.id);
+      const loans = await fetchAllByIds<any>('loans', 'client_id', clientIds, q => q.eq('status', 'ACTIVO'));
+      const loanIds = loans.map(l => l.id as string);
 
-      // 4. Fetch Active Loans for those clients
-      const { data: loans } = await supabase
-        .from('loans')
-        .select('*')
-        .in('client_id', clientIds)
-        .eq('status', 'ACTIVO');
-
-      const loanIds = ((loans || []) as { id: string }[]).map(l => l.id);
-
-      // 5. Fetch Installments for those loans
-      const { data: installments } = await supabase
-        .from('loan_installments')
-        .select('*')
-        .in('loan_id', loanIds);
+      const installments = await fetchAllByIds<any>('loan_installments', 'loan_id', loanIds);
 
       // 6. Fetch Global Settings and Categories
       const { data: settingsRaw } = await supabase.from('system_settings').select('key, value');
       const { data: categories } = await supabase.from('expense_categories').select('*').eq('active', true);
       const settings = (settingsRaw || []) as { key: string; value: any }[];
-      
+
       const localSettings = settings.map(s => ({ key: s.key, value: s.value }));
       if (categories) {
         localSettings.push({ key: 'expense_categories', value: categories });
@@ -412,8 +463,8 @@ export class SyncService {
       let officeTransfers = 0;
       if (adminPayments) {
         for (const p of adminPayments) {
-           if (p.is_transfer) officeTransfers += p.total_amount;
-           else officeCash += p.total_amount;
+          if (p.is_transfer) officeTransfers += p.total_amount;
+          else officeCash += p.total_amount;
         }
       }
       localSettings.push({ key: `office_cash_${today}`, value: officeCash });
@@ -492,8 +543,8 @@ export class SyncService {
       }
 
       const serverClientIds = new Set(((clients || []) as { id: string }[]).map(c => c.id));
-      const serverLoanIds   = new Set(((loans   || []) as { id: string }[]).map(l => l.id));
-      const serverInstIds   = new Set(((installments || []) as { id: string }[]).map(i => i.id));
+      const serverLoanIds = new Set(((loans || []) as { id: string }[]).map(l => l.id));
+      const serverInstIds = new Set(((installments || []) as { id: string }[]).map(i => i.id));
 
       // Save to Dexie Transactionally using safe merge
       await db.transaction('rw', db.routes, db.clients, db.loans, db.installments, db.settings, async () => {
@@ -550,7 +601,7 @@ export class SyncService {
   static async updatePendingCount() {
     const count = await db.syncQueue
       .where('status')
-      .anyOf(['pending', 'failed'])
+      .anyOf(['pending', 'failed', 'syncing'])
       .count();
     useSyncStore.getState().setPendingCount(count);
   }
@@ -605,9 +656,9 @@ export class SyncService {
         .eq('collector_id', collectorId)
         .is('date_end', null)
         .limit(1);
-        
+
       const routeIdData = (routeIdRes.data || []) as { route_id: string }[];
-      
+
       let isClosedOnServer = false;
       let hasServerRecord = false;
 

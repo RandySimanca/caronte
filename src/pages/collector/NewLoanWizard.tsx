@@ -31,7 +31,25 @@ export function NewLoanWizard() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setPhotoDataUrl(ev.target?.result as string);
+      const original = ev.target?.result as string;
+      // Reducir la foto (máx. 1024 px, JPEG 0.7): pasa de varios MB a ~100-200 KB,
+      // así se guarda más liviana en el celular y sube rápido con datos móviles.
+      const img = new window.Image();
+      img.onload = () => {
+        try {
+          const MAX = 1024;
+          const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+          const canvas = window.document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+          setPhotoDataUrl(canvas.toDataURL('image/jpeg', 0.7));
+        } catch {
+          setPhotoDataUrl(original);
+        }
+      };
+      img.onerror = () => setPhotoDataUrl(original);
+      img.src = original;
     };
     reader.readAsDataURL(file);
   };
