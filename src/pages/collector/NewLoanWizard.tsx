@@ -291,7 +291,7 @@ export function NewLoanWizard() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Cédula *</label>
-                  <input type="text" value={document} onChange={e => setDocument(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none" placeholder="1.098.765.432" />
+                  <input type="text" inputMode="numeric" value={document} onChange={e => setDocument(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none" placeholder="1.098.765.432" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Teléfono</label>
