@@ -315,10 +315,22 @@ export class SyncService {
 
   /**
    * Pulls the assigned routes, clients, loans, and installments for the current collector.
+   *
+   * Uses a SAFE MERGE strategy instead of clear+bulkAdd to prevent data loss:
+   * - Server records are upserted (bulkPut) into the local DB.
+   * - Local records still referenced by pending/failed sync ops (e.g. NEW_LOAN_BUNDLE
+   *   created offline) are NEVER deleted, even if the server doesn't know about them yet.
+   * - Only truly stale records (gone from server + no pending op) are removed.
    */
   static async pullInitialData(collectorId: string) {
     const isOnline = useSyncStore.getState().isOnline;
     if (!isOnline) return;
+
+    // Guard: don't pull while a push is already in progress to avoid race conditions.
+    if (useSyncStore.getState().isSyncing) {
+      console.warn('[SyncService] pullInitialData skipped — push still in progress.');
+      return;
+    }
 
     useSyncStore.getState().setSyncing(true);
 
@@ -438,21 +450,93 @@ export class SyncService {
         return false;
       });
 
-      // Save to Dexie Transactionally
-      await db.transaction('rw', db.routes, db.clients, db.loans, db.installments, db.settings, async () => {
-        // Clear existing data (in a real app you might want to merge, but for a daily sync full replace is safer if offline edits are pending in syncQueue)
-        await db.routes.clear();
-        await db.clients.clear();
-        await db.loans.clear();
-        await db.installments.clear();
-        await db.settings.clear();
+      // -----------------------------------------------------------------------
+      // SAFE MERGE: Identify records protected by pending sync operations.
+      //
+      // Records created offline (NEW_LOAN_BUNDLE, LOAN) must NOT be deleted
+      // from the local DB during a pull, even if the server hasn't received them
+      // yet (push may have failed or is still retrying).
+      // -----------------------------------------------------------------------
+      const pendingOps = await db.syncQueue
+        .where('status')
+        .anyOf(['pending', 'failed', 'syncing'])
+        .toArray();
 
-        if (routes) await db.routes.bulkAdd(routes as any[]);
-        if (clients) await db.clients.bulkAdd(clients as any[]);
-        if (loans) await db.loans.bulkAdd(loans as any[]);
-        if (installments) await db.installments.bulkAdd(installments as any[]);
+      const protectedClientIds = new Set<string>();
+      const protectedLoanIds = new Set<string>();
+      const protectedInstLoanIds = new Set<string>(); // loan_id of installments to keep
+
+      for (const op of pendingOps) {
+        try {
+          if (op.operation_type === 'NEW_LOAN_BUNDLE') {
+            if (op.payload?.client?.id) protectedClientIds.add(op.payload.client.id);
+            if (op.payload?.loan?.id) {
+              protectedLoanIds.add(op.payload.loan.id);
+              protectedInstLoanIds.add(op.payload.loan.id);
+            }
+          } else if (op.operation_type === 'LOAN') {
+            if (op.payload?.clientId) protectedClientIds.add(op.payload.clientId);
+            if (op.payload?.loanId) {
+              protectedLoanIds.add(op.payload.loanId);
+              protectedInstLoanIds.add(op.payload.loanId);
+            }
+          } else if (op.operation_type === 'PAYMENT_BUNDLE' || op.operation_type === 'PAYMENT') {
+            const lId = op.payload?.loanId ?? op.payload?.loan_id ?? op.payload?.payment?.loanId;
+            if (lId) protectedLoanIds.add(lId);
+          } else if ((op.operation_type as string) === 'UPDATE_CLIENT') {
+            if (op.payload?.client?.id) protectedClientIds.add(op.payload.client.id);
+          }
+        } catch (parseErr) {
+          console.warn('[SyncService] Could not parse pending op for protection check:', op.operation_id, parseErr);
+        }
+      }
+
+      const serverClientIds = new Set(((clients || []) as { id: string }[]).map(c => c.id));
+      const serverLoanIds   = new Set(((loans   || []) as { id: string }[]).map(l => l.id));
+      const serverInstIds   = new Set(((installments || []) as { id: string }[]).map(i => i.id));
+
+      // Save to Dexie Transactionally using safe merge
+      await db.transaction('rw', db.routes, db.clients, db.loans, db.installments, db.settings, async () => {
+
+        // Routes: full replace (always managed server-side, no offline creation)
+        await db.routes.clear();
+        if (routes && routes.length > 0) await db.routes.bulkAdd(routes as any[]);
+
+        // Clients: upsert server records, then remove stale non-protected ones
+        if (clients && clients.length > 0) {
+          await db.clients.bulkPut(clients as any[]);
+        }
+        const allLocalClients = await db.clients.toArray();
+        const clientsToDelete = allLocalClients
+          .filter(c => !serverClientIds.has(c.id) && !protectedClientIds.has(c.id))
+          .map(c => c.id);
+        if (clientsToDelete.length > 0) await db.clients.bulkDelete(clientsToDelete);
+
+        // Loans: upsert server records, then remove stale non-protected ones
+        if (loans && loans.length > 0) {
+          await db.loans.bulkPut(loans as any[]);
+        }
+        const allLocalLoans = await db.loans.toArray();
+        const loansToDelete = allLocalLoans
+          .filter(l => !serverLoanIds.has(l.id) && !protectedLoanIds.has(l.id))
+          .map(l => l.id);
+        if (loansToDelete.length > 0) await db.loans.bulkDelete(loansToDelete);
+
+        // Installments: upsert server records, then remove stale ones
+        if (installments && installments.length > 0) {
+          await db.installments.bulkPut(installments as any[]);
+        }
+        const allLocalInsts = await db.installments.toArray();
+        const instsToDelete = allLocalInsts
+          .filter(i => !serverInstIds.has(i.id) && !protectedInstLoanIds.has(i.loan_id))
+          .map(i => i.id);
+        if (instsToDelete.length > 0) await db.installments.bulkDelete(instsToDelete);
+
+        // Settings: full replace, preserving offline-generated keys
+        await db.settings.clear();
         if (localSettings.length > 0) await db.settings.bulkAdd(localSettings);
-        if (settingsToKeep.length > 0) await db.settings.bulkAdd(settingsToKeep);
+        // Use bulkPut to safely handle potential key collisions from settingsToKeep
+        if (settingsToKeep.length > 0) await db.settings.bulkPut(settingsToKeep);
       });
 
     } catch (error) {

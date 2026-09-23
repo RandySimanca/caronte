@@ -92,6 +92,9 @@ const router = createBrowserRouter([
   }
 ]);
 
+// Module-level mutex to prevent concurrent sync runs (e.g. handleOnline + 5-min interval firing simultaneously).
+let _syncInProgress = false;
+
 export function App() {
   const { checkSession, session } = useAuthStore();
   const { setOnlineStatus } = useSyncStore();
@@ -112,12 +115,18 @@ export function App() {
     // 3. Monitor network connectivity
     const handleOnline = async () => {
       setOnlineStatus(true);
-      // Push any pending operations, then pull fresh data from server
-      await SyncService.pushPendingOperations();
-      const userId = useAuthStore.getState().user?.id;
-      const role = useAuthStore.getState().role;
-      if (userId && role === 'COBRADOR') {
-        await SyncService.pullInitialData(userId);
+      if (_syncInProgress) return;
+      _syncInProgress = true;
+      try {
+        // Push any pending operations first, then pull fresh data from server.
+        await SyncService.pushPendingOperations();
+        const userId = useAuthStore.getState().user?.id;
+        const role = useAuthStore.getState().role;
+        if (userId && role === 'COBRADOR') {
+          await SyncService.pullInitialData(userId);
+        }
+      } finally {
+        _syncInProgress = false;
       }
     };
     const handleOffline = () => setOnlineStatus(false);
@@ -135,13 +144,18 @@ export function App() {
   useEffect(() => {
     if (!session) return;
     const interval = setInterval(async () => {
-      if (navigator.onLine) {
-        await SyncService.pushPendingOperations();
-        // Also pull fresh data so admin changes (edits, new loans, etc.) are seen by collector
-        const userId = useAuthStore.getState().user?.id;
-        const role = useAuthStore.getState().role;
-        if (userId && role === 'COBRADOR') {
-          await SyncService.pullInitialData(userId);
+      if (navigator.onLine && !_syncInProgress) {
+        _syncInProgress = true;
+        try {
+          await SyncService.pushPendingOperations();
+          // Also pull fresh data so admin changes (edits, new loans, etc.) are seen by collector
+          const userId = useAuthStore.getState().user?.id;
+          const role = useAuthStore.getState().role;
+          if (userId && role === 'COBRADOR') {
+            await SyncService.pullInitialData(userId);
+          }
+        } finally {
+          _syncInProgress = false;
         }
       }
     }, 5 * 60 * 1000);
