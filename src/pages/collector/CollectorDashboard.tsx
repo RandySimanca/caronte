@@ -21,7 +21,7 @@ export function CollectorDashboard() {
   // Refresca datos del servidor cada vez que el dashboard monta (para ver cambios del admin)
   useEffect(() => {
     if (isOnline && user?.id) {
-      SyncService.pullInitialData(user.id);
+      SyncService.fullSync(user.id);
     }
   }, [isOnline, user?.id]);
 
@@ -116,9 +116,10 @@ export function CollectorDashboard() {
   const pendingPercent = 100 - collectedPercent;
 
   const handleSync = async () => {
-    await SyncService.pushPendingOperations();
     if (user?.id) {
-      await SyncService.pullInitialData(user.id);
+      await SyncService.fullSync(user.id);
+    } else {
+      await SyncService.pushPendingOperations();
     }
   };
 

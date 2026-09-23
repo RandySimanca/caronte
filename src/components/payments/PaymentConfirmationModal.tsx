@@ -7,6 +7,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useSyncStore } from '@/stores/syncStore';
+import { useAuthStore } from '@/stores/authStore';
+import { SyncService } from '@/services/SyncService';
 import { buildCreditStatusMessage, openWhatsAppWithMessage } from '@/lib/whatsapp';
 
 interface FinancialState {
@@ -282,7 +284,11 @@ export function PaymentConfirmationModal({
         }
       });
 
-      toast.success(`Cobro de ${formatCurrency(distribution.numAmount)} registrado${isOnline ? ' y sincronizado' : ' (se sincronizará en línea)'}`);
+      toast.success(`Cobro de ${formatCurrency(distribution.numAmount)} registrado${isOnline ? '' : ' (se sincronizará en línea)'}`);
+      const userId = useAuthStore.getState().user?.id;
+      if (isOnline && userId) {
+        SyncService.fullSync(userId).catch((e) => console.error('Sync after payment failed:', e));
+      }
 
       // --- WhatsApp: preparar datos para que el cobrador decida si enviar ---
       const arrearsAfterPayment = Math.max((financialState.arrears ?? 0) - (distribution.arrearsAmount ?? 0), 0);

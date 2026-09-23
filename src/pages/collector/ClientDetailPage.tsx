@@ -20,11 +20,16 @@ export function ClientDetailPage() {
   const today = format(new Date(), 'yyyy-MM-dd');
 
   // Real data from Dexie
-  const client = useLiveQuery(() => id ? db.clients.get(id) : undefined, [id]);
+  const client = useLiveQuery(() => (id ? db.clients.get(id) : undefined), [id]);
   const loan = useLiveQuery(
     () => id ? db.loans.where('client_id').equals(id).filter(l => l.status === 'ACTIVO').first() : undefined,
     [id]
   );
+  const lookupsDone = useLiveQuery(async () => {
+    if (!id) return true;
+    await Promise.all([db.clients.get(id), db.loans.where('client_id').equals(id).first()]);
+    return true;
+  }, [id]) === true;
   const installments = useLiveQuery(
     () => loan ? db.installments.where('loan_id').equals(loan.id).toArray() : [],
     [loan?.id]
@@ -119,7 +124,7 @@ export function ClientDetailPage() {
     }
   };
 
-  if (!client || !loan) {
+  if (!lookupsDone) {
     return (
       <div className="flex flex-col h-full bg-slate-50">
         <header className="bg-white px-4 py-3 border-b border-slate-100 flex items-center">
@@ -130,6 +135,41 @@ export function ClientDetailPage() {
         </header>
         <div className="flex-1 flex items-center justify-center text-slate-400">
           <p>Cargando información del cliente...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!client) {
+    return (
+      <div className="flex flex-col h-full bg-slate-50">
+        <header className="bg-white px-4 py-3 border-b border-slate-100 flex items-center">
+          <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-slate-600">
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+          <h1 className="text-lg font-bold text-slate-800 ml-2">Detalle del Cliente</h1>
+        </header>
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-500 px-6 text-center">
+          <p className="font-semibold text-slate-700">No se encontró el cliente en este celular.</p>
+          <p className="text-sm mt-2">Si acabas de sincronizar, vuelve a la ruta e inténtalo de nuevo.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!loan) {
+    return (
+      <div className="flex flex-col h-full bg-slate-50">
+        <header className="bg-white px-4 py-3 border-b border-slate-100 flex items-center">
+          <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-slate-600">
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+          <h1 className="text-lg font-bold text-slate-800 ml-2">Detalle del Cliente</h1>
+        </header>
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-500 px-6 text-center">
+          <p className="font-semibold text-slate-800">{client.full_name}</p>
+          <p className="text-sm mt-2">Este cliente no tiene un préstamo activo en el celular.</p>
+          <p className="text-xs mt-1 text-slate-400">Si lo creaste sin conexión, espera a que termine la sincronización o pulsa Sincronizar en el inicio.</p>
         </div>
       </div>
     );

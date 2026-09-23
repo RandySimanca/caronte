@@ -123,15 +123,16 @@ export function App() {
         // El evento 'online' suele dispararse antes de que la red sea estable: si algo queda
         // pendiente se reintenta a los 10 s, 20 s y 40 s en vez de esperar al ciclo de 5 minutos.
         for (let attempt = 0; attempt < 4; attempt++) {
-          await SyncService.pushPendingOperations();
+          const userId = useAuthStore.getState().user?.id;
+          const role = useAuthStore.getState().role;
+          if (userId && role === 'COBRADOR') {
+            await SyncService.fullSync(userId);
+          } else {
+            await SyncService.pushPendingOperations();
+          }
           const stillPending = await db.syncQueue.where('status').anyOf(['pending', 'failed', 'syncing']).count();
           if (stillPending === 0 || !navigator.onLine) break;
           if (attempt < 3) await new Promise(r => setTimeout(r, 10000 * 2 ** attempt));
-        }
-        const userId = useAuthStore.getState().user?.id;
-        const role = useAuthStore.getState().role;
-        if (userId && role === 'COBRADOR') {
-          await SyncService.pullInitialData(userId);
         }
       } finally {
         _syncInProgress = false;
@@ -155,12 +156,12 @@ export function App() {
       if (navigator.onLine && !_syncInProgress) {
         _syncInProgress = true;
         try {
-          await SyncService.pushPendingOperations();
-          // Also pull fresh data so admin changes (edits, new loans, etc.) are seen by collector
           const userId = useAuthStore.getState().user?.id;
           const role = useAuthStore.getState().role;
           if (userId && role === 'COBRADOR') {
-            await SyncService.pullInitialData(userId);
+            await SyncService.fullSync(userId);
+          } else {
+            await SyncService.pushPendingOperations();
           }
         } finally {
           _syncInProgress = false;

@@ -8,8 +8,8 @@ import type {
 } from '../lib/database.types';
 
 // Omitimos relations y campos que no necesitamos localmente o que manejamos de otra forma
-export type LocalClient = Omit<Client, 'route' | 'created_by'>;
-export type LocalLoan = Omit<Loan, 'client' | 'installments' | 'created_by'>;
+export type LocalClient = Omit<Client, 'route' | 'created_by'> & { sync_status?: 'pending' | 'synced' };
+export type LocalLoan = Omit<Loan, 'client' | 'installments' | 'created_by'> & { sync_status?: 'pending' | 'synced' };
 export type LocalInstallment = Omit<LoanInstallment, 'created_at'>;
 export type LocalRoute = Route;
 
@@ -55,6 +55,16 @@ export class CobraDiarioDB extends Dexie {
     this.version(2).stores({
       clients: 'id, route_id, status, document_id',
       loans: 'id, client_id, route_id, status',
+      installments: 'id, loan_id, scheduled_date, status',
+      syncQueue: '++id, operation_id, status, operation_type',
+      routes: 'id',
+      expenses: 'id, expense_date, sync_status',
+      settings: 'key'
+    });
+
+    this.version(3).stores({
+      clients: 'id, route_id, status, document_id, sync_status',
+      loans: 'id, client_id, route_id, status, sync_status',
       installments: 'id, loan_id, scheduled_date, status',
       syncQueue: '++id, operation_id, status, operation_type',
       routes: 'id',

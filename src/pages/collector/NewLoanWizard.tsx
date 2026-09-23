@@ -9,6 +9,8 @@ import { format, addDays, isSunday } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useSyncStore } from '@/stores/syncStore';
 import { useAuthStore } from '@/stores/authStore';
+import { loanFinancials } from '@/lib/money';
+import { SyncService } from '@/services/SyncService';
 
 export function NewLoanWizard() {
   const navigate = useNavigate();
@@ -104,6 +106,14 @@ export function NewLoanWizard() {
       const graceEndDate = format(addDays(new Date(), term + 7), 'yyyy-MM-dd');
       const userId = useAuthStore.getState().user?.id;
       const currentUserId = userId || 'local-user';
+      const routes = await db.routes.toArray();
+      const routeId = routes[0]?.id ?? null;
+      if (!routeId) {
+        toast.error('No hay ruta en este celular. Conéctate una vez para descargar tu ruta y luego puedes crear préstamos offline.');
+        return;
+      }
+
+      const money = loanFinancials(numAmount, interestRate, term, sundays, receiptFee);
 
       // Generate installment calendar locally
       // Cuota 0 = mañana (i+1 días desde hoy), para que el primer cobro sea el día siguiente al desembolso
@@ -121,9 +131,9 @@ export function NewLoanWizard() {
           loan_id: loanId,
           installment_number: i + 1,
           scheduled_date: dateStr,
-          scheduled_amount: dailyQuota,
-          paid_amount: isPrepaid ? dailyQuota : 0,
-          balance: isPrepaid ? 0 : dailyQuota,
+          scheduled_amount: money.daily_installment,
+          paid_amount: isPrepaid ? money.daily_installment : 0,
+          balance: isPrepaid ? 0 : money.daily_installment,
           status: isPrepaid ? 'PAGADA_ANTICIPADAMENTE' : 'PENDIENTE',
           day_type: isSun ? 'DOMINGO' : 'NORMAL',
           is_prepaid: isPrepaid,
@@ -142,13 +152,14 @@ export function NewLoanWizard() {
           address: address || null,
           neighborhood: null,
           municipality: null,
-          route_id: null, // Will be set by SyncService or backend
+          route_id: routeId,
           photo_face_url: photoDataUrl || null,
           photo_doc_url: null,
           personal_references: null,
           status: 'ACTIVO',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          sync_status: 'pending' as const,
         };
 
         // Asignar número de boleta localmente (offline-first)
@@ -167,20 +178,20 @@ export function NewLoanWizard() {
         const loanData = {
           id: loanId,
           client_id: clientId,
-          route_id: null, // Will be set by SyncService
+          route_id: routeId,
           collector_id: currentUserId,
-          amount_requested: numAmount,
-          interest_rate: interestRate,
-          interest_amount: numAmount * interestRate,
-          initial_obligation: obligation,
+          amount_requested: money.amount_requested,
+          interest_rate: money.interest_rate,
+          interest_amount: money.interest_amount,
+          initial_obligation: money.initial_obligation,
           term_days: term,
-          daily_installment: dailyQuota,
+          daily_installment: money.daily_installment,
           frequency: 'DIARIO',
           sundays_prepaid_count: sundays,
-          sundays_prepaid_amount: totalSundaysDiscount,
+          sundays_prepaid_amount: money.sundays_prepaid_amount,
           receipt_fee: receiptFee,
-          amount_delivered: delivered,
-          current_balance: obligation - totalSundaysDiscount,
+          amount_delivered: money.amount_delivered,
+          current_balance: money.current_balance,
           disbursement_date: today,
           start_date: startDate,
           end_date: endDate,
@@ -190,6 +201,7 @@ export function NewLoanWizard() {
           wants_raffle: wantsRaffle,
           raffle_number: generatedRaffleNumber,
           created_at: new Date().toISOString(),
+          sync_status: 'pending' as const,
         };
 
         // Save client locally
@@ -220,6 +232,9 @@ export function NewLoanWizard() {
       ['nlw_clientName', 'nlw_document', 'nlw_phone', 'nlw_address', 'nlw_amount', 'nlw_term', 'nlw_interestRate', 'nlw_sundays', 'nlw_receiptFee', 'nlw_wantsRaffle'].forEach(key => localStorage.removeItem(key));
 
       toast.success(`Préstamo de ${formatCurrency(numAmount)} creado para ${clientName}${isOnline ? '' : ' (se sincronizará en línea)'}`);
+      if (isOnline && userId) {
+        SyncService.fullSync(userId).catch((e) => console.error('Sync after new loan failed:', e));
+      }
       navigate('/route');
     } catch (error: any) {
       console.error('Error creating loan:', error);

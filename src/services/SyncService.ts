@@ -41,14 +41,59 @@ async function fetchAllByIds<T = any>(
   return out;
 }
 
+const OP_ORDER: Record<string, number> = {
+  NEW_LOAN_BUNDLE: 0,
+  LOAN: 0,
+  CLIENT: 0,
+  UPDATE_CLIENT: 1,
+  PAYMENT_BUNDLE: 2,
+  PAYMENT: 2,
+  EXPENSE: 3,
+};
+
+async function resolveRouteId(preferred?: string | null): Promise<string | null> {
+  if (preferred && preferred !== 'local') return preferred;
+  const routes = await db.routes.toArray();
+  return routes.length > 0 ? routes[0].id : null;
+}
+
+function withoutLocalSyncFlag<T extends Record<string, any>>(row: T) {
+  const { sync_status: _ignored, ...rest } = row;
+  return rest;
+}
+
+/** Una sola cola: push y pull no se pisan ni se saltan (antes el dashboard hacía pull y bloqueaba el push). */
+let _syncChain: Promise<void> = Promise.resolve();
+
+function enqueueSync<T>(fn: () => Promise<T>): Promise<T> {
+  const run = _syncChain.then(fn, fn);
+  _syncChain = run.then(() => undefined, () => undefined);
+  return run;
+}
+
 export class SyncService {
+  static async pushPendingOperations() {
+    return enqueueSync(() => this.pushPendingOperationsInternal());
+  }
+
+  static async pullInitialData(collectorId: string) {
+    return enqueueSync(() => this.pullInitialDataInternal(collectorId));
+  }
+
+  /** Primero sube lo pendiente y después baja el servidor. Nunca pull sin push. */
+  static async fullSync(collectorId: string) {
+    return enqueueSync(async () => {
+      await this.pushPendingOperationsInternal();
+      await this.pullInitialDataInternal(collectorId);
+    });
+  }
+
   /**
    * Pushes all pending operations from Dexie to Supabase.
    */
-  static async pushPendingOperations() {
+  private static async pushPendingOperationsInternal() {
     const isOnline = useSyncStore.getState().isOnline;
     if (!isOnline) return;
-    if (useSyncStore.getState().isSyncing) return; // ya hay una sincronización en curso
 
     useSyncStore.getState().setSyncing(true);
 
@@ -61,6 +106,13 @@ export class SyncService {
         .where('status')
         .anyOf(['pending', 'failed'])
         .toArray();
+
+      pendingOps.sort((a, b) => {
+        const oa = OP_ORDER[a.operation_type] ?? 9;
+        const ob = OP_ORDER[b.operation_type] ?? 9;
+        if (oa !== ob) return oa - ob;
+        return String(a.local_timestamp).localeCompare(String(b.local_timestamp));
+      });
 
       for (const op of pendingOps) {
         try {
@@ -96,65 +148,53 @@ export class SyncService {
           if (op.operation_type === 'NEW_LOAN_BUNDLE') {
             const { client, loan, installments } = op.payload;
 
-            // Fix route_id if null or local
-            let activeRouteId = client.route_id;
-            if (!activeRouteId || activeRouteId === 'local') {
-              const routes = await db.routes.toArray();
-              activeRouteId = routes.length > 0 ? routes[0].id : null;
+            const activeRouteId = await resolveRouteId(client.route_id || loan.route_id);
+            if (!activeRouteId) {
+              throw new Error('No hay ruta asignada en el dispositivo para sincronizar el préstamo');
             }
             client.route_id = activeRouteId;
             loan.route_id = activeRouteId;
 
-            // Get user to satisfy RLS
             const user = await getCurrentUser();
-            if (user) {
-              client.created_by = user.id;
-              loan.created_by = user.id;
-            }
-
-            // Upload photos if they are base64 (ruta estable => reintentos idempotentes)
-            client.photo_face_url = await uploadPhotoOrThrow(client.photo_face_url, `faces/${client.id}.jpg`);
-            client.photo_doc_url = await uploadPhotoOrThrow(client.photo_doc_url, `docs/${client.id}.jpg`);
-
-            if (loan.collector_id === 'local-user' && user) {
+            if (!user) throw new Error('Sesión no disponible para sincronizar');
+            client.created_by = user.id;
+            loan.created_by = user.id;
+            if (!loan.collector_id || loan.collector_id === 'local-user') {
               loan.collector_id = user.id;
             }
 
-            // ignoreDuplicates => INSERT ... ON CONFLICT DO NOTHING: los reintentos son idempotentes
-            // y NO requieren permiso de UPDATE. Ningún error se ignora: si algo falla, la operación
-            // queda 'failed' y se reintenta, en vez de marcarse como sincronizada.
-            const { error: clientError } = await supabase.from('clients')
-              .upsert(client as any, { onConflict: 'id', ignoreDuplicates: true });
-            if (clientError) throw clientError;
+            client.photo_face_url = await uploadPhotoOrThrow(client.photo_face_url, `faces/${client.id}.jpg`);
+            client.photo_doc_url = await uploadPhotoOrThrow(client.photo_doc_url, `docs/${client.id}.jpg`);
 
-            const { error: loanError } = await supabase.from('loans')
-              .upsert(loan as any, { onConflict: 'id', ignoreDuplicates: true });
-            if (loanError) throw loanError;
-
-            const { error: instError } = await supabase.from('loan_installments')
-              .upsert(installments as any[], { onConflict: 'id', ignoreDuplicates: true });
-            if (instError) throw instError;
-
-            // Verificación: solo se da por sincronizado si TODAS las cuotas están en el servidor.
-            const { count: serverInstCount, error: countError } = await supabase
-              .from('loan_installments')
-              .select('id', { count: 'exact', head: true })
-              .eq('loan_id', loan.id);
-            if (countError) throw countError;
-            if ((serverInstCount ?? 0) < installments.length) {
-              throw new Error(`Cuotas incompletas en el servidor (${serverInstCount ?? 0}/${installments.length})`);
+            const { data: rpcData, error: rpcError } = await supabase.rpc('sync_new_loan_bundle', {
+              p_client: withoutLocalSyncFlag(client),
+              p_loan: withoutLocalSyncFlag(loan),
+              p_installments: installments,
+            });
+            if (rpcError) throw rpcError;
+            if (!rpcData || (rpcData as any).ok !== true) {
+              throw new Error('El servidor no confirmó el préstamo completo');
             }
+
+            await db.clients.update(client.id, {
+              route_id: activeRouteId,
+              photo_face_url: client.photo_face_url,
+              photo_doc_url: client.photo_doc_url,
+              sync_status: 'synced',
+            } as any);
+            await db.loans.update(loan.id, {
+              route_id: activeRouteId,
+              collector_id: loan.collector_id,
+              sync_status: 'synced',
+            } as any);
 
           } else if (op.operation_type === 'PAYMENT_BUNDLE') {
             const { payment, loanId, newLoanBalance, updatedInstallments } = op.payload;
 
             const user = await getCurrentUser();
 
-            let activeRouteId = payment.routeId || payment.route_id;
-            if (!activeRouteId || activeRouteId === 'local') {
-              const routes = await db.routes.toArray();
-              activeRouteId = routes.length > 0 ? routes[0].id : null;
-            }
+            const activeRouteId = await resolveRouteId(payment.routeId || payment.route_id);
+            if (!activeRouteId) throw new Error('No hay ruta asignada para sincronizar el cobro');
 
             // Upload voucher image if this is a transfer payment
             let transferVoucherUrl: string | null = null;
@@ -173,6 +213,10 @@ export class SyncService {
               } catch (uploadEx) {
                 console.error('Error uploading transfer voucher:', uploadEx);
               }
+            }
+
+            if (payment.isTransfer && payment.transferVoucherBase64 && !transferVoucherUrl) {
+              throw new Error('No se pudo subir el comprobante de transferencia');
             }
 
             const paymentDb = {
@@ -217,32 +261,36 @@ export class SyncService {
             const loan = await db.loans.get(loanId);
             const installments = await db.installments.where('loan_id').equals(loanId).toArray();
 
-            if (client && loan && installments.length > 0) {
-              let activeRouteId = client.route_id;
-              if (!activeRouteId || activeRouteId === 'local') {
-                const routes = await db.routes.toArray();
-                activeRouteId = routes.length > 0 ? routes[0].id : null;
-              }
-              client.route_id = activeRouteId;
-              loan.route_id = activeRouteId as string;
-
-              const user = await getCurrentUser();
-              if (user) {
-                (client as any).created_by = user.id;
-                (loan as any).created_by = user.id;
-                if (loan.collector_id === 'local-user') loan.collector_id = user.id;
-              }
-
-              client.photo_face_url = await uploadPhotoOrThrow(client.photo_face_url, `faces/${client.id}.jpg`);
-              client.photo_doc_url = await uploadPhotoOrThrow(client.photo_doc_url, `docs/${client.id}.jpg`);
-
-              const { error: err1 } = await supabase.from('clients').upsert(client as any, { onConflict: 'id', ignoreDuplicates: true });
-              if (err1) throw err1;
-              const { error: err2 } = await supabase.from('loans').upsert(loan as any, { onConflict: 'id', ignoreDuplicates: true });
-              if (err2) throw err2;
-              const { error: err3 } = await supabase.from('loan_installments').upsert(installments as any[], { onConflict: 'id', ignoreDuplicates: true });
-              if (err3) throw err3;
+            if (!client || !loan || installments.length === 0) {
+              throw new Error('Faltan cliente, préstamo o cuotas en el celular para sincronizar');
             }
+
+            const activeRouteId = await resolveRouteId(client.route_id);
+            if (!activeRouteId) throw new Error('No hay ruta asignada para sincronizar el préstamo');
+            client.route_id = activeRouteId;
+            loan.route_id = activeRouteId;
+
+            const user = await getCurrentUser();
+            if (!user) throw new Error('Sesión no disponible para sincronizar');
+            (client as any).created_by = user.id;
+            (loan as any).created_by = user.id;
+            if (loan.collector_id === 'local-user') loan.collector_id = user.id;
+
+            client.photo_face_url = await uploadPhotoOrThrow(client.photo_face_url, `faces/${client.id}.jpg`);
+            client.photo_doc_url = await uploadPhotoOrThrow(client.photo_doc_url, `docs/${client.id}.jpg`);
+
+            const { data: rpcData, error: rpcError } = await supabase.rpc('sync_new_loan_bundle', {
+              p_client: withoutLocalSyncFlag(client as any),
+              p_loan: withoutLocalSyncFlag(loan as any),
+              p_installments: installments,
+            });
+            if (rpcError) throw rpcError;
+            if (!rpcData || (rpcData as any).ok !== true) {
+              throw new Error('El servidor no confirmó el préstamo completo');
+            }
+
+            await db.clients.update(client.id, { route_id: activeRouteId, sync_status: 'synced' } as any);
+            await db.loans.update(loan.id, { route_id: activeRouteId, collector_id: loan.collector_id, sync_status: 'synced' } as any);
           } else if ((op.operation_type as string) === 'UPDATE_CLIENT') {
             const client = op.payload.client;
 
@@ -387,15 +435,9 @@ export class SyncService {
    *   created offline) are NEVER deleted, even if the server doesn't know about them yet.
    * - Only truly stale records (gone from server + no pending op) are removed.
    */
-  static async pullInitialData(collectorId: string) {
+  private static async pullInitialDataInternal(collectorId: string) {
     const isOnline = useSyncStore.getState().isOnline;
     if (!isOnline) return;
-
-    // Guard: don't pull while a push is already in progress to avoid race conditions.
-    if (useSyncStore.getState().isSyncing) {
-      console.warn('[SyncService] pullInitialData skipped — push still in progress.');
-      return;
-    }
 
     useSyncStore.getState().setSyncing(true);
 
@@ -533,7 +575,10 @@ export class SyncService {
             }
           } else if (op.operation_type === 'PAYMENT_BUNDLE' || op.operation_type === 'PAYMENT') {
             const lId = op.payload?.loanId ?? op.payload?.loan_id ?? op.payload?.payment?.loanId;
-            if (lId) protectedLoanIds.add(lId);
+            if (lId) {
+              protectedLoanIds.add(lId);
+              protectedInstLoanIds.add(lId);
+            }
           } else if ((op.operation_type as string) === 'UPDATE_CLIENT') {
             if (op.payload?.client?.id) protectedClientIds.add(op.payload.client.id);
           }
@@ -559,7 +604,7 @@ export class SyncService {
         }
         const allLocalClients = await db.clients.toArray();
         const clientsToDelete = allLocalClients
-          .filter(c => !serverClientIds.has(c.id) && !protectedClientIds.has(c.id))
+          .filter(c => !serverClientIds.has(c.id) && !protectedClientIds.has(c.id) && c.sync_status !== 'pending')
           .map(c => c.id);
         if (clientsToDelete.length > 0) await db.clients.bulkDelete(clientsToDelete);
 
@@ -569,7 +614,7 @@ export class SyncService {
         }
         const allLocalLoans = await db.loans.toArray();
         const loansToDelete = allLocalLoans
-          .filter(l => !serverLoanIds.has(l.id) && !protectedLoanIds.has(l.id))
+          .filter(l => !serverLoanIds.has(l.id) && !protectedLoanIds.has(l.id) && l.sync_status !== 'pending')
           .map(l => l.id);
         if (loansToDelete.length > 0) await db.loans.bulkDelete(loansToDelete);
 
@@ -578,8 +623,9 @@ export class SyncService {
           await db.installments.bulkPut(installments as any[]);
         }
         const allLocalInsts = await db.installments.toArray();
+        const pendingLoanIds = new Set(allLocalLoans.filter(l => l.sync_status === 'pending').map(l => l.id));
         const instsToDelete = allLocalInsts
-          .filter(i => !serverInstIds.has(i.id) && !protectedInstLoanIds.has(i.loan_id))
+          .filter(i => !serverInstIds.has(i.id) && !protectedInstLoanIds.has(i.loan_id) && !pendingLoanIds.has(i.loan_id))
           .map(i => i.id);
         if (instsToDelete.length > 0) await db.installments.bulkDelete(instsToDelete);
 

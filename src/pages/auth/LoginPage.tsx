@@ -49,7 +49,7 @@ export function LoginPage() {
 
       // Pull initial data after login
       toast.promise(
-        SyncService.pullInitialData(data.session.user.id),
+        SyncService.fullSync(data.session.user.id),
         {
           loading: 'Descargando datos de tu ruta...',
           success: '¡Datos descargados! Listo para trabajar.',
