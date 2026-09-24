@@ -77,13 +77,24 @@ export function LoginPage() {
       <div className="absolute bottom-0 right-0 w-72 h-72 bg-brand-900 opacity-30 rounded-full -mr-36 -mb-36 blur-3xl"></div>
 
       {/* Logo / App name */}
-      <div className="mb-10 text-center relative z-10">
-        <div className="w-20 h-20 bg-white/10 backdrop-blur-sm rounded-3xl flex items-center justify-center mx-auto mb-4 border border-white/20 shadow-xl">
-          <span className="text-4xl">💰</span>
-        </div>
-        <h1 className="text-3xl font-black text-white tracking-tight">CobraDiario</h1>
-        <p className="text-brand-200 text-sm mt-1 font-medium">Sistema de préstamos y cobros</p>
-      </div>
+      {/* Logo / App name */}
+<div className="mb-10 text-center relative z-10">
+  <div className="w-20 h-20 bg-white/10 backdrop-blur-sm rounded-3xl flex items-center justify-center mx-auto mb-4 border border-white/20 shadow-xl overflow-hidden">
+    <img
+      src="/caronte.png"
+      alt="Logo de Caronte"
+      className="w-16 h-16 object-contain"
+    />
+  </div>
+
+  <h1 className="text-3xl font-black text-white tracking-tight">
+    Caronte
+  </h1>
+
+  <p className="text-brand-200 text-sm mt-1 font-medium">
+    Sistema de préstamos y cobros
+  </p>
+</div>
 
       {/* Login card */}
       <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl shadow-brand-900/30 p-7 relative z-10">
