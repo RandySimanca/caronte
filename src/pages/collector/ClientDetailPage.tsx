@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { ArrowLeft, Edit, CheckCircle2, CheckCircle } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { ArrowLeft, Edit, CheckCircle2, CheckCircle, Trophy, Ticket, MessageCircle } from 'lucide-react';
 import { useNavigate, useParams, NavLink } from 'react-router-dom';
 import { formatCurrency } from '@/lib/utils';
 import { PaymentConfirmationModal } from '@/components/payments/PaymentConfirmationModal';
@@ -11,20 +11,34 @@ import { pdf } from '@react-pdf/renderer';
 import { ClientStatementPdf } from '@/components/reports/pdf/templates/ClientStatementPdf';
 import { downloadExcel } from '@/components/reports/excel/ExcelExporter';
 import { FileDown, FileSpreadsheet } from 'lucide-react';
+import {
+  applyLotteryDrawLocally,
+  buildLotteryWinnerTellClientMessage,
+  isLotteryWinnerLoan,
+  parseLotteryLastDraw,
+  type LotteryLastDraw,
+} from '@/lib/lottery';
+import { openWhatsAppWithMessage } from '@/lib/whatsapp';
 
 export function ClientDetailPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [lotteryDraw, setLotteryDraw] = useState<LotteryLastDraw | null>(null);
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
   // Real data from Dexie
   const client = useLiveQuery(() => (id ? db.clients.get(id) : undefined), [id]);
-  const loan = useLiveQuery(
-    () => id ? db.loans.where('client_id').equals(id).filter(l => l.status === 'ACTIVO').first() : undefined,
-    [id]
-  );
+  const lotterySetting = useLiveQuery(() => db.settings.get('lottery_last_draw'), []);
+  const loan = useLiveQuery(async () => {
+    if (!id) return undefined;
+    const loans = await db.loans.where('client_id').equals(id).toArray();
+    const draw = parseLotteryLastDraw(lotterySetting?.value);
+    const winner = loans.find(l => isLotteryWinnerLoan(l, draw));
+    const activeNonWinner = loans.find(l => l.status === 'ACTIVO' && !isLotteryWinnerLoan(l, draw));
+    return activeNonWinner ?? winner ?? loans.find(l => l.status === 'ACTIVO');
+  }, [id, lotterySetting?.value]);
   const lookupsDone = useLiveQuery(async () => {
     if (!id) return true;
     await Promise.all([db.clients.get(id), db.loans.where('client_id').equals(id).first()]);
@@ -34,6 +48,21 @@ export function ClientDetailPage() {
     () => loan ? db.installments.where('loan_id').equals(loan.id).toArray() : [],
     [loan?.id]
   );
+
+  useEffect(() => {
+    const draw = parseLotteryLastDraw(lotterySetting?.value);
+    setLotteryDraw(draw);
+    if (draw) applyLotteryDrawLocally(draw).catch(() => {});
+  }, [lotterySetting?.value]);
+
+  const isLotteryWinner = !!(
+    (loan && isLotteryWinnerLoan(loan, lotteryDraw)) ||
+    (id && lotteryDraw?.winner_client_ids?.includes(id))
+  );
+  const tellClientMessage =
+    client && lotteryDraw && isLotteryWinner
+      ? buildLotteryWinnerTellClientMessage(client.full_name, lotteryDraw)
+      : '';
 
   const financialState = useMemo(() => {
     if (!loan || !installments) return null;
@@ -157,7 +186,7 @@ export function ClientDetailPage() {
     );
   }
 
-  if (!loan) {
+  if (!loan && !isLotteryWinner) {
     return (
       <div className="flex flex-col h-full bg-slate-50">
         <header className="bg-white px-4 py-3 border-b border-slate-100 flex items-center">
@@ -193,6 +222,47 @@ export function ClientDetailPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {isLotteryWinner && lotteryDraw && (
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-yellow-400 via-amber-500 to-orange-500 p-4 shadow-lg">
+            <div className="relative space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-12 h-12 rounded-full bg-white/25 flex items-center justify-center flex-shrink-0">
+                  <Trophy className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <p className="font-black text-white text-lg leading-tight">¡Este cliente ganó la lotería!</p>
+                  <p className="text-yellow-50 text-sm mt-1 font-semibold">
+                    Indícale al cliente que ganó. Su deuda quedó en cero y hoy no se cobra.
+                  </p>
+                </div>
+              </div>
+              {lotteryDraw.winning_number && (
+                <div className="flex items-center gap-2 bg-white/20 rounded-xl px-3 py-2 w-fit">
+                  <Ticket className="w-4 h-4 text-white" />
+                  <span className="text-white font-black text-xl tracking-widest">{lotteryDraw.winning_number}</span>
+                </div>
+              )}
+              <div className="bg-white/95 rounded-xl p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-1">Dile al cliente:</p>
+                <p className="text-sm text-slate-800 leading-snug">{tellClientMessage}</p>
+              </div>
+              {client.phone && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sent = openWhatsAppWithMessage(client.phone, tellClientMessage);
+                    if (!sent) toast.error('El cliente no tiene un teléfono válido.');
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#25D366] text-white font-bold text-sm"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Avisar por WhatsApp
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Client Profile Card */}
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center">
           {client.photo_face_url ? (
@@ -210,17 +280,26 @@ export function ClientDetailPage() {
           </div>
         </div>
 
-        {/* Active Loan Card */}
+        {loan && (
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <h3 className="font-bold text-slate-800">Préstamo Activo</h3>
+              <h3 className="font-bold text-slate-800">
+                {isLotteryWinner ? 'Préstamo cancelado por boleta' : 'Préstamo Activo'}
+              </h3>
               <p className="text-xs text-slate-500">Iniciado: {loan.start_date}</p>
             </div>
-            <div className="flex items-center text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
-              <CheckCircle2 className="w-3 h-3 mr-1" />
-              {loan.status}
-            </div>
+            {isLotteryWinner ? (
+              <div className="flex items-center text-xs font-medium text-amber-800 bg-amber-100 px-2 py-1 rounded-full">
+                <Trophy className="w-3 h-3 mr-1" />
+                GANADOR
+              </div>
+            ) : (
+              <div className="flex items-center text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                <CheckCircle2 className="w-3 h-3 mr-1" />
+                {loan.status}
+              </div>
+            )}
           </div>
 
           <div className="space-y-2.5 text-sm">
@@ -260,13 +339,10 @@ export function ClientDetailPage() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Current State & Action */}
-        {financialState && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-
-            {/* Paid & Clear banner */}
-            {isPaidAndClear ? (
+        {financialState && !isLotteryWinner && (
               <div className="flex flex-col items-center py-4 mb-4">
                 <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mb-3">
                   <CheckCircle className="w-9 h-9 text-emerald-500" />
@@ -296,6 +372,7 @@ export function ClientDetailPage() {
               </div>
             )}
 
+            {!isLotteryWinner && (
             <button
               onClick={() => setIsPaymentModalOpen(true)}
               className={
@@ -306,6 +383,7 @@ export function ClientDetailPage() {
             >
               {isPaidAndClear ? 'Registrar cobro adicional' : 'Registrar Cobro'}
             </button>
+            )}
 
             {/* Export Actions */}
             <div className="flex gap-3 mt-4">
@@ -328,7 +406,7 @@ export function ClientDetailPage() {
         )}
       </div>
 
-      {financialState && (
+      {financialState && !isLotteryWinner && (
         <PaymentConfirmationModal
           isOpen={isPaymentModalOpen}
           onClose={() => setIsPaymentModalOpen(false)}

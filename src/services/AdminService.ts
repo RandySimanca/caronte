@@ -813,15 +813,37 @@ export class AdminService {
 
     if (error) throw error;
 
-    // Persist the winning number in system_settings so SyncService.pullSettings()
-    // distributes it to collectors on their next sync. Collectors use this to show
-    // a winner notification banner in the payment modal.
+    // Persist draw + winner IDs so collectors can announce winners and block collection
+    // even before/without a full loan re-pull (offline-first).
     const drawDate = new Date().toISOString().split('T')[0];
+    const drawId = (data as { draw_id?: string } | null)?.draw_id;
+
+    let winnerLoanIds: string[] = [];
+    let winnerClientIds: string[] = [];
+    if (drawId) {
+      const { data: winners } = await supabase
+        .from('lottery_winners')
+        .select('loan_id, loan:loans(client_id)')
+        .eq('draw_id', drawId);
+
+      for (const w of winners || []) {
+        if (w.loan_id) winnerLoanIds.push(w.loan_id);
+        const clientId = (w.loan as { client_id?: string } | null)?.client_id;
+        if (clientId) winnerClientIds.push(clientId);
+      }
+    }
+
     await supabase.from('system_settings').upsert(
       {
         key: 'lottery_last_draw',
-        value: { winning_number: winningNumber, draw_date: drawDate, processed_at: new Date().toISOString() },
-        description: 'Último sorteo procesado — usado para notificar al cobrador'
+        value: {
+          winning_number: winningNumber,
+          draw_date: drawDate,
+          processed_at: new Date().toISOString(),
+          winner_loan_ids: winnerLoanIds,
+          winner_client_ids: winnerClientIds,
+        },
+        description: 'Último sorteo procesado — usado para notificar al cobrador y bloquear cobros'
       } as any,
       { onConflict: 'key' }
     );

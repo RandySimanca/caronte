@@ -9,6 +9,7 @@ import { SyncService } from '@/services/SyncService';
 import { useMemo, useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
+import { isLotteryWinnerLoan, parseLotteryLastDraw } from '@/lib/lottery';
 
 export function CollectorDashboard() {
   const dateStr = format(new Date(), "EEEE, dd MMM yyyy", { locale: es });
@@ -31,6 +32,7 @@ export function CollectorDashboard() {
   const loans = useLiveQuery(() => db.loans.where('status').equals('ACTIVO').toArray()) || [];
   const installments = useLiveQuery(() => db.installments.toArray()) || [];
   const pendingOps = useLiveQuery(() => db.syncQueue.where('status').anyOf(['pending', 'failed']).count()) || 0;
+  const lotterySetting = useLiveQuery(() => db.settings.get('lottery_last_draw'));
 
   const routeName = routes.length > 0 ? routes[0].name : 'Cargando ruta...';
 
@@ -45,7 +47,10 @@ export function CollectorDashboard() {
     let newCount = 0;
     const prepaidTodayClients: { loanId: string; clientName: string; amount: number; paidDate: string }[] = [];
 
+    const draw = parseLotteryLastDraw(lotterySetting?.value);
+
     for (const loan of loans) {
+      if (isLotteryWinnerLoan(loan, draw)) continue;
       const loanInsts = installments.filter(i => i.loan_id === loan.id);
       const todayInst = loanInsts.find(i => i.scheduled_date === today);
       const arrearsInsts = loanInsts.filter(i =>
@@ -110,7 +115,7 @@ export function CollectorDashboard() {
       prepaidTodayCount: prepaidTodayClients.length,
       prepaidTodayClients,
     };
-  }, [loans, installments, clients, today]);
+  }, [loans, installments, clients, today, lotterySetting?.value]);
 
   const collectedPercent = stats.expected > 0 ? Math.round((stats.collected / stats.expected) * 100) : 0;
   const pendingPercent = 100 - collectedPercent;

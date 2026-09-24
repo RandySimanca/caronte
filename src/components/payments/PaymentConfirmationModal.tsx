@@ -10,6 +10,7 @@ import { useSyncStore } from '@/stores/syncStore';
 import { useAuthStore } from '@/stores/authStore';
 import { SyncService } from '@/services/SyncService';
 import { buildCreditStatusMessage, openWhatsAppWithMessage } from '@/lib/whatsapp';
+import { getLotteryLastDraw, isLotteryWinnerLoan, type LotteryLastDraw } from '@/lib/lottery';
 
 interface FinancialState {
   todayQuota: number;
@@ -47,7 +48,7 @@ export function PaymentConfirmationModal({
   const [observation, setObservation] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
-  const [lotteryWinner, setLotteryWinner] = useState<{ winning_number: string; draw_date: string } | null>(null);
+  const [lotteryWinner, setLotteryWinner] = useState<LotteryLastDraw | null>(null);
   const [isTransfer, setIsTransfer] = useState(false);
   const [voucherBase64, setVoucherBase64] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -134,22 +135,22 @@ export function PaymentConfirmationModal({
       setVoucherBase64(null);
       setWhatsappData(null);
 
-      // Check if this loan won the lottery by reading the last draw from Dexie settings
+      // Check if this loan won the lottery (by loan id, client id or raffle number)
       const checkLotteryWinner = async () => {
-        if (!loan.raffle_number) return;
-        const setting = await db.settings.get('lottery_last_draw');
-        if (setting?.value) {
-          const draw = setting.value as { winning_number: string; draw_date: string };
-          if (draw.winning_number === loan.raffle_number) {
-            setLotteryWinner(draw);
-          }
+        const draw = await getLotteryLastDraw();
+        if (isLotteryWinnerLoan(loan, draw)) {
+          setLotteryWinner(draw);
         }
       };
       checkLotteryWinner();
     }
-  }, [isOpen, financialState.expectedTotal, loan.raffle_number]);
+  }, [isOpen, financialState.expectedTotal, loan]);
 
   const handleSaveClick = () => {
+    if (lotteryWinner) {
+      toast.error('Este cliente ganó la boleta. No se puede registrar cobro.');
+      return;
+    }
     if (distribution.numAmount <= 0) return;
     
     if (financialState.isPaidToday && !showDuplicateWarning) {
@@ -161,6 +162,10 @@ export function PaymentConfirmationModal({
   };
 
   const handleConfirmSave = async () => {
+    if (lotteryWinner) {
+      toast.error('Este cliente ganó la boleta. No se puede registrar cobro.');
+      return;
+    }
     if (distribution.numAmount <= 0) return;
     setIsSaving(true);
 
@@ -366,9 +371,11 @@ export function PaymentConfirmationModal({
                         <Ticket className="w-3 h-3 text-white" />
                         <span className="text-white font-black text-sm tracking-widest">{lotteryWinner.winning_number}</span>
                       </div>
-                      <span className="text-yellow-100 text-[10px]">
-                        Sorteo del {new Date(lotteryWinner.draw_date + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })}
-                      </span>
+                      {lotteryWinner.draw_date && (
+                        <span className="text-yellow-100 text-[10px]">
+                          Sorteo del {new Date(lotteryWinner.draw_date + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -396,6 +403,15 @@ export function PaymentConfirmationModal({
               </div>
             </div>
 
+            {lotteryWinner ? (
+              <button
+                onClick={onClose}
+                className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3.5 rounded-xl transition-all"
+              >
+                Entendido — no cobrar
+              </button>
+            ) : (
+            <>
             {/* Financial Summary boxes */}
             <div className="grid grid-cols-3 gap-2">
               <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center">
@@ -585,6 +601,8 @@ export function PaymentConfirmationModal({
             >
               {isSaving ? 'Guardando...' : 'Guardar Cobro'}
             </button>
+            </>
+            )}
           </div>
 
           {/* ── PANEL: Doble pago ── */}

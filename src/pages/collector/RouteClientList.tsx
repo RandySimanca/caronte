@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
-import { Search, Filter, Menu, User, MapPin, Plus } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Search, Filter, Menu, User, MapPin, Plus, Trophy } from 'lucide-react';
 import { formatCurrency, cn } from '@/lib/utils';
 import { NavLink } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { format } from 'date-fns';
+import { applyLotteryDrawLocally, isLotteryWinnerLoan, parseLotteryLastDraw } from '@/lib/lottery';
 
 export function RouteClientList() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -13,36 +14,42 @@ export function RouteClientList() {
   const clients = useLiveQuery(() => db.clients.toArray()) || [];
   const loans = useLiveQuery(() => db.loans.toArray()) || [];
   const installments = useLiveQuery(() => db.installments.toArray()) || [];
+  const lotterySetting = useLiveQuery(() => db.settings.get('lottery_last_draw'));
 
   const today = format(new Date(), 'yyyy-MM-dd');
+  const lotteryDraw = parseLotteryLastDraw(lotterySetting?.value);
+
+  useEffect(() => {
+    if (lotteryDraw) applyLotteryDrawLocally(lotteryDraw).catch(() => {});
+  }, [lotterySetting?.value]);
 
   // Compute stats and enrich clients with financial data
   const enrichedClients = useMemo(() => {
     return clients.map(client => {
-      // Get active loan for this client
-      const activeLoan = loans.find(l => l.client_id === client.id && l.status === 'ACTIVO');
+      const winnerLoan = loans.find(l => l.client_id === client.id && isLotteryWinnerLoan(l, lotteryDraw));
+      const activeLoan = loans.find(l => l.client_id === client.id && l.status === 'ACTIVO' && !isLotteryWinnerLoan(l, lotteryDraw));
+      const loan = activeLoan ?? winnerLoan;
       
       let todayQuota = 0;
       let arrears = 0;
       let status = 'AL_DIA';
 
-      if (activeLoan) {
-        todayQuota = activeLoan.start_date > today ? 0 : activeLoan.daily_installment;
+      if (winnerLoan && !activeLoan) {
+        status = 'GANADOR';
+      } else if (loan) {
+        todayQuota = loan.start_date > today ? 0 : loan.daily_installment;
         
-        // Find installments for this loan
-        const loanInstallments = installments.filter(i => i.loan_id === activeLoan.id);
+        const loanInstallments = installments.filter(i => i.loan_id === loan.id);
         
-        // Calculate arrears (pending installments before today)
         const arrearsInstallments = loanInstallments.filter(i => 
           i.scheduled_date < today && 
           ['PENDIENTE', 'PARCIAL', 'ATRASADA'].includes(i.status)
         );
         arrears = arrearsInstallments.reduce((sum, i) => sum + i.balance, 0);
 
-        // Check if today's installment is paid
         const todayInstallment = loanInstallments.find(i => i.scheduled_date === today);
         const isTodayPaid = todayInstallment && ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInstallment.status);
-        const isFutureStart = activeLoan.start_date > today;
+        const isFutureStart = loan.start_date > today;
 
         if (isFutureStart) {
           status = 'NUEVO';
@@ -58,16 +65,18 @@ export function RouteClientList() {
         todayQuota,
         arrears,
         status,
+        raffleNumber: winnerLoan?.raffle_number ?? loan?.raffle_number,
         avatarUrl: client.photo_face_url
       };
     }).filter(c => c.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [clients, loans, installments, searchTerm, today]);
+  }, [clients, loans, installments, searchTerm, today, lotteryDraw]);
 
   const totalClients = enrichedClients.length;
   const visitedCount = enrichedClients.filter(c => c.status === 'VISITADO').length;
   const arrearsCount = enrichedClients.filter(c => c.status === 'ATRASADO').length;
   const newCount = enrichedClients.filter(c => c.status === 'NUEVO').length;
-  const pendingCount = totalClients - visitedCount - newCount;
+  const winnerCount = enrichedClients.filter(c => c.status === 'GANADOR').length;
+  const pendingCount = totalClients - visitedCount - newCount - winnerCount;
 
   return (
     <div className="flex flex-col h-full bg-slate-50">
@@ -138,6 +147,7 @@ export function RouteClientList() {
                 <div className="relative flex-shrink-0 mr-4">
                   <div className={cn(
                     "w-12 h-12 rounded-full overflow-hidden border-2",
+                    client.status === 'GANADOR' ? 'border-amber-400' :
                     client.status === 'VISITADO' ? 'border-emerald-500 opacity-50' : 
                     client.status === 'ATRASADO' ? 'border-rose-400' : 
                     client.status === 'NUEVO' ? 'border-blue-400' : 'border-transparent'
@@ -150,6 +160,11 @@ export function RouteClientList() {
                       </div>
                     )}
                   </div>
+                  {client.status === 'GANADOR' && (
+                    <div className="absolute -bottom-1 -right-1 bg-amber-400 text-white rounded-full p-0.5 border-2 border-white">
+                      <Trophy className="w-3 h-3" />
+                    </div>
+                  )}
                   {client.status === 'VISITADO' && (
                     <div className="absolute -bottom-1 -right-1 bg-emerald-500 text-white rounded-full p-0.5 border-2 border-white">
                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -170,7 +185,8 @@ export function RouteClientList() {
                 <div className="flex-1 min-w-0">
                   <p className={cn(
                     "text-sm font-semibold truncate",
-                    client.status === 'VISITADO' ? "text-slate-400" : "text-slate-800"
+                    client.status === 'VISITADO' ? "text-slate-400" :
+                    client.status === 'GANADOR' ? "text-amber-800" : "text-slate-800"
                   )}>
                     {client.full_name}
                   </p>
@@ -182,6 +198,17 @@ export function RouteClientList() {
 
                 {/* Money */}
                 <div className="text-right ml-3">
+                  {client.status === 'GANADOR' ? (
+                    <>
+                      <p className="text-xs font-bold text-amber-600">Ganó boleta</p>
+                      {client.raffleNumber && (
+                        <p className="text-[10px] text-amber-700 font-semibold mt-0.5 bg-amber-50 inline-block px-1.5 py-0.5 rounded">
+                          No. {client.raffleNumber}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <>
                   <p className={cn(
                     "text-xs font-medium",
                     client.status === 'VISITADO' ? "text-slate-400" : "text-slate-600"
@@ -198,6 +225,8 @@ export function RouteClientList() {
                     <p className="text-[10px] text-blue-500 font-semibold mt-0.5 bg-blue-50 inline-block px-1.5 py-0.5 rounded">Nuevo</p>
                   ) : (
                     <p className="text-[10px] text-slate-400 mt-0.5">Al día</p>
+                  )}
+                    </>
                   )}
                 </div>
               </NavLink>

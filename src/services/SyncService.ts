@@ -2,6 +2,11 @@ import { format } from 'date-fns';
 import { db } from '@/db/schema';
 import { supabase } from '@/lib/supabase';
 import { useSyncStore } from '@/stores/syncStore';
+import {
+  applyLotteryDrawLocally,
+  isLotteryWinnerLoan,
+  parseLotteryLastDraw,
+} from '@/lib/lottery';
 
 /** Usuario de la sesión local (no hace request de red, funciona con conexión inestable). */
 async function getCurrentUser() {
@@ -591,6 +596,10 @@ export class SyncService {
       const serverLoanIds = new Set(((loans || []) as { id: string }[]).map(l => l.id));
       const serverInstIds = new Set(((installments || []) as { id: string }[]).map(i => i.id));
 
+      const lotteryDraw = parseLotteryLastDraw(
+        settings.find(s => s.key === 'lottery_last_draw')?.value
+      );
+
       // Save to Dexie Transactionally using safe merge
       await db.transaction('rw', db.routes, db.clients, db.loans, db.installments, db.settings, async () => {
 
@@ -608,24 +617,42 @@ export class SyncService {
           .map(c => c.id);
         if (clientsToDelete.length > 0) await db.clients.bulkDelete(clientsToDelete);
 
-        // Loans: upsert server records, then remove stale non-protected ones
+        // Loans: upsert server ACTIVO records. Préstamos ganadores del sorteo se
+        // conservan localmente como CANCELADO (para anunciar y bloquear cobro).
         if (loans && loans.length > 0) {
           await db.loans.bulkPut(loans as any[]);
         }
         const allLocalLoans = await db.loans.toArray();
-        const loansToDelete = allLocalLoans
-          .filter(l => !serverLoanIds.has(l.id) && !protectedLoanIds.has(l.id) && l.sync_status !== 'pending')
-          .map(l => l.id);
+        const winnerLoanIds = new Set<string>();
+        const loansToDelete: string[] = [];
+
+        for (const l of allLocalLoans) {
+          if (serverLoanIds.has(l.id) || protectedLoanIds.has(l.id) || l.sync_status === 'pending') {
+            continue;
+          }
+          if (isLotteryWinnerLoan(l, lotteryDraw)) {
+            winnerLoanIds.add(l.id);
+            await db.loans.update(l.id, { status: 'CANCELADO', current_balance: 0 });
+          } else {
+            loansToDelete.push(l.id);
+          }
+        }
         if (loansToDelete.length > 0) await db.loans.bulkDelete(loansToDelete);
 
         // Installments: upsert server records, then remove stale ones
+        // (excepto cuotas de ganadores de boleta que conservamos localmente)
         if (installments && installments.length > 0) {
           await db.installments.bulkPut(installments as any[]);
         }
         const allLocalInsts = await db.installments.toArray();
         const pendingLoanIds = new Set(allLocalLoans.filter(l => l.sync_status === 'pending').map(l => l.id));
         const instsToDelete = allLocalInsts
-          .filter(i => !serverInstIds.has(i.id) && !protectedInstLoanIds.has(i.loan_id) && !pendingLoanIds.has(i.loan_id))
+          .filter(i =>
+            !serverInstIds.has(i.id) &&
+            !protectedInstLoanIds.has(i.loan_id) &&
+            !pendingLoanIds.has(i.loan_id) &&
+            !winnerLoanIds.has(i.loan_id)
+          )
           .map(i => i.id);
         if (instsToDelete.length > 0) await db.installments.bulkDelete(instsToDelete);
 
@@ -635,6 +662,9 @@ export class SyncService {
         // Use bulkPut to safely handle potential key collisions from settingsToKeep
         if (settingsToKeep.length > 0) await db.settings.bulkPut(settingsToKeep);
       });
+
+      // Saldar localmente cualquier ganador que aún figure ACTIVO (antes del pull completo)
+      await applyLotteryDrawLocally(lotteryDraw);
 
     } catch (error) {
       console.error('Error during pull data:', error);
@@ -742,6 +772,10 @@ export class SyncService {
         if (localSettings.length > 0) await db.settings.bulkAdd(localSettings);
         if (settingsToKeep.length > 0) await db.settings.bulkAdd(settingsToKeep);
       });
+
+      // Si el admin ya procesó un sorteo, saldar ganadores locales sin esperar pull completo
+      const lotterySetting = localSettings.find(s => s.key === 'lottery_last_draw');
+      await applyLotteryDrawLocally(parseLotteryLastDraw(lotterySetting?.value));
     } catch (error) {
       console.error('Error refreshing settings:', error);
     }

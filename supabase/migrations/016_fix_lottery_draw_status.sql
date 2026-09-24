@@ -47,9 +47,12 @@ BEGIN
     SET current_balance = 0, status = 'CANCELADO'
     WHERE id = v_loan.id;
 
-    -- 4. Mark pending installments as paid
+    -- 4. Mark pending installments as paid (balance debe quedar 0 por chk_balance)
     UPDATE loan_installments
-    SET status = 'PAGADA', paid_amount = scheduled_amount, paid_date = CURRENT_DATE
+    SET status = 'PAGADA',
+        paid_amount = scheduled_amount,
+        balance = 0,
+        paid_date = CURRENT_DATE
     WHERE loan_id = v_loan.id AND status IN ('PENDIENTE', 'PARCIAL', 'ATRASADA');
 
   END LOOP;
