@@ -1,4 +1,4 @@
-import { Bell, ChevronRight, RefreshCw, AlertCircle, WifiOff, CalendarCheck } from 'lucide-react';
+import { Bell, ChevronRight, RefreshCw, AlertCircle, WifiOff, CalendarCheck, Trophy } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -9,7 +9,8 @@ import { SyncService } from '@/services/SyncService';
 import { useMemo, useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
-import { isLotteryWinnerLoan, parseLotteryLastDraw } from '@/lib/lottery';
+import { applyLotteryDrawLocally, isLotteryWinnerLoan, parseLotteryLastDraw } from '@/lib/lottery';
+import { NavLink } from 'react-router-dom';
 
 export function CollectorDashboard() {
   const dateStr = format(new Date(), "EEEE, dd MMM yyyy", { locale: es });
@@ -30,6 +31,7 @@ export function CollectorDashboard() {
   const routes = useLiveQuery(() => db.routes.toArray()) || [];
   const clients = useLiveQuery(() => db.clients.toArray()) || [];
   const loans = useLiveQuery(() => db.loans.where('status').equals('ACTIVO').toArray()) || [];
+  const allLoans = useLiveQuery(() => db.loans.toArray()) || [];
   const installments = useLiveQuery(() => db.installments.toArray()) || [];
   const pendingOps = useLiveQuery(() => db.syncQueue.where('status').anyOf(['pending', 'failed']).count()) || 0;
   const lotterySetting = useLiveQuery(() => db.settings.get('lottery_last_draw'));
@@ -37,6 +39,38 @@ export function CollectorDashboard() {
   const routeName = routes.length > 0 ? routes[0].name : 'Cargando ruta...';
 
   const [isPrepaidModalOpen, setIsPrepaidModalOpen] = useState(false);
+
+  const lotteryDraw = parseLotteryLastDraw(lotterySetting?.value);
+
+  useEffect(() => {
+    if (lotteryDraw) applyLotteryDrawLocally(lotteryDraw).catch(() => {});
+  }, [lotterySetting?.value]);
+
+  const lotteryWinners = useMemo(() => {
+    if (!lotteryDraw) return [];
+    const seen = new Set<string>();
+    const list: { clientId: string; name: string; raffle: string }[] = [];
+    for (const loan of allLoans) {
+      if (!isLotteryWinnerLoan(loan, lotteryDraw)) continue;
+      if (seen.has(loan.client_id)) continue;
+      seen.add(loan.client_id);
+      list.push({
+        clientId: loan.client_id,
+        name: clients.find(c => c.id === loan.client_id)?.full_name || 'Cliente',
+        raffle: loan.raffle_number || lotteryDraw.winning_number,
+      });
+    }
+    for (const clientId of lotteryDraw.winner_client_ids || []) {
+      if (seen.has(clientId)) continue;
+      seen.add(clientId);
+      list.push({
+        clientId,
+        name: clients.find(c => c.id === clientId)?.full_name || 'Cliente',
+        raffle: lotteryDraw.winning_number,
+      });
+    }
+    return list;
+  }, [allLoans, clients, lotteryDraw]);
 
   const stats = useMemo(() => {
     let expected = 0;
@@ -166,6 +200,33 @@ export function CollectorDashboard() {
           </button>
         </div>
       </header>
+
+      {lotteryWinners.length > 0 && (
+        <div className="rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-500 p-4 text-white shadow-lg">
+          <div className="flex items-center gap-2 mb-2">
+            <Trophy className="w-5 h-5" />
+            <p className="font-black text-sm uppercase tracking-wide">Ganadores de la lotería</p>
+          </div>
+          <p className="text-yellow-50 text-xs mb-3">
+            Indícale a estos clientes que ganaron. Su deuda quedó pagada y no se cobra.
+          </p>
+          <ul className="space-y-2">
+            {lotteryWinners.map(w => (
+              <li key={w.clientId}>
+                <NavLink
+                  to={`/client/${w.clientId}`}
+                  className="flex items-center justify-between bg-white/20 rounded-xl px-3 py-2 active:bg-white/30"
+                >
+                  <span className="font-bold text-sm truncate pr-2">{w.name}</span>
+                  <span className="text-xs font-black tracking-widest bg-white/25 px-2 py-0.5 rounded">
+                    {w.raffle}
+                  </span>
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Main Blue Card */}
       <div className="bg-brand-600 rounded-2xl p-5 text-white shadow-lg shadow-brand-500/25 relative overflow-hidden">

@@ -20,7 +20,7 @@ export function parseLotteryLastDraw(raw: unknown): LotteryLastDraw | null {
   if (!raw || typeof raw !== 'object') return null;
   const obj = raw as Record<string, unknown>;
   const winning = normalizeRaffleNumber(
-    typeof obj.winning_number === 'string' ? obj.winning_number : null
+    obj.winning_number != null ? String(obj.winning_number) : null
   );
   if (!winning) return null;
   return {

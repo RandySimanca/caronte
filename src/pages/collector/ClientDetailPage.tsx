@@ -341,8 +341,9 @@ export function ClientDetailPage() {
         </div>
         )}
 
-        {/* Current State & Action */}
         {financialState && !isLotteryWinner && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+            {isPaidAndClear ? (
               <div className="flex flex-col items-center py-4 mb-4">
                 <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mb-3">
                   <CheckCircle className="w-9 h-9 text-emerald-500" />
@@ -372,7 +373,6 @@ export function ClientDetailPage() {
               </div>
             )}
 
-            {!isLotteryWinner && (
             <button
               onClick={() => setIsPaymentModalOpen(true)}
               className={
@@ -383,9 +383,7 @@ export function ClientDetailPage() {
             >
               {isPaidAndClear ? 'Registrar cobro adicional' : 'Registrar Cobro'}
             </button>
-            )}
 
-            {/* Export Actions */}
             <div className="flex gap-3 mt-4">
               <button
                 onClick={exportPdf}
@@ -406,7 +404,7 @@ export function ClientDetailPage() {
         )}
       </div>
 
-      {financialState && !isLotteryWinner && (
+      {financialState && !isLotteryWinner && loan && (
         <PaymentConfirmationModal
           isOpen={isPaymentModalOpen}
           onClose={() => setIsPaymentModalOpen(false)}

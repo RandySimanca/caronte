@@ -200,7 +200,8 @@ export function RouteClientList() {
                 <div className="text-right ml-3">
                   {client.status === 'GANADOR' ? (
                     <>
-                      <p className="text-xs font-bold text-amber-600">Ganó boleta</p>
+                      <p className="text-xs font-bold text-amber-700">¡Ganó la lotería!</p>
+                      <p className="text-[10px] text-amber-600 font-semibold mt-0.5">Infórmale al cliente</p>
                       {client.raffleNumber && (
                         <p className="text-[10px] text-amber-700 font-semibold mt-0.5 bg-amber-50 inline-block px-1.5 py-0.5 rounded">
                           No. {client.raffleNumber}
