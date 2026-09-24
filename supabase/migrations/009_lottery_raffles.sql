@@ -112,9 +112,9 @@ BEGIN
     ) RETURNING id INTO v_payment_id;
 
     -- 3. Edge Functions or Database trigger should update current_balance, but we will explicitly set it to 0
-    -- and change status to PAGADO for safety in this RPC
+    -- and change status to CANCELADO (loan_status enum: no existe PAGADO)
     UPDATE loans 
-    SET current_balance = 0, status = 'PAGADO'
+    SET current_balance = 0, status = 'CANCELADO'
     WHERE id = v_loan.id;
 
     -- 4. Mark pending installments as paid
