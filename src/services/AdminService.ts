@@ -1721,6 +1721,76 @@ export class AdminService {
       })
       .eq('id', loanId);
   }
+
+  /**
+   * Elimina un cobro registrado por completo, revirtiendo el saldo del préstamo
+   * y el estado de las cuotas.
+   */
+  static async deletePayment(paymentId: string) {
+    // 1. Obtener el pago original
+    const { data: payment, error: pErr } = await supabase
+      .from('payments')
+      .select('id, total_amount, loan_id')
+      .eq('id', paymentId)
+      .single();
+    if (pErr) throw pErr;
+
+    const amount = Number(payment.total_amount);
+    const loanId = payment.loan_id;
+
+    // 2. Obtener el préstamo
+    const { data: loan, error: lErr } = await supabase
+      .from('loans')
+      .select('*')
+      .eq('id', loanId)
+      .single();
+    if (lErr) throw lErr;
+
+    // 3. Revertir allocations en cuotas
+    const { data: allocations } = await supabase
+      .from('payment_allocations')
+      .select('installment_id, allocated_amount')
+      .eq('payment_id', paymentId);
+
+    for (const alloc of (allocations || [])) {
+      const { data: inst } = await supabase
+        .from('loan_installments')
+        .select('paid_amount, balance, scheduled_amount, scheduled_date')
+        .eq('id', alloc.installment_id)
+        .single();
+      if (!inst) continue;
+
+      const revertedPaid    = Math.max(0, Number(inst.paid_amount) - Number(alloc.allocated_amount));
+      const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
+      const today = new Date().toISOString().split('T')[0];
+
+      let newStatus = 'PENDIENTE';
+      if (revertedPaid >= Number(inst.scheduled_amount)) {
+        newStatus = inst.scheduled_date < today ? 'PAGADA' : 'PAGADA_ANTICIPADAMENTE';
+      } else if (revertedPaid > 0) {
+        newStatus = 'PARCIAL';
+      }
+
+      await supabase
+        .from('loan_installments')
+        .update({ paid_amount: revertedPaid, balance: revertedBalance, status: newStatus })
+        .eq('id', alloc.installment_id);
+    }
+
+    // 4. Eliminar allocations antiguas
+    await supabase.from('payment_allocations').delete().eq('payment_id', paymentId);
+
+    // 5. Eliminar el pago en la tabla payments
+    const { error: delErr } = await supabase.from('payments').delete().eq('id', paymentId);
+    if (delErr) throw delErr;
+
+    // 6. Recalcular saldo del préstamo (el saldo sube porque el pago se elimina)
+    const newLoanBalance = Number(loan.current_balance) + amount;
+    await supabase.from('loans').update({ 
+      current_balance: newLoanBalance,
+      status: loan.status === 'CANCELADO' ? 'ACTIVO' : loan.status 
+    }).eq('id', loanId);
+  }
 }
 
 

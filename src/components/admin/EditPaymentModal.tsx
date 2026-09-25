@@ -1,5 +1,5 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { X, Search, PencilLine, AlertTriangle, CheckCircle, ChevronLeft } from 'lucide-react';
+import { X, Search, PencilLine, AlertTriangle, CheckCircle, ChevronLeft, Trash2 } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { useAuthStore } from '@/stores/authStore';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
@@ -76,6 +76,23 @@ export function EditPaymentModal({ isOpen, onClose, onSuccess }: EditPaymentModa
       onClose();
     } catch (e: any) {
       toast.error('Error al corregir: ' + e.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!user || !selectedPayment) return;
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este cobro por completo? El saldo del préstamo y las cuotas volverán a su estado anterior. Esta acción NO se puede deshacer.')) return;
+
+    setIsSubmitting(true);
+    try {
+      await AdminService.deletePayment(selectedPayment.id);
+      toast.success('Cobro eliminado exitosamente');
+      onSuccess?.();
+      onClose();
+    } catch (e: any) {
+      toast.error('Error al eliminar: ' + e.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -283,18 +300,34 @@ export function EditPaymentModal({ isOpen, onClose, onSuccess }: EditPaymentModa
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={isSubmitting || !newAmount || numericNew <= 0 || !reason.trim() || numericNew === oldAmount}
-              className={`w-full py-3.5 rounded-xl text-white font-bold text-base flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
-                isSubmitting || !newAmount || numericNew <= 0 || !reason.trim() || numericNew === oldAmount
-                  ? 'bg-slate-300 cursor-not-allowed shadow-none'
-                  : 'bg-amber-500 hover:bg-amber-600 shadow-lg shadow-amber-500/30'
-              }`}
-            >
-              <CheckCircle className="w-5 h-5" />
-              {isSubmitting ? 'Aplicando corrección...' : 'Confirmar Corrección'}
-            </button>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={isSubmitting}
+                className={`w-1/3 py-3.5 rounded-xl text-white font-bold text-base flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+                  isSubmitting
+                    ? 'bg-slate-300 cursor-not-allowed shadow-none'
+                    : 'bg-rose-500 hover:bg-rose-600 shadow-lg shadow-rose-500/30'
+                }`}
+              >
+                <Trash2 className="w-5 h-5" />
+                Eliminar
+              </button>
+              
+              <button
+                type="submit"
+                disabled={isSubmitting || !newAmount || numericNew <= 0 || !reason.trim() || numericNew === oldAmount}
+                className={`w-2/3 py-3.5 rounded-xl text-white font-bold text-base flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+                  isSubmitting || !newAmount || numericNew <= 0 || !reason.trim() || numericNew === oldAmount
+                    ? 'bg-slate-300 cursor-not-allowed shadow-none'
+                    : 'bg-amber-500 hover:bg-amber-600 shadow-lg shadow-amber-500/30'
+                }`}
+              >
+                <CheckCircle className="w-5 h-5 shrink-0" />
+                <span className="truncate">Confirmar Corrección</span>
+              </button>
+            </div>
           </form>
         )}
       </div>
