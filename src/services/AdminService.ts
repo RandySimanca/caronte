@@ -1578,6 +1578,27 @@ export class AdminService {
   }
 
   /**
+   * Obtiene todos los pagos (cobros) realizados a un préstamo específico.
+   */
+  static async getLoanPayments(loanId: string) {
+    const { data, error } = await supabase
+      .from('payments')
+      .select(`
+        id,
+        total_amount,
+        collected_at,
+        collector_observation,
+        is_transfer,
+        collector:users!payments_collector_id_fkey(full_name)
+      `)
+      .eq('loan_id', loanId)
+      .order('collected_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  }
+
+  /**
    * Corrige el monto de un cobro registrado por un cobrador.
    * Revierte las allocations anteriores, re-distribuye el nuevo monto
    * y recalcula el saldo del préstamo.
