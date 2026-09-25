@@ -25,6 +25,7 @@ export function EditPaymentModal({ isOpen, onClose, onSuccess }: EditPaymentModa
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
   const [newAmount, setNewAmount] = useState('');
   const [reason, setReason] = useState('');
+  const [isTransfer, setIsTransfer] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -35,6 +36,7 @@ export function EditPaymentModal({ isOpen, onClose, onSuccess }: EditPaymentModa
       setNewAmount('');
       setReason('');
       setClientSearch('');
+      setIsTransfer(false);
     }
   }, [isOpen]);
 
@@ -54,6 +56,7 @@ export function EditPaymentModal({ isOpen, onClose, onSuccess }: EditPaymentModa
   const handleSelectPayment = (p: any) => {
     setSelectedPayment(p);
     setNewAmount(String(p.total_amount));
+    setIsTransfer(!!p.is_transfer);
     setStep('CONFIRM');
   };
 
@@ -67,7 +70,7 @@ export function EditPaymentModal({ isOpen, onClose, onSuccess }: EditPaymentModa
 
     setIsSubmitting(true);
     try {
-      await AdminService.correctPayment(selectedPayment.id, numeric, reason, user.id);
+      await AdminService.correctPayment(selectedPayment.id, numeric, reason, user.id, isTransfer);
       toast.success('Cobro corregido exitosamente');
       onSuccess?.();
       onClose();
@@ -236,6 +239,35 @@ export function EditPaymentModal({ isOpen, onClose, onSuccess }: EditPaymentModa
                     : `↓ Reduce ${formatCurrency(Math.abs(diff))} → el saldo del préstamo subirá`}
                 </p>
               )}
+            </div>
+
+            {/* Método de pago */}
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Método de pago</label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsTransfer(false)}
+                  className={`flex-1 py-3 px-4 rounded-xl font-bold text-sm transition-all border-2 ${
+                    !isTransfer
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  Efectivo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsTransfer(true)}
+                  className={`flex-1 py-3 px-4 rounded-xl font-bold text-sm transition-all border-2 ${
+                    isTransfer
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                      : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  Transferencia
+                </button>
+              </div>
             </div>
 
             {/* Motivo */}

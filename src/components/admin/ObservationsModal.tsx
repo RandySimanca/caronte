@@ -124,11 +124,23 @@ export function ObservationsModal({ isOpen, onClose, alerts = [] }: Observations
                       </div>
                     )}
 
-                    <div className="flex items-center gap-1.5 mt-2 text-slate-400">
-                      <Clock className="w-3.5 h-3.5" />
-                      <span className="text-xs">
-                        {new Date(alert.time).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                    <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
+                      <div className="flex items-center gap-1.5 text-slate-400">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span className="text-xs">
+                          {new Date(alert.time).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      
+                      {alert.is_transfer ? (
+                        <div className="flex items-center gap-1 text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-md px-2 py-0.5 shrink-0">
+                          <span className="text-[10px] font-bold uppercase">Transferencia</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-md px-2 py-0.5 shrink-0">
+                          <span className="text-[10px] font-bold uppercase">Efectivo</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

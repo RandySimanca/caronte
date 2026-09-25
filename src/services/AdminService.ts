@@ -452,6 +452,7 @@ export class AdminService {
         collectorName: alert.collector?.full_name || 'Cobrador desconocido',
         observation: alert.collector_observation || null,
         is_excess: alert.is_above_expected || Number(alert.advance_amount) > 0,
+        is_transfer: !!alert.is_transfer,
       }));
 
     return {
@@ -1581,7 +1582,7 @@ export class AdminService {
    * Revierte las allocations anteriores, re-distribuye el nuevo monto
    * y recalcula el saldo del préstamo.
    */
-  static async correctPayment(paymentId: string, newAmount: number, reason: string, adminId: string) {
+  static async correctPayment(paymentId: string, newAmount: number, reason: string, adminId: string, isTransfer: boolean = false) {
     // 1. Obtener el pago original
     const { data: payment, error: pErr } = await supabase
       .from('payments')
@@ -1703,6 +1704,7 @@ export class AdminService {
         day_installment_amount: dayInstallmentAmount,
         arrears_amount: arrearsAmount,
         advance_amount: advanceAmount,
+        is_transfer: isTransfer,
         collector_observation: `[CORREGIDO] ${reason}`.trim(),
       })
       .eq('id', paymentId);
