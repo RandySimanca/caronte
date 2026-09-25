@@ -29,6 +29,11 @@ export function PaymentCardModal({ isOpen, onClose, loanId }: PaymentCardModalPr
     load();
   }, [isOpen, loanId]);
 
+  const paidCount = installments.filter(i => i.status === 'PAGADA' || i.status === 'PAGADA_ANTICIPADAMENTE').length;
+  const lateCount = installments.filter(i => i.status === 'ATRASADA').length;
+  const partialCount = installments.filter(i => i.status === 'PARCIAL').length;
+  const pendingCount = installments.length - paidCount - lateCount - partialCount;
+
   if (!isOpen) return null;
 
   return (
@@ -108,12 +113,24 @@ export function PaymentCardModal({ isOpen, onClose, loanId }: PaymentCardModalPr
           )}
         </div>
         
-        {/* Leyenda */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap gap-4 text-xs font-medium text-slate-600 justify-center">
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-400"></div> Pagado</div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-yellow-400"></div> Parcial</div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-red-400"></div> Atrasado</div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-slate-300"></div> Pendiente</div>
+        {/* Leyenda y Estadísticas */}
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap gap-4 md:gap-6 text-xs font-medium text-slate-600 justify-center">
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-emerald-400 shadow-sm"></div>
+            Pagados: <span className="font-bold text-slate-800 text-sm bg-emerald-100 px-2 py-0.5 rounded-md">{paidCount}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-yellow-400 shadow-sm"></div>
+            Parciales: <span className="font-bold text-slate-800 text-sm bg-yellow-100 px-2 py-0.5 rounded-md">{partialCount}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-red-400 shadow-sm"></div>
+            Atrasados: <span className="font-bold text-slate-800 text-sm bg-red-100 px-2 py-0.5 rounded-md">{lateCount}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-slate-300 shadow-sm"></div>
+            Faltan: <span className="font-bold text-slate-800 text-sm bg-slate-200 px-2 py-0.5 rounded-md">{pendingCount}</span>
+          </div>
         </div>
       </div>
     </div>
