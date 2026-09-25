@@ -27,13 +27,12 @@ export function PaymentCardModal({ isOpen, onClose, loanId }: PaymentCardModalPr
   const loadData = async () => {
     setIsLoading(true);
     try {
-      if (viewMode === 'CARD') {
-        const data = await AdminService.getLoanInstallments(loanId);
-        setInstallments(data);
-      } else {
-        const data = await AdminService.getLoanPayments(loanId);
-        setPayments(data);
-      }
+      const [instData, payData] = await Promise.all([
+        AdminService.getLoanInstallments(loanId),
+        AdminService.getLoanPayments(loanId)
+      ]);
+      setInstallments(instData);
+      setPayments(payData);
     } catch (error: any) {
       toast.error('Error cargando datos: ' + error.message);
     } finally {
@@ -44,11 +43,11 @@ export function PaymentCardModal({ isOpen, onClose, loanId }: PaymentCardModalPr
   useEffect(() => {
     if (!isOpen || !loanId) return;
     loadData();
-    // Reset edit state when switching modes or reopening
+    // Reset edit state when reopening or switching loans
     setEditingPaymentId(null);
     setEditAmount('');
     setEditReason('');
-  }, [isOpen, loanId, viewMode]);
+  }, [isOpen, loanId]);
 
   const handleDelete = async (paymentId: string) => {
     if (!window.confirm('¿Estás seguro de que deseas eliminar este cobro por completo? El saldo del préstamo y las cuotas volverán a su estado anterior. Esta acción NO se puede deshacer.')) return;

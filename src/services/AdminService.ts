@@ -762,9 +762,95 @@ export class AdminService {
   }
 
   /**
+   * Recalcula y reconcilia las cuotas y el saldo del préstamo basándose en los pagos reales
+   * existentes en la tabla `payments`. Corrige cualquier inconsistencia o cuota desincronizada.
+   */
+  static async reconcileLoanInstallments(loanId: string) {
+    const { data: loan, error: lErr } = await supabase
+      .from('loans')
+      .select('*')
+      .eq('id', loanId)
+      .single();
+    if (lErr || !loan) return;
+
+    const { data: payments, error: pErr } = await supabase
+      .from('payments')
+      .select('total_amount')
+      .eq('loan_id', loanId);
+    if (pErr) throw pErr;
+
+    const totalPaid = (payments || []).reduce((sum: number, p: any) => sum + Number(p.total_amount || 0), 0);
+
+    const { data: installments, error: instErr } = await supabase
+      .from('loan_installments')
+      .select('*')
+      .eq('loan_id', loanId)
+      .order('scheduled_date', { ascending: true });
+    if (instErr || !installments) return;
+
+    let remainingToAllocate = totalPaid;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    for (const inst of installments) {
+      if (inst.is_prepaid) {
+        continue;
+      }
+
+      const scheduledAmount = Number(inst.scheduled_amount);
+      const payAmount = Math.min(scheduledAmount, remainingToAllocate);
+      remainingToAllocate -= payAmount;
+
+      const newPaid = payAmount;
+      const newBalance = scheduledAmount - payAmount;
+
+      let newStatus = 'PENDIENTE';
+      if (newBalance <= 0) {
+        newStatus = inst.scheduled_date > todayStr ? 'PAGADA_ANTICIPADAMENTE' : 'PAGADA';
+      } else if (newPaid > 0) {
+        newStatus = 'PARCIAL';
+      } else if (inst.scheduled_date < todayStr) {
+        newStatus = 'ATRASADA';
+      }
+
+      const currentPaid = Number(inst.paid_amount || 0);
+      const currentBalance = Number(inst.balance);
+      const currentStatus = inst.status;
+
+      if (currentPaid !== newPaid || currentBalance !== newBalance || currentStatus !== newStatus) {
+        await supabase
+          .from('loan_installments')
+          .update({
+            paid_amount: newPaid,
+            balance: newBalance,
+            status: newStatus,
+            paid_date: newPaid > 0 ? (inst.paid_date || todayStr) : null
+          })
+          .eq('id', inst.id);
+      }
+    }
+
+    const initialObligation = Number(loan.initial_obligation || 0);
+    const sundaysDiscount = Number(loan.sundays_prepaid_amount || 0);
+    const newLoanBalance = Math.max(0, initialObligation - sundaysDiscount - totalPaid);
+    const newLoanStatus = newLoanBalance <= 0 ? 'CANCELADO' : (loan.status === 'CANCELADO' ? 'ACTIVO' : loan.status);
+
+    if (Number(loan.current_balance) !== newLoanBalance || loan.status !== newLoanStatus) {
+      await supabase
+        .from('loans')
+        .update({
+          current_balance: newLoanBalance,
+          status: newLoanStatus
+        })
+        .eq('id', loanId);
+    }
+  }
+
+  /**
    * Obtiene las cuotas de un préstamo para visualizar la tarjeta de cobros
    */
   static async getLoanInstallments(loanId: string) {
+    await this.reconcileLoanInstallments(loanId);
+
     const { data, error } = await supabase
       .from('loan_installments')
       .select('*')
@@ -1796,101 +1882,17 @@ export class AdminService {
       .single();
     if (pErr) throw pErr;
 
-    const amount = Number(payment.total_amount);
     const loanId = payment.loan_id;
 
-    // 2. Obtener el préstamo
-    const { data: loan, error: lErr } = await supabase
-      .from('loans')
-      .select('*')
-      .eq('id', loanId)
-      .single();
-    if (lErr) throw lErr;
-
-    // 3. Revertir allocations en cuotas (o fallback manual)
-    const { data: allocations } = await supabase
-      .from('payment_allocations')
-      .select('installment_id, allocated_amount')
-      .eq('payment_id', paymentId);
-
-    const allocationsArray = allocations || [];
-
-    if (allocationsArray.length > 0) {
-      for (const alloc of allocationsArray) {
-        const { data: inst } = await supabase
-          .from('loan_installments')
-          .select('paid_amount, balance, scheduled_amount, scheduled_date')
-          .eq('id', alloc.installment_id)
-          .single();
-        if (!inst) continue;
-
-        const revertedPaid    = Math.max(0, Number(inst.paid_amount) - Number(alloc.allocated_amount));
-        const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
-        const today = new Date().toISOString().split('T')[0];
-
-        let newStatus = 'PENDIENTE';
-        if (revertedPaid >= Number(inst.scheduled_amount)) {
-          newStatus = inst.scheduled_date < today ? 'PAGADA' : 'PAGADA_ANTICIPADAMENTE';
-        } else if (revertedPaid > 0) {
-          newStatus = 'PARCIAL';
-        } else if (inst.scheduled_date < today) {
-          newStatus = 'ATRASADA';
-        }
-
-        await supabase
-          .from('loan_installments')
-          .update({ paid_amount: revertedPaid, balance: revertedBalance, status: newStatus })
-          .eq('id', alloc.installment_id);
-      }
-    } else {
-      // Manual fallback for old/collector payments without allocations
-      const { data: paidInsts } = await supabase
-        .from('loan_installments')
-        .select('id, paid_amount, balance, scheduled_amount, scheduled_date')
-        .eq('loan_id', loanId)
-        .gt('paid_amount', 0)
-        .order('scheduled_date', { ascending: false });
-
-      let remainingToRevert = amount;
-      for (const inst of (paidInsts || [])) {
-        if (remainingToRevert <= 0) break;
-        const currentPaid = Number(inst.paid_amount);
-        const revertAmount = Math.min(currentPaid, remainingToRevert);
-        remainingToRevert -= revertAmount;
-
-        const revertedPaid = currentPaid - revertAmount;
-        const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
-        const today = new Date().toISOString().split('T')[0];
-
-        let newStatus = 'PENDIENTE';
-        if (revertedPaid >= Number(inst.scheduled_amount)) {
-          newStatus = inst.scheduled_date < today ? 'PAGADA' : 'PAGADA_ANTICIPADAMENTE';
-        } else if (revertedPaid > 0) {
-          newStatus = 'PARCIAL';
-        } else if (inst.scheduled_date < today) {
-          newStatus = 'ATRASADA';
-        }
-
-        await supabase
-          .from('loan_installments')
-          .update({ paid_amount: revertedPaid, balance: revertedBalance, status: newStatus })
-          .eq('id', inst.id);
-      }
-    }
-
-    // 4. Eliminar allocations antiguas
+    // 2. Eliminar allocations antiguas
     await supabase.from('payment_allocations').delete().eq('payment_id', paymentId);
 
-    // 5. Eliminar el pago en la tabla payments
+    // 3. Eliminar el pago en la tabla payments
     const { error: delErr } = await supabase.from('payments').delete().eq('id', paymentId);
     if (delErr) throw delErr;
 
-    // 6. Recalcular saldo del préstamo (el saldo sube porque el pago se elimina)
-    const newLoanBalance = Number(loan.current_balance) + amount;
-    await supabase.from('loans').update({ 
-      current_balance: newLoanBalance,
-      status: loan.status === 'CANCELADO' ? 'ACTIVO' : loan.status 
-    }).eq('id', loanId);
+    // 4. Reconciliar el préstamo y sus cuotas
+    await this.reconcileLoanInstallments(loanId);
   }
 }
 
