@@ -1602,35 +1602,75 @@ export class AdminService {
       .single();
     if (lErr) throw lErr;
 
-    // 3. Revertir allocations en cuotas
+    // 3. Revertir allocations en cuotas (o fallback manual)
     const { data: allocations } = await supabase
       .from('payment_allocations')
       .select('installment_id, allocated_amount')
       .eq('payment_id', paymentId);
 
-    for (const alloc of (allocations || [])) {
-      const { data: inst } = await supabase
-        .from('loan_installments')
-        .select('paid_amount, balance, scheduled_amount, scheduled_date')
-        .eq('id', alloc.installment_id)
-        .single();
-      if (!inst) continue;
+    const allocationsArray = allocations || [];
 
-      const revertedPaid    = Math.max(0, Number(inst.paid_amount) - Number(alloc.allocated_amount));
-      const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
-      const today = new Date().toISOString().split('T')[0];
+    if (allocationsArray.length > 0) {
+      for (const alloc of allocationsArray) {
+        const { data: inst } = await supabase
+          .from('loan_installments')
+          .select('paid_amount, balance, scheduled_amount, scheduled_date')
+          .eq('id', alloc.installment_id)
+          .single();
+        if (!inst) continue;
 
-      let newStatus = 'PENDIENTE';
-      if (revertedPaid >= Number(inst.scheduled_amount)) {
-        newStatus = inst.scheduled_date < today ? 'PAGADA' : 'PAGADA_ANTICIPADAMENTE';
-      } else if (revertedPaid > 0) {
-        newStatus = 'PARCIAL';
+        const revertedPaid    = Math.max(0, Number(inst.paid_amount) - Number(alloc.allocated_amount));
+        const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
+        const today = new Date().toISOString().split('T')[0];
+
+        let newStatus = 'PENDIENTE';
+        if (revertedPaid >= Number(inst.scheduled_amount)) {
+          newStatus = inst.scheduled_date < today ? 'PAGADA' : 'PAGADA_ANTICIPADAMENTE';
+        } else if (revertedPaid > 0) {
+          newStatus = 'PARCIAL';
+        } else if (inst.scheduled_date < today) {
+          newStatus = 'ATRASADA';
+        }
+
+        await supabase
+          .from('loan_installments')
+          .update({ paid_amount: revertedPaid, balance: revertedBalance, status: newStatus })
+          .eq('id', alloc.installment_id);
       }
-
-      await supabase
+    } else {
+      // Manual fallback for old/collector payments without allocations
+      const { data: paidInsts } = await supabase
         .from('loan_installments')
-        .update({ paid_amount: revertedPaid, balance: revertedBalance, status: newStatus })
-        .eq('id', alloc.installment_id);
+        .select('id, paid_amount, balance, scheduled_amount, scheduled_date')
+        .eq('loan_id', loanId)
+        .gt('paid_amount', 0)
+        .order('scheduled_date', { ascending: false });
+
+      let remainingToRevert = oldAmount;
+      for (const inst of (paidInsts || [])) {
+        if (remainingToRevert <= 0) break;
+        const currentPaid = Number(inst.paid_amount);
+        const revertAmount = Math.min(currentPaid, remainingToRevert);
+        remainingToRevert -= revertAmount;
+
+        const revertedPaid = currentPaid - revertAmount;
+        const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
+        const today = new Date().toISOString().split('T')[0];
+
+        let newStatus = 'PENDIENTE';
+        if (revertedPaid >= Number(inst.scheduled_amount)) {
+          newStatus = inst.scheduled_date < today ? 'PAGADA' : 'PAGADA_ANTICIPADAMENTE';
+        } else if (revertedPaid > 0) {
+          newStatus = 'PARCIAL';
+        } else if (inst.scheduled_date < today) {
+          newStatus = 'ATRASADA';
+        }
+
+        await supabase
+          .from('loan_installments')
+          .update({ paid_amount: revertedPaid, balance: revertedBalance, status: newStatus })
+          .eq('id', inst.id);
+      }
     }
 
     // 4. Eliminar allocations antiguas
@@ -1746,35 +1786,75 @@ export class AdminService {
       .single();
     if (lErr) throw lErr;
 
-    // 3. Revertir allocations en cuotas
+    // 3. Revertir allocations en cuotas (o fallback manual)
     const { data: allocations } = await supabase
       .from('payment_allocations')
       .select('installment_id, allocated_amount')
       .eq('payment_id', paymentId);
 
-    for (const alloc of (allocations || [])) {
-      const { data: inst } = await supabase
-        .from('loan_installments')
-        .select('paid_amount, balance, scheduled_amount, scheduled_date')
-        .eq('id', alloc.installment_id)
-        .single();
-      if (!inst) continue;
+    const allocationsArray = allocations || [];
 
-      const revertedPaid    = Math.max(0, Number(inst.paid_amount) - Number(alloc.allocated_amount));
-      const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
-      const today = new Date().toISOString().split('T')[0];
+    if (allocationsArray.length > 0) {
+      for (const alloc of allocationsArray) {
+        const { data: inst } = await supabase
+          .from('loan_installments')
+          .select('paid_amount, balance, scheduled_amount, scheduled_date')
+          .eq('id', alloc.installment_id)
+          .single();
+        if (!inst) continue;
 
-      let newStatus = 'PENDIENTE';
-      if (revertedPaid >= Number(inst.scheduled_amount)) {
-        newStatus = inst.scheduled_date < today ? 'PAGADA' : 'PAGADA_ANTICIPADAMENTE';
-      } else if (revertedPaid > 0) {
-        newStatus = 'PARCIAL';
+        const revertedPaid    = Math.max(0, Number(inst.paid_amount) - Number(alloc.allocated_amount));
+        const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
+        const today = new Date().toISOString().split('T')[0];
+
+        let newStatus = 'PENDIENTE';
+        if (revertedPaid >= Number(inst.scheduled_amount)) {
+          newStatus = inst.scheduled_date < today ? 'PAGADA' : 'PAGADA_ANTICIPADAMENTE';
+        } else if (revertedPaid > 0) {
+          newStatus = 'PARCIAL';
+        } else if (inst.scheduled_date < today) {
+          newStatus = 'ATRASADA';
+        }
+
+        await supabase
+          .from('loan_installments')
+          .update({ paid_amount: revertedPaid, balance: revertedBalance, status: newStatus })
+          .eq('id', alloc.installment_id);
       }
-
-      await supabase
+    } else {
+      // Manual fallback for old/collector payments without allocations
+      const { data: paidInsts } = await supabase
         .from('loan_installments')
-        .update({ paid_amount: revertedPaid, balance: revertedBalance, status: newStatus })
-        .eq('id', alloc.installment_id);
+        .select('id, paid_amount, balance, scheduled_amount, scheduled_date')
+        .eq('loan_id', loanId)
+        .gt('paid_amount', 0)
+        .order('scheduled_date', { ascending: false });
+
+      let remainingToRevert = amount;
+      for (const inst of (paidInsts || [])) {
+        if (remainingToRevert <= 0) break;
+        const currentPaid = Number(inst.paid_amount);
+        const revertAmount = Math.min(currentPaid, remainingToRevert);
+        remainingToRevert -= revertAmount;
+
+        const revertedPaid = currentPaid - revertAmount;
+        const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
+        const today = new Date().toISOString().split('T')[0];
+
+        let newStatus = 'PENDIENTE';
+        if (revertedPaid >= Number(inst.scheduled_amount)) {
+          newStatus = inst.scheduled_date < today ? 'PAGADA' : 'PAGADA_ANTICIPADAMENTE';
+        } else if (revertedPaid > 0) {
+          newStatus = 'PARCIAL';
+        } else if (inst.scheduled_date < today) {
+          newStatus = 'ATRASADA';
+        }
+
+        await supabase
+          .from('loan_installments')
+          .update({ paid_amount: revertedPaid, balance: revertedBalance, status: newStatus })
+          .eq('id', inst.id);
+      }
     }
 
     // 4. Eliminar allocations antiguas
