@@ -1530,5 +1530,179 @@ export class AdminService {
     if (error) throw error;
     return data || [];
   }
+
+  /**
+   * Obtiene los pagos de un día, filtrable por nombre/documento de cliente.
+   * Usado por el admin para buscar un cobro a corregir.
+   */
+  static async getPaymentsByDate(date: string, clientSearch?: string) {
+    const startOfDay = `${date}T00:00:00.000Z`;
+    const endOfDay   = `${date}T23:59:59.999Z`;
+
+    const { data, error } = await supabase
+      .from('payments')
+      .select(`
+        id,
+        total_amount,
+        collected_at,
+        collector_observation,
+        loan_id,
+        collector:users!payments_collector_id_fkey(full_name),
+        loan:loans!payments_loan_id_fkey(
+          id,
+          current_balance,
+          daily_installment,
+          route_id,
+          client:clients!loans_client_id_fkey(full_name, document_id)
+        )
+      `)
+      .gte('collected_at', startOfDay)
+      .lte('collected_at', endOfDay)
+      .order('collected_at', { ascending: false });
+
+    if (error) throw error;
+
+    let results = (data || []) as any[];
+
+    if (clientSearch && clientSearch.trim() !== '') {
+      const term = clientSearch.toLowerCase();
+      results = results.filter((p: any) => {
+        const name = (p.loan?.client?.full_name || '').toLowerCase();
+        const doc  = (p.loan?.client?.document_id || '').toLowerCase();
+        return name.includes(term) || doc.includes(term);
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Corrige el monto de un cobro registrado por un cobrador.
+   * Revierte las allocations anteriores, re-distribuye el nuevo monto
+   * y recalcula el saldo del préstamo.
+   */
+  static async correctPayment(paymentId: string, newAmount: number, reason: string, adminId: string) {
+    // 1. Obtener el pago original
+    const { data: payment, error: pErr } = await supabase
+      .from('payments')
+      .select('id, total_amount, loan_id')
+      .eq('id', paymentId)
+      .single();
+    if (pErr) throw pErr;
+
+    const oldAmount = Number(payment.total_amount);
+    const loanId    = payment.loan_id;
+
+    // 2. Obtener el préstamo
+    const { data: loan, error: lErr } = await supabase
+      .from('loans')
+      .select('*')
+      .eq('id', loanId)
+      .single();
+    if (lErr) throw lErr;
+
+    // 3. Revertir allocations en cuotas
+    const { data: allocations } = await supabase
+      .from('payment_allocations')
+      .select('installment_id, allocated_amount')
+      .eq('payment_id', paymentId);
+
+    for (const alloc of (allocations || [])) {
+      const { data: inst } = await supabase
+        .from('loan_installments')
+        .select('paid_amount, balance, scheduled_amount, scheduled_date')
+        .eq('id', alloc.installment_id)
+        .single();
+      if (!inst) continue;
+
+      const revertedPaid    = Math.max(0, Number(inst.paid_amount) - Number(alloc.allocated_amount));
+      const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
+      const today = new Date().toISOString().split('T')[0];
+
+      let newStatus = 'PENDIENTE';
+      if (revertedPaid >= Number(inst.scheduled_amount)) {
+        newStatus = inst.scheduled_date < today ? 'PAGADA' : 'PAGADA_ANTICIPADAMENTE';
+      } else if (revertedPaid > 0) {
+        newStatus = 'PARCIAL';
+      }
+
+      await supabase
+        .from('loan_installments')
+        .update({ paid_amount: revertedPaid, balance: revertedBalance, status: newStatus })
+        .eq('id', alloc.installment_id);
+    }
+
+    // 4. Eliminar allocations antiguas
+    await supabase.from('payment_allocations').delete().eq('payment_id', paymentId);
+
+    // 5. Actualizar monto del pago y registrar la corrección
+    const { error: upErr } = await supabase
+      .from('payments')
+      .update({
+        total_amount: newAmount,
+        day_installment_amount: newAmount,
+        collector_observation: `[CORREGIDO] ${reason}`.trim(),
+      })
+      .eq('id', paymentId);
+    if (upErr) throw upErr;
+
+    // 6. Re-distribuir el nuevo monto en cuotas pendientes
+    const { data: pendingInsts } = await supabase
+      .from('loan_installments')
+      .select('*')
+      .eq('loan_id', loanId)
+      .gt('balance', 0)
+      .order('scheduled_date', { ascending: true });
+
+    let remaining = newAmount;
+    const newAllocations: any[] = [];
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    for (const inst of (pendingInsts || [])) {
+      if (remaining <= 0) break;
+      const balance   = Number(inst.balance);
+      const payAmount = Math.min(balance, remaining);
+      remaining -= payAmount;
+
+      const newPaid    = Number(inst.paid_amount) + payAmount;
+      const newBalance = balance - payAmount;
+
+      let status = inst.status;
+      if (newBalance === 0) {
+        status = inst.scheduled_date > todayStr ? 'PAGADA_ANTICIPADAMENTE' : 'PAGADA';
+      } else if (newPaid > 0) {
+        status = 'PARCIAL';
+      }
+
+      await supabase
+        .from('loan_installments')
+        .update({ paid_amount: newPaid, balance: newBalance, status, paid_date: todayStr })
+        .eq('id', inst.id);
+
+      newAllocations.push({
+        payment_id: paymentId,
+        installment_id: inst.id,
+        allocated_amount: payAmount,
+        allocation_type: inst.scheduled_date < todayStr ? 'ATRASO'
+          : inst.scheduled_date > todayStr ? 'ADELANTO' : 'DIA_ACTUAL'
+      });
+    }
+
+    if (newAllocations.length > 0) {
+      await supabase.from('payment_allocations').insert(newAllocations as any);
+    }
+
+    // 7. Recalcular saldo del préstamo
+    const balanceDelta   = oldAmount - newAmount; // si bajó el pago, saldo sube
+    const newLoanBalance = Number(loan.current_balance) + balanceDelta;
+    await supabase
+      .from('loans')
+      .update({
+        current_balance: Math.max(0, newLoanBalance),
+        status: newLoanBalance <= 0 ? 'CANCELADO' : loan.status
+      })
+      .eq('id', loanId);
+  }
 }
+
 

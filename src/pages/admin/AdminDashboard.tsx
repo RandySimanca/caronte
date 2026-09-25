@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck, Plus, Building2, Smartphone } from 'lucide-react';
+import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck, Plus, Building2, Smartphone, PencilLine } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { ClientsModal } from '@/components/admin/ClientsModal';
 import { LotteryModule } from '@/components/admin/LotteryModule';
@@ -7,6 +7,7 @@ import { ObservationsModal } from '@/components/admin/ObservationsModal';
 import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
 import { AdminCreateLoanModal } from '@/components/admin/AdminCreateLoanModal';
 import { TransferVouchersModal } from '@/components/admin/TransferVouchersModal';
+import { EditPaymentModal } from '@/components/admin/EditPaymentModal';
 import toast from 'react-hot-toast';
 
 export function AdminDashboard() {
@@ -21,6 +22,7 @@ export function AdminDashboard() {
   const [isPrepaidModalOpen, setIsPrepaidModalOpen] = useState(false);
   const [isCreateLoanOpen, setIsCreateLoanOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [isEditPaymentOpen, setIsEditPaymentOpen] = useState(false);
 
   // Load route list only once
   useEffect(() => {
@@ -146,6 +148,16 @@ export function AdminDashboard() {
             <Building2 className="w-5 h-5" />
           </div>
           <span className="text-base">Registrar Cobro (Oficina)</span>
+        </button>
+
+        <button
+          onClick={() => setIsEditPaymentOpen(true)}
+          className="flex-1 flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-amber-500/20 transition-all group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors shrink-0">
+            <PencilLine className="w-5 h-5" />
+          </div>
+          <span className="text-base">Corregir Cobro</span>
         </button>
 
       </div>
@@ -459,6 +471,11 @@ export function AdminDashboard() {
         onClose={() => setIsTransferModalOpen(false)}
         routeStates={routeStates}
         initialRouteId={selectedRoute}
+      />
+
+      <EditPaymentModal
+        isOpen={isEditPaymentOpen}
+        onClose={() => setIsEditPaymentOpen(false)}
       />
     </div>
   );
