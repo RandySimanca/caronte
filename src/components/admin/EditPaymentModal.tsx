@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { X, Search, PencilLine, AlertTriangle, CheckCircle, ChevronLeft } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { useAuthStore } from '@/stores/authStore';
@@ -57,7 +57,7 @@ export function EditPaymentModal({ isOpen, onClose, onSuccess }: EditPaymentModa
     setStep('CONFIRM');
   };
 
-  const handleCorrect = async (e: React.FormEvent) => {
+  const handleCorrect = async (e: FormEvent) => {
     e.preventDefault();
     if (!user || !selectedPayment) return;
 
