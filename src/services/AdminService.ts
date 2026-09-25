@@ -1635,18 +1635,7 @@ export class AdminService {
     // 4. Eliminar allocations antiguas
     await supabase.from('payment_allocations').delete().eq('payment_id', paymentId);
 
-    // 5. Actualizar monto del pago y registrar la corrección
-    const { error: upErr } = await supabase
-      .from('payments')
-      .update({
-        total_amount: newAmount,
-        day_installment_amount: newAmount,
-        collector_observation: `[CORREGIDO] ${reason}`.trim(),
-      })
-      .eq('id', paymentId);
-    if (upErr) throw upErr;
-
-    // 6. Re-distribuir el nuevo monto en cuotas pendientes
+    // 5. Re-distribuir el nuevo monto en cuotas pendientes y calcular la distribución
     const { data: pendingInsts } = await supabase
       .from('loan_installments')
       .select('*')
@@ -1657,6 +1646,10 @@ export class AdminService {
     let remaining = newAmount;
     const newAllocations: any[] = [];
     const todayStr = new Date().toISOString().split('T')[0];
+
+    let dayInstallmentAmount = 0;
+    let arrearsAmount = 0;
+    let advanceAmount = 0;
 
     for (const inst of (pendingInsts || [])) {
       if (remaining <= 0) break;
@@ -1679,18 +1672,41 @@ export class AdminService {
         .update({ paid_amount: newPaid, balance: newBalance, status, paid_date: todayStr })
         .eq('id', inst.id);
 
+      let allocationType = 'DIA_ACTUAL';
+      if (inst.scheduled_date < todayStr) {
+        allocationType = 'ATRASO';
+        arrearsAmount += payAmount;
+      } else if (inst.scheduled_date > todayStr) {
+        allocationType = 'ADELANTO';
+        advanceAmount += payAmount;
+      } else {
+        dayInstallmentAmount += payAmount;
+      }
+
       newAllocations.push({
         payment_id: paymentId,
         installment_id: inst.id,
         allocated_amount: payAmount,
-        allocation_type: inst.scheduled_date < todayStr ? 'ATRASO'
-          : inst.scheduled_date > todayStr ? 'ADELANTO' : 'DIA_ACTUAL'
+        allocation_type: allocationType
       });
     }
 
     if (newAllocations.length > 0) {
       await supabase.from('payment_allocations').insert(newAllocations as any);
     }
+
+    // 6. Actualizar monto del pago con la distribución calculada exacta
+    const { error: upErr } = await supabase
+      .from('payments')
+      .update({
+        total_amount: newAmount,
+        day_installment_amount: dayInstallmentAmount,
+        arrears_amount: arrearsAmount,
+        advance_amount: advanceAmount,
+        collector_observation: `[CORREGIDO] ${reason}`.trim(),
+      })
+      .eq('id', paymentId);
+    if (upErr) throw upErr;
 
     // 7. Recalcular saldo del préstamo
     const balanceDelta   = oldAmount - newAmount; // si bajó el pago, saldo sube
