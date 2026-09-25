@@ -811,9 +811,11 @@ export class AdminService {
     if (pathsToRemove.length > 0) {
       // Eliminar de storage api
       await supabase.storage.from('clients_photos').remove(pathsToRemove);
-      // Desenlazar las fotos para evitar el trigger de DB "Direct deletion from storage tables is not allowed"
-      await supabase.from('clients').update({ photo_face_url: null, photo_doc_url: null }).eq('id', clientId);
     }
+
+    // Desenlazar las fotos SIEMPRE para evitar el trigger de DB "Direct deletion from storage tables is not allowed"
+    // Incluso si no había fotos válidas en storage, el trigger puede fallar si evalúa la sentencia DELETE interna.
+    await supabase.from('clients').update({ photo_face_url: null, photo_doc_url: null }).eq('id', clientId);
 
     // 4. Eliminar el cliente
     const { error } = await supabase
