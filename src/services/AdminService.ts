@@ -1537,8 +1537,8 @@ export class AdminService {
    * Usado por el admin para buscar un cobro a corregir.
    */
   static async getPaymentsByDate(date: string, clientSearch?: string) {
-    const startOfDay = `${date}T00:00:00.000Z`;
-    const endOfDay   = `${date}T23:59:59.999Z`;
+    const startOfDay = new Date(`${date}T00:00:00-05:00`).toISOString();
+    const endOfDay   = new Date(`${date}T23:59:59.999-05:00`).toISOString();
 
     const { data, error } = await supabase
       .from('payments')
