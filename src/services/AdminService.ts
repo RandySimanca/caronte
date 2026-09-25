@@ -775,53 +775,38 @@ export class AdminService {
   }
 
   /**
-   * Elimina un cliente por su ID
+   * Elimina un cliente por su ID.
+   * Usa la función RPC `delete_client` (SECURITY DEFINER) para evitar el trigger
+   * que bloquea el DELETE directo en la tabla clients cuando hay fotos en Storage.
    */
   static async deleteClient(clientId: string) {
-    // 1. Obtener los préstamos y las fotos del cliente
-    const { data: client } = await supabase.from('clients').select('photo_face_url, photo_doc_url').eq('id', clientId).single();
-    const { data: loans } = await supabase.from('loans').select('id').eq('client_id', clientId);
-    
-    // 2. Eliminar dependencias de préstamos
-    if (loans && loans.length > 0) {
-      const loanIds = (loans as unknown as { id: string }[]).map(l => l.id);
-      
-      // Eliminar cuotas
-      await supabase.from('loan_installments').delete().in('loan_id', loanIds);
-      // Eliminar pagos
-      await supabase.from('payments').delete().in('loan_id', loanIds);
-      // Eliminar los préstamos
-      await supabase.from('loans').delete().in('id', loanIds);
-    }
+    // 1. Eliminar fotos de Storage ANTES de llamar al RPC
+    //    (el RPC sólo limpia las URLs en DB; la eliminación del bucket debe hacerse desde el cliente)
+    const { data: client } = await supabase
+      .from('clients')
+      .select('photo_face_url, photo_doc_url')
+      .eq('id', clientId)
+      .single();
 
-    // 3. Eliminar fotos de Storage (para evitar error de triggers en base de datos)
-    const pathsToRemove: string[] = [];
     const extractPath = (url: string | null) => {
       if (!url) return null;
       const parts = url.split('/clients_photos/');
       return parts.length > 1 ? parts[1] : null;
     };
 
-    const facePath = extractPath(client?.photo_face_url);
-    const docPath = extractPath(client?.photo_doc_url);
-
+    const pathsToRemove: string[] = [];
+    const facePath = extractPath(client?.photo_face_url ?? null);
+    const docPath = extractPath(client?.photo_doc_url ?? null);
     if (facePath) pathsToRemove.push(facePath);
     if (docPath) pathsToRemove.push(docPath);
 
     if (pathsToRemove.length > 0) {
-      // Eliminar de storage api
       await supabase.storage.from('clients_photos').remove(pathsToRemove);
     }
 
-    // Desenlazar las fotos SIEMPRE para evitar el trigger de DB "Direct deletion from storage tables is not allowed"
-    // Incluso si no había fotos válidas en storage, el trigger puede fallar si evalúa la sentencia DELETE interna.
-    await supabase.from('clients').update({ photo_face_url: null, photo_doc_url: null }).eq('id', clientId);
-
-    // 4. Eliminar el cliente
-    const { error } = await supabase
-      .from('clients')
-      .delete()
-      .eq('id', clientId);
+    // 2. Llamar al RPC que elimina cuotas → pagos → préstamos → cliente
+    //    (corre con SECURITY DEFINER, esquivando el trigger restrictivo)
+    const { error } = await supabase.rpc('delete_client', { p_client_id: clientId });
 
     if (error) throw error;
   }
