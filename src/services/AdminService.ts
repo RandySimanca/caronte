@@ -778,9 +778,11 @@ export class AdminService {
    * Elimina un cliente por su ID
    */
   static async deleteClient(clientId: string) {
-    // Primero, obtener los préstamos del cliente para eliminar dependencias
+    // 1. Obtener los préstamos y las fotos del cliente
+    const { data: client } = await supabase.from('clients').select('photo_face_url, photo_doc_url').eq('id', clientId).single();
     const { data: loans } = await supabase.from('loans').select('id').eq('client_id', clientId);
     
+    // 2. Eliminar dependencias de préstamos
     if (loans && loans.length > 0) {
       const loanIds = (loans as unknown as { id: string }[]).map(l => l.id);
       
@@ -792,6 +794,28 @@ export class AdminService {
       await supabase.from('loans').delete().in('id', loanIds);
     }
 
+    // 3. Eliminar fotos de Storage (para evitar error de triggers en base de datos)
+    const pathsToRemove: string[] = [];
+    const extractPath = (url: string | null) => {
+      if (!url) return null;
+      const parts = url.split('/clients_photos/');
+      return parts.length > 1 ? parts[1] : null;
+    };
+
+    const facePath = extractPath(client?.photo_face_url);
+    const docPath = extractPath(client?.photo_doc_url);
+
+    if (facePath) pathsToRemove.push(facePath);
+    if (docPath) pathsToRemove.push(docPath);
+
+    if (pathsToRemove.length > 0) {
+      // Eliminar de storage api
+      await supabase.storage.from('clients_photos').remove(pathsToRemove);
+      // Desenlazar las fotos para evitar el trigger de DB "Direct deletion from storage tables is not allowed"
+      await supabase.from('clients').update({ photo_face_url: null, photo_doc_url: null }).eq('id', clientId);
+    }
+
+    // 4. Eliminar el cliente
     const { error } = await supabase
       .from('clients')
       .delete()

@@ -14,7 +14,7 @@ export function AdminDashboard() {
   const [routeStates, setRouteStates] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
-  const [selectedRoute, setSelectedRoute] = useState<string>('all');
+  const [selectedRoute, setSelectedRoute] = useState<string>('');
   const [clientsModal, setClientsModal] = useState<{ open: boolean; onlyToday: boolean }>({ open: false, onlyToday: false });
   const [isLotteryOpen, setIsLotteryOpen] = useState(false);
   const [isObservationsOpen, setIsObservationsOpen] = useState(false);
@@ -41,6 +41,22 @@ export function AdminDashboard() {
   // Reload stats whenever the selected route changes
   useEffect(() => {
     const fetchStats = async () => {
+      if (!selectedRoute) {
+        setStats({
+          clientes: 0,
+          nuevos: 0,
+          recaudo: 0,
+          recaudoOficina: 0,
+          recaudoTransferencias: 0,
+          esperado: 0,
+          prepaidToday: { count: 0, clients: [] },
+          alerts: [],
+          cobradores: 0,
+          rutas: 0
+        });
+        return;
+      }
+
       setIsStatsLoading(true);
       try {
         const dashboardStats = await AdminService.getDashboardStats(selectedRoute);
@@ -71,13 +87,19 @@ export function AdminDashboard() {
   }
 
   // Derive context for the second row of cards based on selection
-  const isFiltered = selectedRoute !== 'all';
+  const isFiltered = selectedRoute !== 'all' && selectedRoute !== '';
   const selectedRouteData = isFiltered ? routeStates.find(r => r.id === selectedRoute) : null;
 
   // Filter table rows
-  const visibleRoutes = isFiltered
-    ? routeStates.filter(r => r.id === selectedRoute)
-    : routeStates;
+  const visibleRoutes = selectedRoute === ''
+    ? []
+    : selectedRoute === 'all'
+      ? routeStates
+      : routeStates.filter(r => r.id === selectedRoute);
+
+  const routeSubtitle = selectedRoute === '' 
+    ? 'Seleccione una ruta' 
+    : isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas';
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
@@ -95,6 +117,7 @@ export function AdminDashboard() {
             onChange={(e) => setSelectedRoute(e.target.value)}
             className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-brand-500"
           >
+            <option value="" disabled>Seleccione una ruta</option>
             <option value="all">Todas las rutas</option>
             {routeStates.map(r => (
               <option key={r.id} value={r.id}>{r.ruta}</option>
@@ -144,7 +167,7 @@ export function AdminDashboard() {
           <div className={`text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
             {stats?.clientes ?? '—'}
           </div>
-          <p className="text-xs text-slate-400">{isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas'}</p>
+          <p className="text-xs text-slate-400">{routeSubtitle}</p>
         </button>
 
         {/* Nuevos — clickable with only today filter */}
@@ -162,7 +185,7 @@ export function AdminDashboard() {
           <div className={`text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
             {stats?.nuevos ?? '—'}
           </div>
-          <p className="text-xs text-slate-400">{isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas'}</p>
+          <p className="text-xs text-slate-400">{routeSubtitle}</p>
         </button>
 
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
@@ -184,7 +207,7 @@ export function AdminDashboard() {
               Transferencias: {formatCurrency(stats?.recaudoTransferencias ?? 0)}
             </button>
           </div>
-          <p className="text-xs text-slate-400">{isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas'}</p>
+          <p className="text-xs text-slate-400">{routeSubtitle}</p>
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
@@ -195,7 +218,7 @@ export function AdminDashboard() {
           <div className={`text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
             {formatCurrency(stats?.esperado ?? 0)}
           </div>
-          <p className="text-xs text-slate-400">{isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas'}</p>
+          <p className="text-xs text-slate-400">{routeSubtitle}</p>
         </div>
       </div>
 
@@ -357,7 +380,7 @@ export function AdminDashboard() {
       {/* Table Section */}
       <div className="pt-4">
         <h3 className="text-lg font-bold text-slate-800 mb-4">
-          {isFiltered ? `Detalle: ${selectedRouteData?.ruta}` : 'Estado de las rutas'}
+          {selectedRoute === '' ? 'Seleccione una ruta para ver detalles' : isFiltered ? `Detalle: ${selectedRouteData?.ruta}` : 'Estado de las rutas'}
         </h3>
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <table className="w-full text-left border-collapse">
