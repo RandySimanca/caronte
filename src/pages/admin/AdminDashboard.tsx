@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck, Plus, Building2, Smartphone, PencilLine } from 'lucide-react';
+import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck, Plus, Building2, Smartphone, PencilLine, FileSpreadsheet } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { ClientsModal } from '@/components/admin/ClientsModal';
 import { LotteryModule } from '@/components/admin/LotteryModule';
@@ -8,6 +8,7 @@ import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
 import { AdminCreateLoanModal } from '@/components/admin/AdminCreateLoanModal';
 import { TransferVouchersModal } from '@/components/admin/TransferVouchersModal';
 import { EditPaymentModal } from '@/components/admin/EditPaymentModal';
+import { ExcelMigrationModal } from '@/components/admin/ExcelMigrationModal';
 import toast from 'react-hot-toast';
 
 export function AdminDashboard() {
@@ -23,6 +24,7 @@ export function AdminDashboard() {
   const [isCreateLoanOpen, setIsCreateLoanOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isEditPaymentOpen, setIsEditPaymentOpen] = useState(false);
+  const [isExcelMigrationOpen, setIsExcelMigrationOpen] = useState(false);
 
   // Load route list only once
   useEffect(() => {
@@ -129,35 +131,45 @@ export function AdminDashboard() {
       </div>
 
       {/* Quick Action Buttons */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <button
           onClick={() => setIsCreateLoanOpen(true)}
-          className="flex-1 flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 transition-all group"
+          className="flex items-center justify-center gap-3 px-5 py-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 transition-all group"
         >
           <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors shrink-0">
             <Plus className="w-5 h-5" />
           </div>
-          <span className="text-base">Nuevo Préstamo</span>
+          <span className="text-sm sm:text-base">Nuevo Préstamo</span>
+        </button>
+
+        <button
+          onClick={() => setIsExcelMigrationOpen(true)}
+          className="flex items-center justify-center gap-3 px-5 py-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 transition-all group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors shrink-0">
+            <FileSpreadsheet className="w-5 h-5" />
+          </div>
+          <span className="text-sm sm:text-base">Migración Excel</span>
         </button>
 
         <button
           onClick={() => setClientsModal({ open: true, onlyToday: false })}
-          className="flex-1 flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 transition-all group"
+          className="flex items-center justify-center gap-3 px-5 py-4 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-teal-500/20 transition-all group"
         >
           <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors shrink-0">
             <Building2 className="w-5 h-5" />
           </div>
-          <span className="text-base">Registrar Cobro (Oficina)</span>
+          <span className="text-sm sm:text-base">Cobro en Oficina</span>
         </button>
 
         <button
           onClick={() => setIsEditPaymentOpen(true)}
-          className="flex-1 flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-amber-500/20 transition-all group"
+          className="flex items-center justify-center gap-3 px-5 py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-amber-500/20 transition-all group"
         >
           <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors shrink-0">
             <PencilLine className="w-5 h-5" />
           </div>
-          <span className="text-base">Corregir Cobro</span>
+          <span className="text-sm sm:text-base">Corregir Cobro</span>
         </button>
 
       </div>
@@ -476,6 +488,13 @@ export function AdminDashboard() {
       <EditPaymentModal
         isOpen={isEditPaymentOpen}
         onClose={() => setIsEditPaymentOpen(false)}
+      />
+
+      <ExcelMigrationModal
+        isOpen={isExcelMigrationOpen}
+        onClose={() => setIsExcelMigrationOpen(false)}
+        routeStates={routeStates}
+        onSuccess={() => setIsExcelMigrationOpen(false)}
       />
     </div>
   );
