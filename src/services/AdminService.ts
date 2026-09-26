@@ -1247,6 +1247,8 @@ export class AdminService {
     sundaysPrepaidCount: number;
     receiptFee: number;
     wantsRaffle: boolean;
+    disbursementDate?: string;
+    historicalPayments?: { amount: number; paymentDate: string; observation?: string }[];
   }) {
     let clientId = payload.clientId;
 
@@ -1294,8 +1296,15 @@ export class AdminService {
     }
 
     // Dates
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    let baseDate = new Date();
+    if (payload.disbursementDate) {
+      const parts = payload.disbursementDate.split('-').map(Number);
+      if (parts.length === 3 && !parts.some(isNaN)) {
+        baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
+      }
+    }
+
+    const disbursementDateStr = payload.disbursementDate || baseDate.toISOString().split('T')[0];
     
     const addDays = (date: Date, days: number) => {
       const result = new Date(date);
@@ -1303,9 +1312,9 @@ export class AdminService {
       return result;
     };
     
-    const startDate = addDays(today, 1).toISOString().split('T')[0];
-    const endDate = addDays(today, payload.termDays).toISOString().split('T')[0];
-    const graceEndDate = addDays(today, payload.termDays + 7).toISOString().split('T')[0];
+    const startDate = addDays(baseDate, 1).toISOString().split('T')[0];
+    const endDate = addDays(baseDate, payload.termDays).toISOString().split('T')[0];
+    const graceEndDate = addDays(baseDate, payload.termDays + 7).toISOString().split('T')[0];
 
     // 3. Insert Loan
     const { data: newLoan, error: loanError } = await supabase
@@ -1326,7 +1335,7 @@ export class AdminService {
         receipt_fee: payload.receiptFee,
         amount_delivered: delivered,
         current_balance: obligation - totalSundaysDiscount,
-        disbursement_date: todayStr,
+        disbursement_date: disbursementDateStr,
         start_date: startDate,
         end_date: endDate,
         grace_end_date: graceEndDate,
@@ -1344,7 +1353,7 @@ export class AdminService {
     const installments = [];
     let sundaysUsed = 0;
     for (let i = 0; i < payload.termDays; i++) {
-      const date = addDays(today, i + 1);
+      const date = addDays(baseDate, i + 1);
       const dateStr = date.toISOString().split('T')[0];
       const isSun = date.getDay() === 0;
       const isPrepaid = isSun && sundaysUsed < payload.sundaysPrepaidCount;
@@ -1362,12 +1371,127 @@ export class AdminService {
         is_prepaid: isPrepaid,
         is_sunday: isSun,
         is_holiday: false,
-        paid_date: isPrepaid ? todayStr : null
+        paid_date: isPrepaid ? disbursementDateStr : null
       });
     }
 
-    const { error: instError } = await supabase.from('loan_installments').insert(installments as any);
+    const { data: createdInsts, error: instError } = await supabase
+      .from('loan_installments')
+      .insert(installments as any)
+      .select('*');
     if (instError) throw instError;
+
+    // 5. Process Historical Payments if provided
+    if (payload.historicalPayments && payload.historicalPayments.length > 0 && createdInsts) {
+      const sortedPayments = [...payload.historicalPayments].sort(
+        (a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime()
+      );
+
+      const activeInsts = (createdInsts as any[]).sort((a, b) => a.installment_number - b.installment_number);
+      let totalHistoricalPaid = 0;
+
+      for (const hp of sortedPayments) {
+        if (!hp.amount || hp.amount <= 0) continue;
+        totalHistoricalPaid += hp.amount;
+
+        const crypto = window.crypto;
+        const array = new Uint32Array(4);
+        crypto.getRandomValues(array);
+        const operationId = Array.from(array, dec => ('0' + dec.toString(16)).substr(-2)).join('');
+        const collectedAt = `${hp.paymentDate}T12:00:00.000Z`;
+
+        const { error: paymentError } = await supabase
+          .from('payments')
+          .upsert([{
+            operation_id: operationId,
+            device_id: 'admin_panel_migration',
+            loan_id: newLoan.id,
+            collector_id: payload.adminId,
+            route_id: payload.routeId,
+            total_amount: hp.amount,
+            day_installment_amount: hp.amount,
+            arrears_amount: 0,
+            advance_amount: 0,
+            collector_observation: hp.observation || 'Carga inicial de ruta (Pago histórico)',
+            is_partial_payment: false,
+            is_advance_payment: false,
+            is_above_expected: false,
+            sync_status: 'synced',
+            collected_at: collectedAt,
+            synced_at: collectedAt,
+            created_by: payload.adminId
+          }] as any);
+
+        if (paymentError) console.error("Error saving historical payment:", paymentError);
+
+        const { data: savedPayment } = await supabase
+          .from('payments')
+          .select('id')
+          .eq('operation_id', operationId)
+          .maybeSingle();
+        const paymentId = savedPayment?.id ?? null;
+
+        let remainingToDistribute = hp.amount;
+        const allocations = [];
+
+        for (const inst of activeInsts) {
+          if (remainingToDistribute <= 0) break;
+          const balance = Number(inst.balance);
+          if (balance <= 0) continue;
+
+          const payAmount = Math.min(balance, remainingToDistribute);
+          remainingToDistribute -= payAmount;
+
+          const newPaidAmount = Number(inst.paid_amount) + payAmount;
+          const newBalance = balance - payAmount;
+
+          let newStatus = inst.status;
+          if (newBalance === 0) {
+            newStatus = inst.scheduled_date > hp.paymentDate ? 'PAGADA_ANTICIPADAMENTE' : 'PAGADA';
+          } else {
+            newStatus = 'PARCIAL';
+          }
+
+          inst.paid_amount = newPaidAmount;
+          inst.balance = newBalance;
+          inst.status = newStatus;
+          inst.paid_date = hp.paymentDate;
+
+          await supabase.from('loan_installments').update({
+            paid_amount: newPaidAmount,
+            balance: newBalance,
+            status: newStatus,
+            paid_date: hp.paymentDate
+          }).eq('id', inst.id);
+
+          if (paymentId) {
+            let allocationType = 'DIA_ACTUAL';
+            if (inst.scheduled_date < hp.paymentDate) allocationType = 'ATRASO';
+            if (inst.scheduled_date > hp.paymentDate) allocationType = 'ADELANTO';
+            if (newStatus === 'PARCIAL') allocationType = 'PARCIAL';
+
+            allocations.push({
+              payment_id: paymentId,
+              installment_id: inst.id,
+              allocated_amount: payAmount,
+              allocation_type: allocationType
+            });
+          }
+        }
+
+        if (allocations.length > 0) {
+          await supabase.from('payment_allocations').insert(allocations as any);
+        }
+      }
+
+      // Final loan balance and status update
+      const initialBalance = obligation - totalSundaysDiscount;
+      const finalBalance = Math.max(0, initialBalance - totalHistoricalPaid);
+      await supabase.from('loans').update({
+        current_balance: finalBalance,
+        status: finalBalance <= 0 ? 'CANCELADO' : 'ACTIVO'
+      }).eq('id', newLoan.id);
+    }
 
     return newLoan;
   }
