@@ -234,15 +234,32 @@ export function AdminDashboard() {
           <p className="text-xs text-slate-400">{routeSubtitle}</p>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-          <div className="flex items-center gap-2 text-slate-500 font-bold mb-4">
-            <DollarSign className="w-5 h-5 text-amber-500" />
-            Por recoger (hoy)
+        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-slate-500 font-bold">
+                <DollarSign className="w-5 h-5 text-amber-500" />
+                Cuotas del Día (Hoy)
+              </div>
+              <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200">
+                Del día
+              </span>
+            </div>
+            <div className={`text-3xl sm:text-4xl font-black text-slate-800 mb-3 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+              {formatCurrency(stats?.esperadoCuotasHoy ?? stats?.esperado ?? 0)}
+            </div>
           </div>
-          <div className={`text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
-            {formatCurrency(stats?.esperado ?? 0)}
+
+          <div className="pt-3 border-t border-slate-100 space-y-1.5 text-xs">
+            <div className="flex justify-between items-center text-slate-500">
+              <span>+ Atrasos acumulados:</span>
+              <span className="font-bold text-red-600">{formatCurrency(stats?.esperadoAtrasos ?? 0)}</span>
+            </div>
+            <div className="flex justify-between items-center font-bold text-slate-700 pt-1.5 border-t border-slate-100">
+              <span>Total por recoger (Hoy + Atrasos):</span>
+              <span className="font-black text-amber-600">{formatCurrency(stats?.esperado ?? 0)}</span>
+            </div>
           </div>
-          <p className="text-xs text-slate-400">{routeSubtitle}</p>
         </div>
       </div>
 

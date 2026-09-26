@@ -462,6 +462,8 @@ export class AdminService {
       recaudoOficina,
       recaudoTransferencias,
       esperado: recaudoEsperado,
+      esperadoCuotasHoy: todayInstsTotal,
+      esperadoAtrasos: arrearsTotal,
       cobradores: usersRes.count || 0,
       rutas: routesRes.count || 0,
       alerts: enrichedAlerts,

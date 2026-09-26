@@ -74,6 +74,8 @@ export function CollectorDashboard() {
 
   const stats = useMemo(() => {
     let expected = 0;
+    let expectedTodayOnly = 0;
+    let expectedArrears = 0;
     let collected = 0;
     let arrearsTotal = 0;
     let arrearsClients = 0;
@@ -98,6 +100,8 @@ export function CollectorDashboard() {
         : (todayInst ? todayInst.balance : loan.daily_installment);
       const todayArrears = arrearsInsts.reduce((s, i) => s + i.balance, 0);
 
+      expectedTodayOnly += todayBalance;
+      expectedArrears += todayArrears;
       expected += todayBalance + todayArrears;
 
       // Detectar cuotas adelantadas para hoy: pagadas ANTES de hoy
@@ -138,6 +142,8 @@ export function CollectorDashboard() {
 
     return {
       expected,
+      expectedTodayOnly,
+      expectedArrears,
       collected,
       pending: Math.max(expected - collected, 0),
       clientsTotal: clients.length,
@@ -229,12 +235,26 @@ export function CollectorDashboard() {
       )}
 
       {/* Main Blue Card */}
-      <div className="bg-brand-600 rounded-2xl p-5 text-white shadow-lg shadow-brand-500/25 relative overflow-hidden">
+      <div className="bg-brand-600 rounded-2xl p-5 text-white shadow-lg shadow-brand-500/25 relative overflow-hidden flex flex-col justify-between">
         <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10 blur-2xl"></div>
         <div className="absolute bottom-0 left-0 w-24 h-24 bg-brand-900 opacity-20 rounded-full -ml-10 -mb-10 blur-xl"></div>
         <div className="relative z-10">
-          <p className="text-sm text-brand-100 mb-1">Total esperado (hoy)</p>
-          <p className="text-4xl font-bold tracking-tight">{formatCurrency(stats.expected)}</p>
+          <div className="flex justify-between items-center mb-1">
+            <p className="text-xs font-bold text-brand-100 uppercase tracking-wider">Cuotas del Día (Hoy)</p>
+            <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold">Del día</span>
+          </div>
+          <p className="text-3xl font-black tracking-tight mb-3">{formatCurrency(stats.expectedTodayOnly)}</p>
+
+          <div className="pt-2 border-t border-white/20 text-xs space-y-1">
+            <div className="flex justify-between text-brand-100">
+              <span>+ Atrasos acumulados:</span>
+              <span className="font-bold text-amber-200">{formatCurrency(stats.expectedArrears)}</span>
+            </div>
+            <div className="flex justify-between font-bold text-white pt-1 border-t border-white/10">
+              <span>Total a recoger (Hoy + Atrasos):</span>
+              <span className="font-black">{formatCurrency(stats.expected)}</span>
+            </div>
+          </div>
         </div>
       </div>
 
