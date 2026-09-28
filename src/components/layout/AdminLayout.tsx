@@ -37,7 +37,7 @@ export function AdminLayout() {
             </div>
             <div>
               <h1 className="font-bold text-lg leading-tight">AdminPanel</h1>
-              <p className="text-xs text-brand-300">CobraDiario</p>
+              <p className="text-xs text-brand-300">Caronte</p>
             </div>
           </div>
         </div>

@@ -12,8 +12,8 @@ export default defineConfig({
       injectRegister: 'auto',
       includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'CobraDiario — Sistema de Préstamos',
-        short_name: 'CobraDiario',
+        name: 'Caronte — Sistema de Préstamos',
+        short_name: 'Caronte',
         description: 'Sistema de préstamos y cobros en campo',
         theme_color: '#1e40af',
         background_color: '#0f172a',

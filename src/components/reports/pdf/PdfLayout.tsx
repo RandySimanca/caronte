@@ -128,7 +128,7 @@ export function PdfLayout({ title, subtitle, dateRange, children, orientation = 
             {subtitle && <Text style={pdfStyles.subtitle}>{subtitle}</Text>}
           </View>
           <View style={pdfStyles.metadataContainer}>
-            <Text style={pdfStyles.subtitle}>CobraDiario PWA</Text>
+            <Text style={pdfStyles.subtitle}>Caronte PWA</Text>
             {dateRange && <Text style={pdfStyles.subtitle}>{dateRange}</Text>}
           </View>
         </View>

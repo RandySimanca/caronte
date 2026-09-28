@@ -49,7 +49,7 @@ function SplashScreen() {
       <div className="w-20 h-20 bg-white/10 backdrop-blur-sm rounded-3xl flex items-center justify-center mb-4 border border-white/20">
         <span className="text-4xl">💰</span>
       </div>
-      <h1 className="text-3xl font-black text-white">CobraDiario</h1>
+      <h1 className="text-3xl font-black text-white">Caronte</h1>
       <div className="mt-8 flex space-x-1">
         {[0, 1, 2].map(i => (
           <div key={i} className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
