@@ -74,7 +74,12 @@ export function DailyClosingPage() {
       const arrearsInsts = loanInsts.filter(i =>
         i.scheduled_date < today && ['PENDIENTE', 'PARCIAL', 'ATRASADA'].includes(i.status)
       );
-      const todayQuota = loan.start_date > today ? 0 : loan.daily_installment;
+      const todayInst = loanInsts.find(i => i.scheduled_date === today);
+      const loanEnded = loan.end_date && loan.end_date < today;
+      // Si no hay cuota para hoy y el préstamo ya terminó, no sumar nada (evita montos fantasma).
+      const todayQuota = loan.start_date > today
+        ? 0
+        : (todayInst ? todayInst.balance : (loanEnded ? 0 : loan.daily_installment));
       const todayArrears = arrearsInsts.reduce((s, i) => s + i.balance, 0);
       exp += todayQuota + todayArrears;
 

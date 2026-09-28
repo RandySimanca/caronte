@@ -87,6 +87,11 @@ export function CollectorDashboard() {
 
     for (const loan of loans) {
       if (isLotteryWinnerLoan(loan, draw)) continue;
+      
+      // Prevent orphaned loans (e.g. from deleted clients but stuck pending sync) from affecting stats
+      const client = clients.find(c => c.id === loan.client_id);
+      if (!client) continue;
+
       const loanInsts = installments.filter(i => i.loan_id === loan.id);
       const todayInst = loanInsts.find(i => i.scheduled_date === today);
       const arrearsInsts = loanInsts.filter(i =>
@@ -95,9 +100,12 @@ export function CollectorDashboard() {
 
       // Si la cuota de hoy ya fue adelantada (balance=0), no suma al esperado.
       // Usamos el balance real de la cuota en vez del daily_installment fijo.
+      // IMPORTANTE: Si no hay cuota para hoy y el préstamo ya pasó su end_date,
+      // no sumamos nada (evita montos fantasma de préstamos vencidos sin sincronizar).
+      const loanEnded = loan.end_date && loan.end_date < today;
       const todayBalance = loan.start_date > today
         ? 0
-        : (todayInst ? todayInst.balance : loan.daily_installment);
+        : (todayInst ? todayInst.balance : (loanEnded ? 0 : loan.daily_installment));
       const todayArrears = arrearsInsts.reduce((s, i) => s + i.balance, 0);
 
       expectedTodayOnly += todayBalance;
@@ -106,10 +114,9 @@ export function CollectorDashboard() {
 
       // Detectar cuotas adelantadas para hoy: pagadas ANTES de hoy
       if (todayInst && todayInst.balance <= 0 && todayInst.paid_date && todayInst.paid_date < today) {
-        const client = clients.find(c => c.id === loan.client_id);
         prepaidTodayClients.push({
           loanId: loan.id,
-          clientName: client?.full_name || 'Cliente desconocido',
+          clientName: client.full_name || 'Cliente desconocido',
           amount: loan.daily_installment,
           paidDate: todayInst.paid_date,
         });
@@ -339,11 +346,9 @@ export function CollectorDashboard() {
           <h3 className="text-sm font-semibold text-slate-800">Operaciones pendientes</h3>
           <div className="flex items-center gap-2">
 
-            {/*monstrar el boton Forzar limpieza en la pantalla del cobrador*/}
-
-            {/* <button
+            <button
               onClick={async () => {
-                if (window.confirm('¿Forzar limpieza y resincronizar? ADVERTENCIA: Perderás cobros offline no enviados.')) {
+                if (window.confirm('¿Forzar limpieza y resincronizar? ADVERTENCIA: Perderás cobros offline no enviados (soluciona problemas de datos atascados).')) {
                   await db.syncQueue.clear();
                   useSyncStore.getState().setPendingCount(0);
                   if (user?.id) {
@@ -354,22 +359,7 @@ export function CollectorDashboard() {
               className="text-slate-500 hover:text-rose-600 text-xs font-medium flex items-center bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-full transition-colors"
             >
               Forzar limpieza
-            </button>*/}
-
-            {/*<button
-              onClick={async () => {
-                if (window.confirm('¿Forzar limpieza y resincronizar? ADVERTENCIA: Perderás cobros offline no enviados.')) {
-                  await db.syncQueue.clear();
-                  useSyncStore.getState().setPendingCount(0);
-                  if (user?.id) {
-                    await SyncService.pullInitialData(user.id);
-                  }
-                }
-              }}
-              className="text-slate-500 hover:text-rose-600 text-xs font-medium flex items-center bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-full transition-colors"
-            >
-              Forzar limpieza
-            </button>*/}
+            </button>
             <button
               onClick={handleSync}
               disabled={!isOnline || isSyncing || pendingOps === 0}

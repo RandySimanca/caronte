@@ -37,17 +37,21 @@ export function RouteClientList() {
       if (winnerLoan && !activeLoan) {
         status = 'GANADOR';
       } else if (loan) {
-        todayQuota = loan.start_date > today ? 0 : loan.daily_installment;
-        
         const loanInstallments = installments.filter(i => i.loan_id === loan.id);
-        
-        const arrearsInstallments = loanInstallments.filter(i => 
-          i.scheduled_date < today && 
+
+        const arrearsInstallments = loanInstallments.filter(i =>
+          i.scheduled_date < today &&
           ['PENDIENTE', 'PARCIAL', 'ATRASADA'].includes(i.status)
         );
         arrears = arrearsInstallments.reduce((sum, i) => sum + i.balance, 0);
 
         const todayInstallment = loanInstallments.find(i => i.scheduled_date === today);
+        const loanEnded = loan.end_date && loan.end_date < today;
+        // Usar el balance real de la cuota; si no hay cuota y el préstamo ya terminó, mostrar 0.
+        todayQuota = loan.start_date > today
+          ? 0
+          : (todayInstallment ? todayInstallment.balance : (loanEnded ? 0 : loan.daily_installment));
+        
         const isTodayPaid = todayInstallment && ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInstallment.status);
         const isFutureStart = loan.start_date > today;
 
