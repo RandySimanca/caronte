@@ -9,7 +9,7 @@ export default defineConfig({
             registerType: 'autoUpdate',
             // Disable inline script injection to avoid web-vitals bfcache conflict
             injectRegister: 'auto',
-            includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+            includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'apple-touch-icon.png'],
             manifest: {
                 name: 'CobraDiario — Sistema de Préstamos',
                 short_name: 'CobraDiario',
@@ -18,10 +18,12 @@ export default defineConfig({
                 background_color: '#0f172a',
                 display: 'standalone',
                 orientation: 'portrait',
+                start_url: '/',
+                scope: '/',
                 icons: [
                     { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
                     { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-                    { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+                    { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
                 ]
             },
             workbox: {
