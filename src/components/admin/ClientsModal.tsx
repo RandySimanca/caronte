@@ -144,6 +144,7 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
   const [editClient, setEditClient] = useState<any | null>(null);
   const [adminPaymentLoan, setAdminPaymentLoan] = useState<any | null>(null);
   const [isCreateLoanOpen, setIsCreateLoanOpen] = useState(false);
+  const [createLoanClientId, setCreateLoanClientId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (isOpen) {
@@ -229,7 +230,7 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
           </div>
           <div className="flex items-center gap-2">
             <button 
-              onClick={() => setIsCreateLoanOpen(true)}
+              onClick={() => { setCreateLoanClientId(undefined); setIsCreateLoanOpen(true); }}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -352,7 +353,16 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
                               </span>
                             </div>
                           ) : (
-                            <span className="text-slate-400 text-xs">Sin préstamo</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCreateLoanClientId(c.id);
+                                setIsCreateLoanOpen(true);
+                              }}
+                              className="text-brand-600 bg-brand-50 hover:bg-brand-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-brand-200"
+                            >
+                              Asignar préstamo
+                            </button>
                           )}
                         </td>
 
@@ -455,6 +465,7 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
       onClose={() => setIsCreateLoanOpen(false)}
       routeStates={routeStates}
       onSuccess={() => {}}
+      initialClientId={createLoanClientId}
     />
     </>
   );

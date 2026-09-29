@@ -10,9 +10,10 @@ interface AdminCreateLoanModalProps {
   onClose: () => void;
   routeStates: { id: string; ruta: string }[];
   onSuccess: () => void;
+  initialClientId?: string;
 }
 
-export function AdminCreateLoanModal({ isOpen, onClose, routeStates, onSuccess }: AdminCreateLoanModalProps) {
+export function AdminCreateLoanModal({ isOpen, onClose, routeStates, onSuccess, initialClientId }: AdminCreateLoanModalProps) {
   const user = useAuthStore(state => state.user);
   
   // State
@@ -54,8 +55,13 @@ export function AdminCreateLoanModal({ isOpen, onClose, routeStates, onSuccess }
   useEffect(() => {
     if (isOpen) {
       AdminService.getClients().then(setClients).catch(console.error);
+      if (initialClientId) {
+        setSelectedClientId(initialClientId);
+      } else {
+        setSelectedClientId('new');
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, initialClientId]);
 
   if (!isOpen) return null;
 
