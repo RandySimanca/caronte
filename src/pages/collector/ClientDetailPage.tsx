@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
-import { ArrowLeft, Edit, CheckCircle2, CheckCircle, Trophy, Ticket, MessageCircle } from 'lucide-react';
+import { ArrowLeft, Edit, CheckCircle2, CheckCircle, Trophy, Ticket, MessageCircle, Calendar } from 'lucide-react';
 import { useNavigate, useParams, NavLink } from 'react-router-dom';
 import { formatCurrency } from '@/lib/utils';
 import { PaymentConfirmationModal } from '@/components/payments/PaymentConfirmationModal';
+import { CollectorPaymentCardModal } from '@/components/payments/CollectorPaymentCardModal';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { format } from 'date-fns';
@@ -24,6 +25,7 @@ export function ClientDetailPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isCardModalOpen, setIsCardModalOpen] = useState(false);
   const [lotteryDraw, setLotteryDraw] = useState<LotteryLastDraw | null>(null);
 
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -337,6 +339,14 @@ export function ClientDetailPage() {
               <span className="text-slate-600 font-medium">Dinero entregado</span>
               <span className="font-bold text-emerald-600 text-lg">{formatCurrency(loan.amount_delivered)}</span>
             </div>
+            
+            <button
+              onClick={() => setIsCardModalOpen(true)}
+              className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold rounded-xl transition-colors text-sm"
+            >
+              <Calendar className="w-4 h-4" />
+              Ver Tarjeta de Cobros
+            </button>
           </div>
         </div>
         )}
@@ -415,6 +425,14 @@ export function ClientDetailPage() {
           clientPhone={client.phone ?? null}
           loan={loan}
           financialState={financialState}
+        />
+      )}
+
+      {loan && (
+        <CollectorPaymentCardModal
+          isOpen={isCardModalOpen}
+          onClose={() => setIsCardModalOpen(false)}
+          loanId={loan.id}
         />
       )}
     </div>
