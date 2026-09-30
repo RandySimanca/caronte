@@ -4,6 +4,7 @@ import { AdminService } from '@/services/AdminService';
 import { useAuthStore } from '@/stores/authStore';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { format } from 'date-fns';
 
 interface PaymentCardModalProps {
   isOpen: boolean;
@@ -84,9 +85,11 @@ export function PaymentCardModal({ isOpen, onClose, loanId }: PaymentCardModalPr
     }
   };
 
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+
   const paidCount = installments.filter(i => i.status === 'PAGADA' || i.status === 'PAGADA_ANTICIPADAMENTE').length;
-  const lateCount = installments.filter(i => i.status === 'ATRASADA').length;
   const partialCount = installments.filter(i => i.status === 'PARCIAL').length;
+  const lateCount = installments.filter(i => i.status === 'ATRASADA' || (i.status === 'PENDIENTE' && i.scheduled_date < todayStr)).length;
   const pendingCount = installments.length - paidCount - lateCount - partialCount;
 
   if (!isOpen) return null;
@@ -148,7 +151,7 @@ export function PaymentCardModal({ isOpen, onClose, loanId }: PaymentCardModalPr
               {installments.map((inst, index) => {
                 const isPaid = inst.status === 'PAGADA' || inst.status === 'PAGADA_ANTICIPADAMENTE';
                 const isPartial = inst.status === 'PARCIAL';
-                const isLate = inst.status === 'ATRASADA';
+                const isLate = inst.status === 'ATRASADA' || (inst.status === 'PENDIENTE' && inst.scheduled_date < todayStr);
 
                 let bgColor = 'bg-white';
                 let borderColor = 'border-slate-200';

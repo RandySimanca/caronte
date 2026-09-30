@@ -1,6 +1,7 @@
 import { X, Calendar as CalendarIcon, CheckCircle, Clock } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
+import { format } from 'date-fns';
 
 interface CollectorPaymentCardModalProps {
   isOpen: boolean;
@@ -14,9 +15,11 @@ export function CollectorPaymentCardModal({ isOpen, onClose, loanId }: Collector
     [loanId]
   ) || [];
 
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+
   const paidCount = installments.filter(i => i.status === 'PAGADA' || i.status === 'PAGADA_ANTICIPADAMENTE').length;
-  const lateCount = installments.filter(i => i.status === 'ATRASADA').length;
   const partialCount = installments.filter(i => i.status === 'PARCIAL').length;
+  const lateCount = installments.filter(i => i.status === 'ATRASADA' || (i.status === 'PENDIENTE' && i.scheduled_date < todayStr)).length;
   const pendingCount = installments.length - paidCount - lateCount - partialCount;
 
   if (!isOpen) return null;
@@ -54,7 +57,7 @@ export function CollectorPaymentCardModal({ isOpen, onClose, loanId }: Collector
               {installments.map((inst, index) => {
                 const isPaid = inst.status === 'PAGADA' || inst.status === 'PAGADA_ANTICIPADAMENTE';
                 const isPartial = inst.status === 'PARCIAL';
-                const isLate = inst.status === 'ATRASADA';
+                const isLate = inst.status === 'ATRASADA' || (inst.status === 'PENDIENTE' && inst.scheduled_date < todayStr);
 
                 let bgColor = 'bg-white';
                 let borderColor = 'border-slate-200';
