@@ -63,7 +63,7 @@ export function PaymentConfirmationModal({
 
   // Payment distribution preview (Rules 2 & 3 applied locally)
   const distribution = useMemo(() => {
-    const numAmount = parseFloat(amount) || 0;
+    const numAmount = Math.round(parseFloat(amount) || 0);
     let remaining = numAmount;
 
     let dayInstallmentAmount = 0;
@@ -127,7 +127,7 @@ export function PaymentConfirmationModal({
   // Auto-fill expected amount when modal opens
   useEffect(() => {
     if (isOpen) {
-      setAmount(financialState.expectedTotal.toString());
+      setAmount(Math.round(financialState.expectedTotal).toString());
       setObservation('');
       setShowDuplicateWarning(false);
       setLotteryWinner(null);
@@ -446,9 +446,9 @@ export function PaymentConfirmationModal({
                 />
               </div>
               <div className="flex space-x-2 mt-3">
-                <button onClick={() => setAmount(financialState.expectedTotal.toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">Pago exacto</button>
-                <button onClick={() => setAmount(financialState.todayQuota.toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">Solo hoy</button>
-                <button onClick={() => setAmount((financialState.expectedTotal + loan.daily_installment).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">+1 Adelanto</button>
+                <button onClick={() => setAmount(Math.round(financialState.expectedTotal).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">Pago exacto</button>
+                <button onClick={() => setAmount(Math.round(financialState.todayQuota).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">Solo hoy</button>
+                <button onClick={() => setAmount(Math.round(financialState.expectedTotal + loan.daily_installment).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">+1 Adelanto</button>
               </div>
             </div>
 

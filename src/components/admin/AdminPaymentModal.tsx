@@ -20,7 +20,7 @@ export function AdminPaymentModal({ isOpen, onClose, loan, onSuccess }: AdminPay
 
   if (!isOpen || !loan) return null;
 
-  const suggestedAmount = (loan.daily_installment || 0);
+  const suggestedAmount = Math.round(loan.daily_installment || 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
