@@ -619,8 +619,19 @@ export class SyncService {
 
         // Loans: upsert server ACTIVO records. Préstamos ganadores del sorteo se
         // conservan localmente como CANCELADO (para anunciar y bloquear cobro).
+        // IMPORTANTE: No sobreescribir el saldo (current_balance) de préstamos con
+        // operaciones de cobro pendientes — el servidor aún no las tiene y revertiría
+        // el cobro recién registrado.
         if (loans && loans.length > 0) {
-          await db.loans.bulkPut(loans as any[]);
+          const loansToUpsert = (loans as any[]).map(l => {
+            if (protectedLoanIds.has(l.id)) {
+              // Conservar current_balance local; el servidor aún no procesó el cobro.
+              const { current_balance: _ignored, ...rest } = l;
+              return rest;
+            }
+            return l;
+          });
+          await db.loans.bulkPut(loansToUpsert);
         }
         const allLocalLoans = await db.loans.toArray();
         const winnerLoanIds = new Set<string>();
@@ -639,10 +650,17 @@ export class SyncService {
         }
         if (loansToDelete.length > 0) await db.loans.bulkDelete(loansToDelete);
 
-        // Installments: upsert server records, then remove stale ones
-        // (excepto cuotas de ganadores de boleta que conservamos localmente)
+        // Installments: upsert server records, then remove stale ones.
+        // IMPORTANTE: NO sobreescribir cuotas de préstamos con pagos pendientes de sincronizar
+        // (protectedInstLoanIds). Si lo hiciéramos, el pull revertiría visualmente el cobro
+        // registrado offline/con latencia antes de que llegue al servidor.
         if (installments && installments.length > 0) {
-          await db.installments.bulkPut(installments as any[]);
+          const installmentsToUpsert = (installments as any[]).filter(
+            i => !protectedInstLoanIds.has(i.loan_id)
+          );
+          if (installmentsToUpsert.length > 0) {
+            await db.installments.bulkPut(installmentsToUpsert);
+          }
         }
         const allLocalInsts = await db.installments.toArray();
         const pendingLoanIds = new Set(allLocalLoans.filter(l => l.sync_status === 'pending').map(l => l.id));
