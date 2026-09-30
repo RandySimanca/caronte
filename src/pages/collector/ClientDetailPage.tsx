@@ -82,10 +82,10 @@ export function ClientDetailPage() {
     );
 
     const arrearsInstallments = pending.filter(i => i.scheduled_date < today);
-    const arrears = arrearsInstallments.reduce((sum, i) => sum + i.balance, 0);
+    const arrears = arrearsInstallments.reduce((sum, i) => sum + Number(i.balance || 0), 0);
 
     // todayQuota is 0 if already paid or if the loan hasn't started yet (starts tomorrow or later)
-    const todayQuota = (isPaidToday || loan.start_date > today) ? 0 : loan.daily_installment;
+    const todayQuota = (isPaidToday || loan.start_date > today) ? 0 : Number(loan.daily_installment || 0);
     const expectedTotal = todayQuota + arrears;
 
     // Count advance days (future installments already paid)

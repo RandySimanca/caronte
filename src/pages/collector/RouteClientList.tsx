@@ -43,14 +43,14 @@ export function RouteClientList() {
           i.scheduled_date < today &&
           ['PENDIENTE', 'PARCIAL', 'ATRASADA'].includes(i.status)
         );
-        arrears = arrearsInstallments.reduce((sum, i) => sum + i.balance, 0);
+        arrears = arrearsInstallments.reduce((sum, i) => sum + Number(i.balance || 0), 0);
 
         const todayInstallment = loanInstallments.find(i => i.scheduled_date === today);
         const loanEnded = loan.end_date && loan.end_date < today;
         // Usar el balance real de la cuota; si no hay cuota y el préstamo ya terminó, mostrar 0.
         todayQuota = loan.start_date > today
           ? 0
-          : (todayInstallment ? todayInstallment.balance : (loanEnded ? 0 : loan.daily_installment));
+          : (todayInstallment ? Number(todayInstallment.balance || 0) : (loanEnded ? 0 : Number(loan.daily_installment || 0)));
         
         const isTodayPaid = todayInstallment && ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInstallment.status);
         const isFutureStart = loan.start_date > today;

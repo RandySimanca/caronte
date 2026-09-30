@@ -105,8 +105,8 @@ export function CollectorDashboard() {
       const loanEnded = loan.end_date && loan.end_date < today;
       const todayBalance = loan.start_date > today
         ? 0
-        : (todayInst ? todayInst.balance : (loanEnded ? 0 : loan.daily_installment));
-      const todayArrears = arrearsInsts.reduce((s, i) => s + i.balance, 0);
+        : (todayInst ? Number(todayInst.balance || 0) : (loanEnded ? 0 : Number(loan.daily_installment || 0)));
+      const todayArrears = arrearsInsts.reduce((s, i) => s + Number(i.balance || 0), 0);
 
       expectedTodayOnly += todayBalance;
       expectedArrears += todayArrears;
@@ -131,7 +131,7 @@ export function CollectorDashboard() {
         .filter(i =>
           i.paid_date === today && i.paid_amount > 0 && !i.is_prepaid
         )
-        .reduce((s, i) => s + i.paid_amount, 0);
+        .reduce((s, i) => s + Number(i.paid_amount || 0), 0);
       collected += collectedToday;
 
       if (todayArrears > 0) arrearsClients++;
