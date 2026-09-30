@@ -228,7 +228,9 @@ export class SyncService {
               operation_id: payment.operationId || payment.operation_id,
               device_id: payment.deviceId || payment.device_id,
               loan_id: payment.loanId || payment.loan_id,
-              collector_id: (payment.collectorId === 'local-user' || payment.collector_id === 'local-user') && user ? user.id : (payment.collectorId || payment.collector_id || user?.id),
+              // SIEMPRE usar el uid del usuario autenticado: el loan.collector_id puede ser
+              // el UUID del admin que creó el préstamo, lo que viola la política RLS del cobrador.
+              collector_id: user?.id || payment.collectorId || payment.collector_id,
               route_id: activeRouteId,
               total_amount: payment.totalAmount || payment.total_amount,
               day_installment_amount: payment.day_installment_amount,

@@ -1,18 +1,22 @@
 -- ============================================================
 -- MIGRATION 017: FIX RLS PARA COBROS DEL COBRADOR
--- Problema: el cobrador recibía 403 al sincronizar cobros porque:
---   1. payments INSERT: exigía collector_id = auth.uid() pero el
---      payload podía traer 'local-user' o el uuid aún no asignado.
---   2. loan_installments: no existía política UPDATE → sync fallaba.
---   3. loans: no existía política UPDATE → current_balance nunca
---      se actualizaba en el servidor.
+--
+-- APLICAR EN: Supabase Dashboard → SQL Editor
+-- URL: https://supabase.com/dashboard/project/qmbugzvzkvkiqwazxbvn/sql/new
+--
+-- PROBLEMA RAIZ:
+--   La política payments_collector_insert exigía collector_id = auth.uid()
+--   pero el préstamo puede tener el UUID del ADMIN como collector_id
+--   (cuando el admin creó el préstamo). El cobrador logueado tiene otro UUID.
+--
+-- TAMBIÉN FALTABAN políticas UPDATE en loan_installments y loans,
+-- por lo que el servidor nunca recibía los cambios de cuotas ni saldo.
 -- ============================================================
 
--- ─── 1. PAYMENTS ─────────────────────────────────────────────
--- Reemplazar la política de INSERT para que el cobrador pueda
--- insertar pagos de sus propios préstamos (route_id en sus rutas),
--- sin importar si el campo collector_id lleva su uuid o 'local-user'
--- (el SyncService ya resuelve el uuid real antes de insertar).
+-- ─── 1. PAYMENTS INSERT ──────────────────────────────────────
+-- Quitar la restricción collector_id = auth.uid() del INSERT.
+-- La seguridad la garantiza route_id (el cobrador solo puede insertar
+-- en rutas que tiene asignadas).
 DROP POLICY IF EXISTS "payments_collector_insert" ON payments;
 
 CREATE POLICY "payments_collector_insert" ON payments
@@ -21,7 +25,8 @@ CREATE POLICY "payments_collector_insert" ON payments
     AND route_id = ANY(get_collector_route_ids())
   );
 
--- El cobrador puede re-enviar (upsert) su propio pago si falla la primera vez
+-- ─── 2. PAYMENTS UPDATE ──────────────────────────────────────
+-- Para reintentos de upsert (idempotencia offline).
 DROP POLICY IF EXISTS "payments_collector_update" ON payments;
 
 CREATE POLICY "payments_collector_update" ON payments
@@ -30,9 +35,8 @@ CREATE POLICY "payments_collector_update" ON payments
     AND route_id = ANY(get_collector_route_ids())
   );
 
--- ─── 2. LOAN_INSTALLMENTS: UPDATE ────────────────────────────
--- El cobrador debe poder actualizar el estado de las cuotas
--- (paid_amount, balance, status, paid_date) al sincronizar un cobro.
+-- ─── 3. LOAN_INSTALLMENTS UPDATE ─────────────────────────────
+-- El cobrador actualiza estado de cuotas al sincronizar el cobro.
 DROP POLICY IF EXISTS "installments_collector_update" ON loan_installments;
 
 CREATE POLICY "installments_collector_update" ON loan_installments
@@ -43,8 +47,8 @@ CREATE POLICY "installments_collector_update" ON loan_installments
     )
   );
 
--- ─── 3. LOANS: UPDATE ────────────────────────────────────────
--- El cobrador debe poder actualizar current_balance al sincronizar.
+-- ─── 4. LOANS UPDATE ─────────────────────────────────────────
+-- El cobrador actualiza current_balance al sincronizar.
 DROP POLICY IF EXISTS "loans_collector_update" ON loans;
 
 CREATE POLICY "loans_collector_update" ON loans
@@ -52,3 +56,11 @@ CREATE POLICY "loans_collector_update" ON loans
     get_user_role() = 'COBRADOR'
     AND route_id = ANY(get_collector_route_ids())
   );
+
+-- ─── VERIFICAR QUE SE APLICARON ──────────────────────────────
+-- Descomenta esta query para confirmar que las políticas existen:
+-- SELECT policyname, cmd, qual, with_check
+-- FROM pg_policies
+-- WHERE tablename IN ('payments', 'loan_installments', 'loans')
+--   AND policyname LIKE '%collector%'
+-- ORDER BY tablename, cmd;
