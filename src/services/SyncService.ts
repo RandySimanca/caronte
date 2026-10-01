@@ -51,6 +51,7 @@ const OP_ORDER: Record<string, number> = {
   LOAN: 0,
   CLIENT: 0,
   UPDATE_CLIENT: 1,
+  UPDATE_CLIENT_ORDERS: 1,
   PAYMENT_BUNDLE: 2,
   PAYMENT: 2,
   EXPENSE: 3,
@@ -179,6 +180,13 @@ export class SyncService {
             if (rpcError) throw rpcError;
             if (!rpcData || (rpcData as any).ok !== true) {
               throw new Error('El servidor no confirmó el préstamo completo');
+            }
+
+            // sync_new_loan_bundle no guarda la posición en la ruta: se aplica aquí
+            if (typeof client.route_order === 'number') {
+              const { error: orderError } = await supabase.from('clients')
+                .update({ route_order: client.route_order } as any).eq('id', client.id);
+              if (orderError) throw orderError;
             }
 
             await db.clients.update(client.id, {
@@ -321,11 +329,16 @@ export class SyncService {
             if (err) throw err;
           } else if ((op.operation_type as string) === 'UPDATE_CLIENT_ORDERS') {
             const updates = op.payload.updates as { id: string, route_order: number }[];
-            for (const update of updates) {
-              const { error } = await supabase.from('clients').update({ route_order: update.route_order } as any).eq('id', update.id);
-              if (error) {
-                console.error('Failed to update client order on supabase', update, error);
-                throw error;
+            // Una sola llamada para toda la ruta (antes: un UPDATE por cliente, lento con rutas grandes)
+            const { error: batchError } = await supabase.rpc('update_client_orders' as any, { p_updates: updates } as any);
+            if (batchError) {
+              console.warn('update_client_orders no disponible, se actualiza cliente por cliente', batchError);
+              for (const update of updates) {
+                const { error } = await supabase.from('clients').update({ route_order: update.route_order } as any).eq('id', update.id);
+                if (error) {
+                  console.error('Failed to update client order on supabase', update, error);
+                  throw error;
+                }
               }
             }
           } else if (op.operation_type === 'PAYMENT' || (op.operation_type as string) === 'PAYMENT_BUNDLE') {
@@ -572,6 +585,7 @@ export class SyncService {
         .toArray();
 
       const protectedClientIds = new Set<string>();
+      const pendingOrderClientIds = new Set<string>(); // clientes cuyo route_order local aún no llega al servidor
       const protectedLoanIds = new Set<string>();
       const protectedInstLoanIds = new Set<string>(); // loan_id of installments to keep
 
@@ -579,6 +593,7 @@ export class SyncService {
         try {
           if (op.operation_type === 'NEW_LOAN_BUNDLE') {
             if (op.payload?.client?.id) protectedClientIds.add(op.payload.client.id);
+            if (op.payload?.client?.id) pendingOrderClientIds.add(op.payload.client.id);
             if (op.payload?.loan?.id) {
               protectedLoanIds.add(op.payload.loan.id);
               protectedInstLoanIds.add(op.payload.loan.id);
@@ -597,6 +612,8 @@ export class SyncService {
             }
           } else if ((op.operation_type as string) === 'UPDATE_CLIENT') {
             if (op.payload?.client?.id) protectedClientIds.add(op.payload.client.id);
+          } else if ((op.operation_type as string) === 'UPDATE_CLIENT_ORDERS') {
+            for (const u of (op.payload?.updates ?? []) as { id: string }[]) pendingOrderClientIds.add(u.id);
           }
         } catch (parseErr) {
           console.warn('[SyncService] Could not parse pending op for protection check:', op.operation_id, parseErr);
@@ -620,7 +637,14 @@ export class SyncService {
 
         // Clients: upsert server records, then remove stale non-protected ones
         if (clients && clients.length > 0) {
-          await db.clients.bulkPut(clients as any[]);
+          // El orden de ruta local gana sobre el del servidor mientras haya cambios de orden sin enviar
+          const localOrderById = new Map((await db.clients.toArray()).map(c => [c.id, c.route_order]));
+          const merged = (clients as any[]).map(c =>
+            pendingOrderClientIds.has(c.id) && localOrderById.has(c.id)
+              ? { ...c, route_order: localOrderById.get(c.id) }
+              : c
+          );
+          await db.clients.bulkPut(merged);
         }
         const allLocalClients = await db.clients.toArray();
         const clientsToDelete = allLocalClients

@@ -1,0 +1,299 @@
+diff -ruN -x node_modules -x package-lock.json -x '*.tsbuildinfo' orig/src/components/payments/PaymentConfirmationModal.tsx caronte-main/src/components/payments/PaymentConfirmationModal.tsx
+--- a/src/components/payments/PaymentConfirmationModal.tsx	2026-10-01 21:54:10.317537703 +0000
++++ b/src/components/payments/PaymentConfirmationModal.tsx	2026-10-01 21:54:26.290860014 +0000
+@@ -11,6 +11,7 @@
+ import { SyncService } from '@/services/SyncService';
+ import { buildCreditStatusMessage, openWhatsAppWithMessage } from '@/lib/whatsapp';
+ import { getLotteryLastDraw, isLotteryWinnerLoan, type LotteryLastDraw } from '@/lib/lottery';
++import { markLastCollected } from '@/lib/routeOrder';
+ 
+ interface FinancialState {
+   todayQuota: number;
+@@ -260,6 +261,9 @@
+         // Update loan balance locally
+         await db.loans.update(loan.id, { current_balance: newLoanBalance });
+ 
++        // Recordar hasta dónde va la ruta hoy: un cliente nuevo se inserta justo después de este
++        await markLastCollected(loan.client_id, today);
++
+         // 2. Queue sync operation with PAYMENT_BUNDLE
+         await db.syncQueue.add({
+           operation_id: operationId,
+diff -ruN -x node_modules -x package-lock.json -x '*.tsbuildinfo' orig/src/lib/routeOrder.ts caronte-main/src/lib/routeOrder.ts
+--- a/src/lib/routeOrder.ts	1970-01-01 00:00:00.000000000 +0000
++++ b/src/lib/routeOrder.ts	2026-10-01 21:54:18.826903539 +0000
+@@ -0,0 +1,59 @@
++import { db } from '@/db/schema';
++
++export const LAST_COLLECTED_KEY = 'last_collected_client';
++
++interface RouteClientLike {
++  id: string;
++  full_name: string;
++  route_order?: number | null;
++}
++
++export interface RouteOrderUpdate {
++  id: string;
++  route_order: number;
++}
++
++/** Orden de la ruta: primero route_order y, si hay empate, por nombre (igual que la lista del cobrador). */
++export function sortByRouteOrder<T extends RouteClientLike>(clients: T[]): T[] {
++  return [...clients].sort(
++    (a, b) => (a.route_order || 0) - (b.route_order || 0) || a.full_name.localeCompare(b.full_name)
++  );
++}
++
++/** Guarda cuál fue el último cliente cobrado hoy. Se llama dentro de la transacción del cobro. */
++export async function markLastCollected(clientId: string, date: string): Promise<void> {
++  await db.settings.put({ key: LAST_COLLECTED_KEY, value: { client_id: clientId, date } });
++}
++
++/** Último cliente cobrado HOY (null si todavía no se ha cobrado a nadie o el dato es de otro día). */
++export async function getLastCollectedToday(today: string): Promise<string | null> {
++  const setting = await db.settings.get(LAST_COLLECTED_KEY);
++  const value = setting?.value as { client_id?: string; date?: string } | undefined;
++  return value && value.date === today && value.client_id ? value.client_id : null;
++}
++
++/**
++ * Calcula dónde queda un cliente nuevo: justo después del último cobrado hoy
++ * (si hoy aún no se cobró a nadie, al final de la ruta) y corre un puesto a los siguientes.
++ *
++ * Devuelve la posición del cliente nuevo y SOLO los clientes existentes cuyo orden cambia,
++ * para sincronizar lo mínimo. La ruta queda numerada 0..N sin repetidos.
++ */
++export function insertAfterLastCollected<T extends RouteClientLike>(
++  existing: T[],
++  lastCollectedId: string | null
++): { newClientOrder: number; updates: RouteOrderUpdate[] } {
++  const sorted = sortByRouteOrder(existing);
++  const lastIndex = lastCollectedId ? sorted.findIndex(c => c.id === lastCollectedId) : -1;
++  const insertAt = lastIndex >= 0 ? lastIndex + 1 : sorted.length;
++
++  const updates: RouteOrderUpdate[] = [];
++  sorted.forEach((client, i) => {
++    const newOrder = i < insertAt ? i : i + 1;
++    if ((client.route_order || 0) !== newOrder) {
++      updates.push({ id: client.id, route_order: newOrder });
++    }
++  });
++
++  return { newClientOrder: insertAt, updates };
++}
+diff -ruN -x node_modules -x package-lock.json -x '*.tsbuildinfo' orig/src/pages/collector/NewLoanWizard.tsx caronte-main/src/pages/collector/NewLoanWizard.tsx
+--- a/src/pages/collector/NewLoanWizard.tsx	2026-10-01 21:54:10.318168286 +0000
++++ b/src/pages/collector/NewLoanWizard.tsx	2026-10-01 21:54:26.291378189 +0000
+@@ -11,6 +11,7 @@
+ import { useAuthStore } from '@/stores/authStore';
+ import { loanFinancials } from '@/lib/money';
+ import { SyncService } from '@/services/SyncService';
++import { getLastCollectedToday, insertAfterLastCollected } from '@/lib/routeOrder';
+ 
+ export function NewLoanWizard() {
+   const navigate = useNavigate();
+@@ -143,7 +144,12 @@
+         });
+       }
+ 
+-      await db.transaction('rw', db.clients, db.loans, db.installments, db.syncQueue, async () => {
++      await db.transaction('rw', db.clients, db.loans, db.installments, db.syncQueue, db.settings, async () => {
++        // Posición en la ruta: justo después del último cliente cobrado hoy; los siguientes se corren un puesto
++        const routeClients = (await db.clients.toArray()).filter(c => c.route_id === routeId);
++        const lastCollectedId = await getLastCollectedToday(today);
++        const { newClientOrder, updates: orderUpdates } = insertAfterLastCollected(routeClients, lastCollectedId);
++
+         const clientData = {
+           id: clientId,
+           full_name: clientName,
+@@ -157,7 +163,7 @@
+           photo_doc_url: null,
+           personal_references: null,
+           status: 'ACTIVO',
+-          route_order: 0,
++          route_order: newClientOrder,
+           created_at: new Date().toISOString(),
+           updated_at: new Date().toISOString(),
+           sync_status: 'pending' as const,
+@@ -205,6 +211,21 @@
+           sync_status: 'pending' as const,
+         };
+ 
++        // Correr un puesto a los clientes que quedan después del nuevo (local + cola de sync)
++        for (const u of orderUpdates) {
++          await db.clients.update(u.id, { route_order: u.route_order });
++        }
++        if (orderUpdates.length > 0) {
++          await db.syncQueue.add({
++            operation_id: uuidv4(),
++            operation_type: 'UPDATE_CLIENT_ORDERS',
++            payload: { updates: orderUpdates },
++            status: 'pending',
++            local_timestamp: new Date().toISOString(),
++            retry_count: 0,
++          });
++        }
++
+         // Save client locally
+         await db.clients.add(clientData as any);
+ 
+diff -ruN -x node_modules -x package-lock.json -x '*.tsbuildinfo' orig/src/pages/collector/RouteClientList.tsx caronte-main/src/pages/collector/RouteClientList.tsx
+--- a/src/pages/collector/RouteClientList.tsx	2026-10-01 21:54:10.318226379 +0000
++++ b/src/pages/collector/RouteClientList.tsx	2026-10-01 21:54:47.598753631 +0000
+@@ -116,8 +116,16 @@
+ 
+   async function saveOrder() {
+     try {
+-      const updates = orderedClients.map((c, i) => ({ id: c.id, route_order: i }));
+-      
++      // Solo los clientes cuya posición cambió (menos datos que sincronizar)
++      const updates = orderedClients
++        .map((c, i) => ({ id: c.id, route_order: i, changed: (c.route_order || 0) !== i }))
++        .filter(u => u.changed)
++        .map(({ id, route_order }) => ({ id, route_order }));
++      if (updates.length === 0) {
++        setIsReordering(false);
++        return;
++      }
++
+       await db.transaction('rw', db.clients, db.syncQueue, async () => {
+         for (const update of updates) {
+           await db.clients.update(update.id, { route_order: update.route_order });
+@@ -166,7 +174,17 @@
+                 <span className="text-sm font-semibold">Guardar</span>
+               </button>
+             ) : (
+-              <button onClick={() => setIsReordering(true)} className="p-2 text-slate-600" title="Ordenar ruta">
++              <button
++                onClick={() => {
++                  if (searchTerm) {
++                    toast('Borra la búsqueda para ordenar la ruta completa');
++                    return;
++                  }
++                  setIsReordering(true);
++                }}
++                className="p-2 text-slate-600"
++                title="Ordenar ruta"
++              >
+                 <Settings2 className="w-5 h-5" />
+               </button>
+             )}
+diff -ruN -x node_modules -x package-lock.json -x '*.tsbuildinfo' orig/src/services/SyncService.ts caronte-main/src/services/SyncService.ts
+--- a/src/services/SyncService.ts	2026-10-01 21:54:10.318319273 +0000
++++ b/src/services/SyncService.ts	2026-10-01 21:54:47.598339125 +0000
+@@ -51,6 +51,7 @@
+   LOAN: 0,
+   CLIENT: 0,
+   UPDATE_CLIENT: 1,
++  UPDATE_CLIENT_ORDERS: 1,
+   PAYMENT_BUNDLE: 2,
+   PAYMENT: 2,
+   EXPENSE: 3,
+@@ -181,6 +182,13 @@
+               throw new Error('El servidor no confirmó el préstamo completo');
+             }
+ 
++            // sync_new_loan_bundle no guarda la posición en la ruta: se aplica aquí
++            if (typeof client.route_order === 'number') {
++              const { error: orderError } = await supabase.from('clients')
++                .update({ route_order: client.route_order } as any).eq('id', client.id);
++              if (orderError) throw orderError;
++            }
++
+             await db.clients.update(client.id, {
+               route_id: activeRouteId,
+               photo_face_url: client.photo_face_url,
+@@ -321,11 +329,16 @@
+             if (err) throw err;
+           } else if ((op.operation_type as string) === 'UPDATE_CLIENT_ORDERS') {
+             const updates = op.payload.updates as { id: string, route_order: number }[];
+-            for (const update of updates) {
+-              const { error } = await supabase.from('clients').update({ route_order: update.route_order } as any).eq('id', update.id);
+-              if (error) {
+-                console.error('Failed to update client order on supabase', update, error);
+-                throw error;
++            // Una sola llamada para toda la ruta (antes: un UPDATE por cliente, lento con rutas grandes)
++            const { error: batchError } = await supabase.rpc('update_client_orders' as any, { p_updates: updates } as any);
++            if (batchError) {
++              console.warn('update_client_orders no disponible, se actualiza cliente por cliente', batchError);
++              for (const update of updates) {
++                const { error } = await supabase.from('clients').update({ route_order: update.route_order } as any).eq('id', update.id);
++                if (error) {
++                  console.error('Failed to update client order on supabase', update, error);
++                  throw error;
++                }
+               }
+             }
+           } else if (op.operation_type === 'PAYMENT' || (op.operation_type as string) === 'PAYMENT_BUNDLE') {
+@@ -572,6 +585,7 @@
+         .toArray();
+ 
+       const protectedClientIds = new Set<string>();
++      const pendingOrderClientIds = new Set<string>(); // clientes cuyo route_order local aún no llega al servidor
+       const protectedLoanIds = new Set<string>();
+       const protectedInstLoanIds = new Set<string>(); // loan_id of installments to keep
+ 
+@@ -579,6 +593,7 @@
+         try {
+           if (op.operation_type === 'NEW_LOAN_BUNDLE') {
+             if (op.payload?.client?.id) protectedClientIds.add(op.payload.client.id);
++            if (op.payload?.client?.id) pendingOrderClientIds.add(op.payload.client.id);
+             if (op.payload?.loan?.id) {
+               protectedLoanIds.add(op.payload.loan.id);
+               protectedInstLoanIds.add(op.payload.loan.id);
+@@ -597,6 +612,8 @@
+             }
+           } else if ((op.operation_type as string) === 'UPDATE_CLIENT') {
+             if (op.payload?.client?.id) protectedClientIds.add(op.payload.client.id);
++          } else if ((op.operation_type as string) === 'UPDATE_CLIENT_ORDERS') {
++            for (const u of (op.payload?.updates ?? []) as { id: string }[]) pendingOrderClientIds.add(u.id);
+           }
+         } catch (parseErr) {
+           console.warn('[SyncService] Could not parse pending op for protection check:', op.operation_id, parseErr);
+@@ -620,7 +637,14 @@
+ 
+         // Clients: upsert server records, then remove stale non-protected ones
+         if (clients && clients.length > 0) {
+-          await db.clients.bulkPut(clients as any[]);
++          // El orden de ruta local gana sobre el del servidor mientras haya cambios de orden sin enviar
++          const localOrderById = new Map((await db.clients.toArray()).map(c => [c.id, c.route_order]));
++          const merged = (clients as any[]).map(c =>
++            pendingOrderClientIds.has(c.id) && localOrderById.has(c.id)
++              ? { ...c, route_order: localOrderById.get(c.id) }
++              : c
++          );
++          await db.clients.bulkPut(merged);
+         }
+         const allLocalClients = await db.clients.toArray();
+         const clientsToDelete = allLocalClients
+diff -ruN -x node_modules -x package-lock.json -x '*.tsbuildinfo' orig/supabase/migrations/019_update_client_orders.sql caronte-main/supabase/migrations/019_update_client_orders.sql
+--- a/supabase/migrations/019_update_client_orders.sql	1970-01-01 00:00:00.000000000 +0000
++++ b/supabase/migrations/019_update_client_orders.sql	2026-10-01 21:54:47.603605419 +0000
+@@ -0,0 +1,26 @@
++-- ============================================================
++-- MIGRATION 019: Orden de ruta en una sola llamada
++-- Antes, cada cambio de orden enviaba un UPDATE por cliente (lento y fácil de dejar a medias).
++-- Esta función aplica todos los cambios de orden en una sola transacción.
++-- SECURITY INVOKER: respeta las políticas RLS de clients (cobrador solo actualiza su ruta).
++-- ============================================================
++CREATE OR REPLACE FUNCTION update_client_orders(p_updates jsonb)
++RETURNS integer
++LANGUAGE plpgsql
++SECURITY INVOKER
++SET search_path = public
++AS $$
++DECLARE
++  v_count integer;
++BEGIN
++  UPDATE clients c
++  SET route_order = u.route_order
++  FROM jsonb_to_recordset(p_updates) AS u(id uuid, route_order integer)
++  WHERE c.id = u.id;
++
++  GET DIAGNOSTICS v_count = ROW_COUNT;
++  RETURN v_count;
++END;
++$$;
++
++GRANT EXECUTE ON FUNCTION update_client_orders(jsonb) TO authenticated;

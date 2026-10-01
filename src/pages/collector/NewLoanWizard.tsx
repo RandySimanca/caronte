@@ -11,6 +11,7 @@ import { useSyncStore } from '@/stores/syncStore';
 import { useAuthStore } from '@/stores/authStore';
 import { loanFinancials } from '@/lib/money';
 import { SyncService } from '@/services/SyncService';
+import { getLastCollectedToday, insertAfterLastCollected } from '@/lib/routeOrder';
 
 export function NewLoanWizard() {
   const navigate = useNavigate();
@@ -143,7 +144,12 @@ export function NewLoanWizard() {
         });
       }
 
-      await db.transaction('rw', db.clients, db.loans, db.installments, db.syncQueue, async () => {
+      await db.transaction('rw', db.clients, db.loans, db.installments, db.syncQueue, db.settings, async () => {
+        // Posición en la ruta: justo después del último cliente cobrado hoy; los siguientes se corren un puesto
+        const routeClients = (await db.clients.toArray()).filter(c => c.route_id === routeId);
+        const lastCollectedId = await getLastCollectedToday(today);
+        const { newClientOrder, updates: orderUpdates } = insertAfterLastCollected(routeClients, lastCollectedId);
+
         const clientData = {
           id: clientId,
           full_name: clientName,
@@ -157,7 +163,7 @@ export function NewLoanWizard() {
           photo_doc_url: null,
           personal_references: null,
           status: 'ACTIVO',
-          route_order: 0,
+          route_order: newClientOrder,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           sync_status: 'pending' as const,
@@ -204,6 +210,21 @@ export function NewLoanWizard() {
           created_at: new Date().toISOString(),
           sync_status: 'pending' as const,
         };
+
+        // Correr un puesto a los clientes que quedan después del nuevo (local + cola de sync)
+        for (const u of orderUpdates) {
+          await db.clients.update(u.id, { route_order: u.route_order });
+        }
+        if (orderUpdates.length > 0) {
+          await db.syncQueue.add({
+            operation_id: uuidv4(),
+            operation_type: 'UPDATE_CLIENT_ORDERS',
+            payload: { updates: orderUpdates },
+            status: 'pending',
+            local_timestamp: new Date().toISOString(),
+            retry_count: 0,
+          });
+        }
 
         // Save client locally
         await db.clients.add(clientData as any);

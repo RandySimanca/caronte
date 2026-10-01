@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { SyncService } from '@/services/SyncService';
 import { buildCreditStatusMessage, openWhatsAppWithMessage } from '@/lib/whatsapp';
 import { getLotteryLastDraw, isLotteryWinnerLoan, type LotteryLastDraw } from '@/lib/lottery';
+import { markLastCollected } from '@/lib/routeOrder';
 
 interface FinancialState {
   todayQuota: number;
@@ -259,6 +260,9 @@ export function PaymentConfirmationModal({
 
         // Update loan balance locally
         await db.loans.update(loan.id, { current_balance: newLoanBalance });
+
+        // Recordar hasta dónde va la ruta hoy: un cliente nuevo se inserta justo después de este
+        await markLastCollected(loan.client_id, today);
 
         // 2. Queue sync operation with PAYMENT_BUNDLE
         await db.syncQueue.add({

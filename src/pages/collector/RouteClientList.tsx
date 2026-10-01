@@ -116,8 +116,16 @@ export function RouteClientList() {
 
   async function saveOrder() {
     try {
-      const updates = orderedClients.map((c, i) => ({ id: c.id, route_order: i }));
-      
+      // Solo los clientes cuya posición cambió (menos datos que sincronizar)
+      const updates = orderedClients
+        .map((c, i) => ({ id: c.id, route_order: i, changed: (c.route_order || 0) !== i }))
+        .filter(u => u.changed)
+        .map(({ id, route_order }) => ({ id, route_order }));
+      if (updates.length === 0) {
+        setIsReordering(false);
+        return;
+      }
+
       await db.transaction('rw', db.clients, db.syncQueue, async () => {
         for (const update of updates) {
           await db.clients.update(update.id, { route_order: update.route_order });
@@ -166,7 +174,17 @@ export function RouteClientList() {
                 <span className="text-sm font-semibold">Guardar</span>
               </button>
             ) : (
-              <button onClick={() => setIsReordering(true)} className="p-2 text-slate-600" title="Ordenar ruta">
+              <button
+                onClick={() => {
+                  if (searchTerm) {
+                    toast('Borra la búsqueda para ordenar la ruta completa');
+                    return;
+                  }
+                  setIsReordering(true);
+                }}
+                className="p-2 text-slate-600"
+                title="Ordenar ruta"
+              >
                 <Settings2 className="w-5 h-5" />
               </button>
             )}
