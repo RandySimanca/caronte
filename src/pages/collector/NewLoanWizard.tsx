@@ -157,6 +157,7 @@ export function NewLoanWizard() {
           photo_doc_url: null,
           personal_references: null,
           status: 'ACTIVO',
+          route_order: 0,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           sync_status: 'pending' as const,

@@ -71,6 +71,7 @@ export interface Client {
   neighborhood: string | null
   municipality: string | null
   route_id: string | null
+  route_order: number
   photo_face_url: string | null
   photo_doc_url: string | null
   personal_references: string | null

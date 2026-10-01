@@ -319,6 +319,15 @@ export class SyncService {
             } as any).eq('id', client.id);
 
             if (err) throw err;
+          } else if ((op.operation_type as string) === 'UPDATE_CLIENT_ORDERS') {
+            const updates = op.payload.updates as { id: string, route_order: number }[];
+            for (const update of updates) {
+              const { error } = await supabase.from('clients').update({ route_order: update.route_order } as any).eq('id', update.id);
+              if (error) {
+                console.error('Failed to update client order on supabase', update, error);
+                throw error;
+              }
+            }
           } else if (op.operation_type === 'PAYMENT' || (op.operation_type as string) === 'PAYMENT_BUNDLE') {
             const isBundle = (op.operation_type as string) === 'PAYMENT_BUNDLE';
             const p = isBundle ? op.payload.payment : op.payload;

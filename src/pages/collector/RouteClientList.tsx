@@ -1,14 +1,25 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, Filter, Menu, User, MapPin, Plus, Trophy } from 'lucide-react';
-import { formatCurrency, cn } from '@/lib/utils';
+import { Search, Filter, Menu, Plus, Settings2, Save } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { NavLink } from 'react-router-dom';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import toast from 'react-hot-toast';
+import { SortableClientItem } from './SortableClientItem';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { format } from 'date-fns';
 import { applyLotteryDrawLocally, isLotteryWinnerLoan, parseLotteryLastDraw } from '@/lib/lottery';
+import { v4 as uuidv4 } from 'uuid';
+import { useSyncStore } from '@/stores/syncStore';
+import { SyncService } from '@/services/SyncService';
 
 export function RouteClientList() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isReordering, setIsReordering] = useState(false);
+  const [orderedClients, setOrderedClients] = useState<any[]>([]);
+  const { isOnline } = useSyncStore();
   
   // Real data from Dexie
   const clients = useLiveQuery(() => db.clients.toArray()) || [];
@@ -74,8 +85,63 @@ export function RouteClientList() {
         raffleNumber: winnerLoan?.raffle_number ?? loan?.raffle_number,
         avatarUrl: client.photo_face_url
       };
-    }).filter(c => c.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
+    })
+    .sort((a, b) => (a.route_order || 0) - (b.route_order || 0) || a.full_name.localeCompare(b.full_name))
+    .filter(c => c.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [clients, loans, installments, searchTerm, today, lotteryDraw]);
+
+  useEffect(() => {
+    if (!isReordering) {
+      setOrderedClients(enrichedClients);
+    }
+  }, [enrichedClients, isReordering]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setOrderedClients((items) => {
+        const oldIndex = items.findIndex(i => i.id === active.id);
+        const newIndex = items.findIndex(i => i.id === over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  }
+
+  async function saveOrder() {
+    try {
+      const updates = orderedClients.map((c, i) => ({ id: c.id, route_order: i }));
+      
+      await db.transaction('rw', db.clients, db.syncQueue, async () => {
+        for (const update of updates) {
+          await db.clients.update(update.id, { route_order: update.route_order });
+        }
+        
+        await db.syncQueue.add({
+          operation_id: uuidv4(),
+          operation_type: 'UPDATE_CLIENT_ORDERS' as any,
+          payload: { updates },
+          status: 'pending',
+          local_timestamp: new Date().toISOString(),
+          retry_count: 0
+        });
+      });
+      
+      setIsReordering(false);
+      toast.success('Orden guardado');
+      if (isOnline) {
+        SyncService.pushPendingOperations().catch(console.error);
+      }
+    } catch (e) {
+      toast.error('Error al guardar el orden');
+    }
+  }
 
   const totalClients = enrichedClients.length;
   const visitedCount = enrichedClients.filter(c => c.status === 'VISITADO').length;
@@ -93,9 +159,18 @@ export function RouteClientList() {
             <Menu className="w-6 h-6" />
           </button>
           <h1 className="text-lg font-bold text-slate-800">Mi Ruta</h1>
-          <button className="p-2 -mr-2 text-slate-600">
-            <Filter className="w-5 h-5" />
-          </button>
+          <div className="flex -mr-2">
+            {isReordering ? (
+              <button onClick={saveOrder} className="p-2 text-brand-600 flex items-center">
+                <Save className="w-5 h-5 mr-1" />
+                <span className="text-sm font-semibold">Guardar</span>
+              </button>
+            ) : (
+              <button onClick={() => setIsReordering(true)} className="p-2 text-slate-600" title="Ordenar ruta">
+                <Settings2 className="w-5 h-5" />
+              </button>
+            )}
+          </div>
         </div>
         
         {/* Search */}
@@ -138,111 +213,33 @@ export function RouteClientList() {
 
       {/* Client List */}
       <div className="flex-1 overflow-y-auto">
-        <ul className="divide-y divide-slate-100">
-          {enrichedClients.length === 0 ? (
-            <div className="p-8 text-center text-slate-500">
-              <p>No hay clientes para mostrar</p>
-            </div>
-          ) : enrichedClients.map((client) => (
-            <li key={client.id} className="bg-white hover:bg-slate-50 transition-colors">
-              <NavLink 
-                to={`/client/${client.id}`} 
-                className="flex items-center p-4 active:bg-slate-100"
+        <DndContext 
+          sensors={sensors} 
+          collisionDetection={closestCenter} 
+          onDragEnd={handleDragEnd}
+          modifiers={[restrictToVerticalAxis]}
+        >
+          <ul className="divide-y divide-slate-100 pb-20">
+            {orderedClients.length === 0 ? (
+              <div className="p-8 text-center text-slate-500">
+                <p>No hay clientes para mostrar</p>
+              </div>
+            ) : (
+              <SortableContext 
+                items={orderedClients.map(c => c.id)} 
+                strategy={verticalListSortingStrategy}
               >
-                {/* Avatar */}
-                <div className="relative flex-shrink-0 mr-4">
-                  <div className={cn(
-                    "w-12 h-12 rounded-full overflow-hidden border-2",
-                    client.status === 'GANADOR' ? 'border-amber-400' :
-                    client.status === 'VISITADO' ? 'border-emerald-500 opacity-50' : 
-                    client.status === 'ATRASADO' ? 'border-rose-400' : 
-                    client.status === 'NUEVO' ? 'border-blue-400' : 'border-transparent'
-                  )}>
-                    {client.avatarUrl ? (
-                      <img src={client.avatarUrl} alt={client.full_name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-400">
-                        <User className="w-6 h-6" />
-                      </div>
-                    )}
-                  </div>
-                  {client.status === 'GANADOR' && (
-                    <div className="absolute -bottom-1 -right-1 bg-amber-400 text-white rounded-full p-0.5 border-2 border-white">
-                      <Trophy className="w-3 h-3" />
-                    </div>
-                  )}
-                  {client.status === 'VISITADO' && (
-                    <div className="absolute -bottom-1 -right-1 bg-emerald-500 text-white rounded-full p-0.5 border-2 border-white">
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                  )}
-                  {client.status === 'NUEVO' && (
-                    <div className="absolute -bottom-1 -right-1 bg-blue-500 text-white rounded-full p-0.5 border-2 border-white">
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <p className={cn(
-                    "text-sm font-semibold truncate",
-                    client.status === 'VISITADO' ? "text-slate-400" :
-                    client.status === 'GANADOR' ? "text-amber-800" : "text-slate-800"
-                  )}>
-                    {client.full_name}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5 flex items-center truncate">
-                    <MapPin className="w-3 h-3 mr-1 flex-shrink-0" />
-                    {client.address}
-                  </p>
-                </div>
-
-                {/* Money */}
-                <div className="text-right ml-3">
-                  {client.status === 'GANADOR' ? (
-                    <>
-                      <p className="text-xs font-bold text-amber-700">¡Ganó la lotería!</p>
-                      <p className="text-[10px] text-amber-600 font-semibold mt-0.5">Infórmale al cliente</p>
-                      {client.raffleNumber && (
-                        <p className="text-[10px] text-amber-700 font-semibold mt-0.5 bg-amber-50 inline-block px-1.5 py-0.5 rounded">
-                          No. {client.raffleNumber}
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                  <p className={cn(
-                    "text-xs font-medium",
-                    client.isTodayPaid ? "text-slate-400 line-through" : "text-slate-600"
-                  )}>
-                    Hoy: <span className="font-semibold">{formatCurrency(client.todayQuota)}</span>
-                  </p>
-                  <div className="flex flex-col items-end gap-1 mt-0.5">
-                    {client.isTodayPaid && (
-                      <p className="text-[10px] text-emerald-500 font-semibold leading-none">Pagado hoy</p>
-                    )}
-                    {client.arrears > 0 ? (
-                      <p className="text-[10px] text-rose-500 font-semibold bg-rose-50 px-1.5 py-0.5 rounded leading-none">
-                        Atraso: {formatCurrency(client.arrears)}
-                      </p>
-                    ) : client.status === 'NUEVO' ? (
-                      <p className="text-[10px] text-blue-500 font-semibold bg-blue-50 px-1.5 py-0.5 rounded leading-none">Nuevo</p>
-                    ) : !client.isTodayPaid && (
-                      <p className="text-[10px] text-slate-400 leading-none mt-0.5">Al día</p>
-                    )}
-                  </div>
-                    </>
-                  )}
-                </div>
-              </NavLink>
-            </li>
-          ))}
-        </ul>
+                {orderedClients.map((client) => (
+                  <SortableClientItem 
+                    key={client.id} 
+                    client={client} 
+                    isReordering={isReordering} 
+                  />
+                ))}
+              </SortableContext>
+            )}
+          </ul>
+        </DndContext>
       </div>
 
       {/* Floating Action Button */}

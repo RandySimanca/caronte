@@ -32,7 +32,7 @@ export interface LocalSetting {
 export interface SyncOperation {
   id?: number; // Auto-incrementado por Dexie localmente
   operation_id: string; // UUID v4 para idempotencia
-  operation_type: 'PAYMENT' | 'EXPENSE' | 'CLIENT' | 'LOAN' | 'NEW_LOAN_BUNDLE' | 'PAYMENT_BUNDLE';
+  operation_type: 'PAYMENT' | 'EXPENSE' | 'CLIENT' | 'LOAN' | 'NEW_LOAN_BUNDLE' | 'PAYMENT_BUNDLE' | 'UPDATE_CLIENT_ORDERS';
   payload: any;
   status: SyncStatus;
   local_timestamp: string;
@@ -62,14 +62,20 @@ export class CobraDiarioDB extends Dexie {
       settings: 'key'
     });
 
-    this.version(3).stores({
-      clients: 'id, route_id, status, document_id, sync_status',
+    this.version(4).stores({
+      clients: 'id, route_id, route_order, status, document_id, sync_status',
       loans: 'id, client_id, route_id, status, sync_status',
       installments: 'id, loan_id, scheduled_date, status',
       syncQueue: '++id, operation_id, status, operation_type',
       routes: 'id',
       expenses: 'id, expense_date, sync_status',
       settings: 'key'
+    }).upgrade(trans => {
+      return trans.table('clients').toCollection().modify(client => {
+        if (typeof client.route_order === 'undefined') {
+          client.route_order = 0;
+        }
+      });
     });
   }
 }
