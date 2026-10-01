@@ -311,9 +311,11 @@ export function RouteClientList() {
       </div>
 
       {/* Floating Action Button */}
+      {/* Fijo respecto a la pantalla (no al contenido) y por encima del menú inferior (~81px) + zona segura */}
       <NavLink
         to="/loan/new"
-        className="absolute bottom-20 right-4 w-14 h-14 bg-brand-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-brand-500/40 hover:bg-brand-700 active:scale-95 transition-all z-20"
+        style={{ bottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}
+        className="fixed right-4 w-14 h-14 bg-brand-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-brand-500/40 hover:bg-brand-700 active:scale-95 transition-all z-20"
       >
         <Plus className="w-7 h-7" />
       </NavLink>
