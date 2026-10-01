@@ -33,6 +33,7 @@ export function RouteClientList() {
       let todayQuota = 0;
       let arrears = 0;
       let status = 'AL_DIA';
+      let isTodayPaid = false;
 
       if (winnerLoan && !activeLoan) {
         status = 'GANADOR';
@@ -52,7 +53,7 @@ export function RouteClientList() {
           ? 0
           : (todayInstallment ? Number(todayInstallment.balance || 0) : (loanEnded ? 0 : Number(loan.daily_installment || 0)));
         
-        const isTodayPaid = todayInstallment && ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInstallment.status);
+        isTodayPaid = !!(todayInstallment && ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInstallment.status));
         const isFutureStart = loan.start_date > today;
 
         if (isFutureStart) {
