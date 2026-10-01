@@ -57,6 +57,7 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
         viaticoDia: detail.viaticoDia,
         totalEntregar: detail.totalEntregar + baseAmount,
         totalPrestado: detail.totalPrestado,
+        totalTransferencias: detail.totalTransferencias || 0,
         baseAmount: baseAmount,
         adminId: currentUser.id
       });

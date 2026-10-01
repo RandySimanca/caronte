@@ -714,7 +714,7 @@ export class AdminService {
         closing_date: payload.date,
         base_amount: payload.baseAmount || 0,
         total_collected: payload.totalCobrado,
-        total_expenses: payload.totalGastos + (payload.totalPrestado || 0),
+        total_expenses: payload.totalGastos + (payload.totalPrestado || 0) + (payload.totalTransferencias || 0),
         viaticum_assigned: payload.viaticoDia,
         expected_delivery: payload.totalEntregar,
         actual_delivery: payload.totalEntregar,
@@ -734,7 +734,7 @@ export class AdminService {
         repair_expenses: 0,
         tire_expenses: 0,
         chain_expenses: 0,
-        other_expenses: payload.totalGastos + (payload.totalPrestado || 0)
+        other_expenses: payload.totalGastos + (payload.totalPrestado || 0) + (payload.totalTransferencias || 0)
       } as any, { onConflict: 'route_id,closing_date' })
       .select()
       .single();
