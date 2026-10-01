@@ -1,0 +1,82 @@
+diff -ruN a/src/pages/collector/RouteClientList.tsx caronte-main/src/pages/collector/RouteClientList.tsx
+--- a/src/pages/collector/RouteClientList.tsx	2026-10-01 22:58:36.171133045 +0000
++++ b/src/pages/collector/RouteClientList.tsx	2026-10-01 22:58:36.303100020 +0000
+@@ -1,4 +1,4 @@
+-import { useState, useMemo, useEffect } from 'react';
++import { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+ import { Search, Filter, Menu, Plus, Settings2, Save } from 'lucide-react';
+ import { cn } from '@/lib/utils';
+ import { NavLink } from 'react-router-dom';
+@@ -15,6 +15,20 @@
+ import { useSyncStore } from '@/stores/syncStore';
+ import { SyncService } from '@/services/SyncService';
+ 
++// Posición del scroll de la lista: se guarda por día para volver "por donde vas" después de cobrar
++const SCROLL_KEY = 'route_list_scroll';
++
++/** Primer ancestro que realmente hace scroll (depende del layout: puede ser la lista o el <main>). */
++function getScrollParent(el: HTMLElement | null): HTMLElement | null {
++  let node = el?.parentElement ?? null;
++  while (node) {
++    const overflowY = getComputedStyle(node).overflowY;
++    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) return node;
++    node = node.parentElement;
++  }
++  return null;
++}
++
+ export function RouteClientList() {
+   const [searchTerm, setSearchTerm] = useState('');
+   const [isReordering, setIsReordering] = useState(false);
+@@ -30,6 +44,42 @@
+   const today = format(new Date(), 'yyyy-MM-dd');
+   const lotteryDraw = parseLotteryLastDraw(lotterySetting?.value);
+ 
++  const listRef = useRef<HTMLUListElement | null>(null);
++  const scrollRestoredRef = useRef(false);
++
++  // Guardar la posición mientras haces scroll (el evento no burbujea: se escucha en captura)
++  useEffect(() => {
++    const onScroll = (e: Event) => {
++      const list = listRef.current;
++      const target = e.target;
++      if (!list || !scrollRestoredRef.current) return;
++      if (!(target instanceof HTMLElement) || !target.contains(list)) return;
++      try {
++        localStorage.setItem(SCROLL_KEY, JSON.stringify({ date: today, top: target.scrollTop }));
++      } catch { /* sin almacenamiento: no pasa nada */ }
++    };
++    document.addEventListener('scroll', onScroll, true);
++    return () => document.removeEventListener('scroll', onScroll, true);
++  }, [today]);
++
++  // Al volver a la lista (o abrir la app el mismo día), restaurar la posición guardada
++  useLayoutEffect(() => {
++    if (scrollRestoredRef.current || orderedClients.length === 0) return;
++    scrollRestoredRef.current = true;
++
++    let saved: { date?: string; top?: number } | null = null;
++    try { saved = JSON.parse(localStorage.getItem(SCROLL_KEY) || 'null'); } catch { saved = null; }
++    if (!saved || saved.date !== today || !saved.top) return; // otro día o sin posición: arranca en el primero
++
++    const top = saved.top;
++    const apply = () => {
++      const scroller = getScrollParent(listRef.current);
++      if (scroller) scroller.scrollTop = top;
++    };
++    apply();
++    requestAnimationFrame(apply); // por si el layout termina de acomodarse después
++  }, [orderedClients.length, today]);
++
+   useEffect(() => {
+     if (lotteryDraw) applyLotteryDrawLocally(lotteryDraw).catch(() => {});
+   }, [lotterySetting?.value]);
+@@ -237,7 +287,7 @@
+           onDragEnd={handleDragEnd}
+           modifiers={[restrictToVerticalAxis]}
+         >
+-          <ul className="divide-y divide-slate-100 pb-20">
++          <ul ref={listRef} className="divide-y divide-slate-100 pb-20">
+             {orderedClients.length === 0 ? (
+               <div className="p-8 text-center text-slate-500">
+                 <p>No hay clientes para mostrar</p>
