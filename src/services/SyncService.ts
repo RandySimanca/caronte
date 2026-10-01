@@ -7,6 +7,7 @@ import {
   isLotteryWinnerLoan,
   parseLotteryLastDraw,
 } from '@/lib/lottery';
+import { LAST_COLLECTED_KEY } from '@/lib/routeOrder';
 
 /** Usuario de la sesión local (no hace request de red, funciona con conexión inestable). */
 async function getCurrentUser() {
@@ -563,6 +564,7 @@ export class SyncService {
       const existingSettings = await db.settings.toArray();
       const settingsToKeep = existingSettings.filter(s => {
         if (s.key.startsWith('transfer_')) return true;
+        if (s.key.startsWith(LAST_COLLECTED_KEY)) return true;
         if (s.key.startsWith('day_closed_')) {
           // If the server explicitly has a record but it's NOT closed, it means admin reopened it.
           // So we discard the local closed setting.
@@ -812,6 +814,7 @@ export class SyncService {
       const existingSettings = await db.settings.toArray();
       const settingsToKeep = existingSettings.filter(s => {
         if (s.key.startsWith('transfer_')) return true;
+        if (s.key === LAST_COLLECTED_KEY) return true;
         if (s.key.startsWith('day_closed_')) {
           if (hasServerRecord && !isClosedOnServer) return false;
           return true;
