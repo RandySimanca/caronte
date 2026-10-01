@@ -221,6 +221,9 @@ export function AdminDashboard() {
             <div className={`text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
               {formatCurrency(stats?.recaudo ?? 0)}
             </div>
+            <div className={`text-sm font-bold text-slate-600 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+              Cobrador: {formatCurrency(stats?.recaudoCobrador ?? 0)}
+            </div>
             <div className={`text-sm font-bold text-brand-600 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
               Oficina: {formatCurrency(stats?.recaudoOficina ?? 0)}
             </div>

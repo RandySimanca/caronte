@@ -440,6 +440,9 @@ export class AdminService {
       .filter((p: any) => p.is_transfer)
       .reduce((sum: number, p: any) => sum + Number(p.total_amount), 0);
 
+    // Calcular efectivo físico del cobrador
+    const recaudoCobrador = recaudoHoy - recaudoOficina - recaudoTransferencias;
+
     const enrichedAlerts = alertsData
       .filter((alert: any) => alert.is_above_expected || alert.advance_amount > 0 || (alert.collector_observation && alert.collector_observation.trim() !== ''))
       .map((alert: any) => ({
@@ -461,6 +464,7 @@ export class AdminService {
       recaudo: recaudoHoy,
       recaudoOficina,
       recaudoTransferencias,
+      recaudoCobrador: Math.max(0, recaudoCobrador),
       esperado: recaudoEsperado,
       esperadoCuotasHoy: todayInstsTotal,
       esperadoAtrasos: arrearsTotal,

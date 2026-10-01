@@ -57,7 +57,7 @@ export function RouteClientList() {
 
         if (isFutureStart) {
           status = 'NUEVO';
-        } else if (isTodayPaid && arrears === 0) {
+        } else if (isTodayPaid) {
           status = 'VISITADO';
         } else if (arrears > 0) {
           status = 'ATRASADO';
@@ -69,6 +69,7 @@ export function RouteClientList() {
         todayQuota,
         arrears,
         status,
+        isTodayPaid,
         raffleNumber: winnerLoan?.raffle_number ?? loan?.raffle_number,
         avatarUrl: client.photo_face_url
       };
@@ -216,21 +217,24 @@ export function RouteClientList() {
                     <>
                   <p className={cn(
                     "text-xs font-medium",
-                    client.status === 'VISITADO' ? "text-slate-400" : "text-slate-600"
+                    client.isTodayPaid ? "text-slate-400 line-through" : "text-slate-600"
                   )}>
                     Hoy: <span className="font-semibold">{formatCurrency(client.todayQuota)}</span>
                   </p>
-                  {client.arrears > 0 ? (
-                    <p className="text-[10px] text-rose-500 font-semibold mt-0.5 bg-rose-50 inline-block px-1.5 py-0.5 rounded">
-                      Atraso: {formatCurrency(client.arrears)}
-                    </p>
-                  ) : client.status === 'VISITADO' ? (
-                    <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">Pagado</p>
-                  ) : client.status === 'NUEVO' ? (
-                    <p className="text-[10px] text-blue-500 font-semibold mt-0.5 bg-blue-50 inline-block px-1.5 py-0.5 rounded">Nuevo</p>
-                  ) : (
-                    <p className="text-[10px] text-slate-400 mt-0.5">Al día</p>
-                  )}
+                  <div className="flex flex-col items-end gap-1 mt-0.5">
+                    {client.isTodayPaid && (
+                      <p className="text-[10px] text-emerald-500 font-semibold leading-none">Pagado hoy</p>
+                    )}
+                    {client.arrears > 0 ? (
+                      <p className="text-[10px] text-rose-500 font-semibold bg-rose-50 px-1.5 py-0.5 rounded leading-none">
+                        Atraso: {formatCurrency(client.arrears)}
+                      </p>
+                    ) : client.status === 'NUEVO' ? (
+                      <p className="text-[10px] text-blue-500 font-semibold bg-blue-50 px-1.5 py-0.5 rounded leading-none">Nuevo</p>
+                    ) : !client.isTodayPaid && (
+                      <p className="text-[10px] text-slate-400 leading-none mt-0.5">Al día</p>
+                    )}
+                  </div>
                     </>
                   )}
                 </div>

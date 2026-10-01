@@ -5,4 +5,20 @@
 -- 3. Pagos (payments)
 -- 4. Ganadores de lotería y boletas asociados a esos préstamos.
 
-TRUNCATE TABLE clients CASCADE;
+-- Ejecutar en Supabase -> SQL Editor
+TRUNCATE TABLE 
+  payment_allocations,
+  payments,
+  loan_installments,
+  loans,
+  clients,
+  expenses,
+  daily_closings,
+  route_assignments,
+  sync_logs,
+  lottery_draws,
+  routes,
+  expense_categories,
+  holidays,
+  system_settings
+CASCADE;
