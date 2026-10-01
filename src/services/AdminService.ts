@@ -317,11 +317,30 @@ export class AdminService {
     // ── Recaudo (hoy) ────────────────────────────────────────────────────────
     // Calculado desde loan_installments (paid_date = hoy) para coincidir
     // exactamente con la lógica del cobrador: cuota del día + atrasos pagados
-    // hoy + adelantos reales de cuotas futuras (excluyendo domingos pre-pagados).
+    // hoy + adelantos reales de cuotas futuras en efectivo.
     let recaudoInstQuery = supabase
       .from('loan_installments')
-      .select('paid_amount, scheduled_date, is_prepaid, loan:loans!inner(route_id)')
+      .select('loan_id, paid_amount, scheduled_date, is_prepaid, loan:loans!inner(route_id, daily_installment, client:clients(full_name))')
       .eq('paid_date', todayStr)
+      .gt('paid_amount', 0);
+
+    // ── Adelantos de hoy (cuotas FUTURAS cobradas hoy en efectivo) ───────────
+    // Son cuotas cuya scheduled_date > hoy, paid_date = hoy y NO son
+    // is_prepaid del sistema (esas son domingos pre-pagados automáticamente).
+    // Incluye también al collector_id para saber quién hizo el adelanto.
+    let adelantosHoyQuery = supabase
+      .from('loan_installments')
+      .select(`
+        loan_id,
+        paid_amount,
+        scheduled_date,
+        scheduled_amount,
+        is_prepaid,
+        loan:loans!inner(route_id, daily_installment, client:clients(full_name))
+      `)
+      .eq('paid_date', todayStr)
+      .gt('scheduled_date', todayStr)
+      .eq('is_prepaid', false)
       .gt('paid_amount', 0);
 
     // ── Esperado (hoy) ───────────────────────────────────────────────────────
@@ -381,6 +400,7 @@ export class AdminService {
       arrearsQuery = (arrearsQuery as any).eq('loan.route_id', routeId);
       prepaidTodayQuery = (prepaidTodayQuery as any).eq('loan.route_id', routeId);
       alertsQuery = (alertsQuery as any).eq('loan.route_id', routeId);
+      adelantosHoyQuery = (adelantosHoyQuery as any).eq('loan.route_id', routeId);
     }
 
     // 4. Parallel fetch for exact counts and sums
@@ -393,7 +413,8 @@ export class AdminService {
       todayInstsRes,
       arrearsRes,
       prepaidTodayRes,
-      alertsRes
+      alertsRes,
+      adelantosHoyRes
     ] = await Promise.all([
       clientsQuery,
       supabase.from('users').select('*', { count: 'exact', head: true }).eq('active', true).eq('role_id', cobradorRoleId),
@@ -403,14 +424,17 @@ export class AdminService {
       todayInstsQuery,
       arrearsQuery,
       prepaidTodayQuery,
-      alertsQuery
+      alertsQuery,
+      adelantosHoyQuery
     ]);
 
-    // Recaudo: suma paid_amount de cuotas con paid_date=hoy, excluyendo domingos
-    // pre-pagados al crear el préstamo (is_prepaid=true y scheduled_date > hoy).
+    // Recaudo: suma paid_amount de cuotas con paid_date=hoy.
+    // Se excluyen SOLO los is_prepaid del sistema (domingos pre-cargados al crear préstamo)
+    // cuando su scheduled_date es futura. Los adelantos reales en efectivo (is_prepaid=false,
+    // scheduled_date > hoy) SÍ se incluyen porque el cobrador ya tiene ese dinero en mano.
     const recaudoHoy = (recaudoInstRes.data || []).reduce((sum: number, i: any) => {
-      const isFuture = i.scheduled_date > todayStr;
-      if (isFuture && i.is_prepaid) return sum;
+      const isFuturePrepaidSystem = i.scheduled_date > todayStr && i.is_prepaid === true;
+      if (isFuturePrepaidSystem) return sum;
       return sum + Number(i.paid_amount);
     }, 0);
 
@@ -429,6 +453,37 @@ export class AdminService {
     }));
 
     const alertsData = alertsRes.data || [];
+
+    // ── Adelantos de hoy: cuotas FUTURAS cobradas hoy en efectivo (no is_prepaid del sistema) ──
+    // Se agrupan por loan_id para mostrar por cliente: monto total adelantado y días cubiertos.
+    const adelantosRawData = adelantosHoyRes.data || [];
+    const adelantosMap = new Map<string, {
+      clientName: string;
+      totalAdelantado: number;
+      diasCubiertos: number;
+      cuotaDiaria: number;
+    }>();
+    for (const inst of adelantosRawData) {
+      const loanId: string = inst.loan_id;
+      const clientName: string = (inst.loan as any)?.client?.full_name || 'Cliente desconocido';
+      const cuotaDiaria: number = Number((inst.loan as any)?.daily_installment || inst.scheduled_amount || 0);
+      const paidAmt: number = Number(inst.paid_amount || 0);
+      if (!adelantosMap.has(loanId)) {
+        adelantosMap.set(loanId, { clientName, totalAdelantado: 0, diasCubiertos: 0, cuotaDiaria });
+      }
+      const entry = adelantosMap.get(loanId)!;
+      entry.totalAdelantado += paidAmt;
+      // Días cubiertos = monto adelantado / cuota diaria (redondeado hacia abajo)
+      entry.diasCubiertos = cuotaDiaria > 0 ? Math.floor(entry.totalAdelantado / cuotaDiaria) : 0;
+    }
+    const adelantosHoyData = Array.from(adelantosMap.entries()).map(([loanId, data]) => ({
+      loanId,
+      clientName: data.clientName,
+      totalAdelantado: data.totalAdelantado,
+      diasCubiertos: data.diasCubiertos,
+      cuotaDiaria: data.cuotaDiaria,
+    }));
+    const totalAdelantadoHoy = adelantosHoyData.reduce((s, a) => s + a.totalAdelantado, 0);
     
     // Calcular recaudo en oficina (Admin)
     const recaudoOficina = alertsData
@@ -474,6 +529,11 @@ export class AdminService {
       prepaidToday: {
         count: prepaidTodayData.length,
         clients: prepaidTodayData,
+      },
+      adelantosHoy: {
+        count: adelantosHoyData.length,
+        total: totalAdelantadoHoy,
+        clientes: adelantosHoyData,
       },
     };
   }

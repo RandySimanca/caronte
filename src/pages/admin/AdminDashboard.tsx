@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck, Plus, Building2, Smartphone, PencilLine, FileSpreadsheet } from 'lucide-react';
+import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck, Plus, Building2, Smartphone, PencilLine, FileSpreadsheet, FastForward } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { ClientsModal } from '@/components/admin/ClientsModal';
 import { LotteryModule } from '@/components/admin/LotteryModule';
@@ -25,6 +25,7 @@ export function AdminDashboard() {
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isEditPaymentOpen, setIsEditPaymentOpen] = useState(false);
   const [isExcelMigrationOpen, setIsExcelMigrationOpen] = useState(false);
+  const [isAdelantosOpen, setIsAdelantosOpen] = useState(false);
 
   // Load route list only once
   useEffect(() => {
@@ -54,6 +55,7 @@ export function AdminDashboard() {
           recaudoTransferencias: 0,
           esperado: 0,
           prepaidToday: { count: 0, clients: [] },
+          adelantosHoy: { count: 0, total: 0, clientes: [] },
           alerts: [],
           cobradores: 0,
           rutas: 0
@@ -295,6 +297,35 @@ export function AdminDashboard() {
           </button>
         )}
 
+        {/* 1b. Adelantos de hoy (cuotas futuras cobradas hoy) */}
+        {(stats?.adelantosHoy?.count ?? 0) > 0 && (
+          <button
+            onClick={() => setIsAdelantosOpen(true)}
+            className="bg-white rounded-3xl border border-emerald-100 shadow-sm p-6 hover:shadow-md hover:border-emerald-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
+          >
+            <div className="flex items-start justify-between w-full mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center relative shadow-inner">
+                <FastForward className="w-7 h-7 text-emerald-600" />
+                <span className="absolute -top-2 -right-2 w-7 h-7 bg-emerald-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md">
+                  {stats!.adelantosHoy!.count}
+                </span>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
+                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all" />
+              </div>
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Adelantos de Hoy</h3>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                <strong className="text-emerald-600">{stats!.adelantosHoy!.count}</strong> cliente{stats!.adelantosHoy!.count !== 1 ? 's' : ''} adelantaron cuotas futuras hoy.
+              </p>
+              <p className="text-sm font-black text-emerald-700 mt-1">
+                {formatCurrency(stats!.adelantosHoy!.total)}
+              </p>
+            </div>
+          </button>
+        )}
+
         {/* 2. Sorteo de boletas */}
         <button
           onClick={() => setIsLotteryOpen(true)}
@@ -490,6 +521,50 @@ export function AdminDashboard() {
         onClose={() => setIsPrepaidModalOpen(false)}
         clients={stats?.prepaidToday?.clients || []}
       />
+
+      {/* Modal Adelantos de Hoy */}
+      {isAdelantosOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsAdelantosOpen(false)} />
+          <div className="relative bg-white rounded-3xl shadow-xl w-full max-w-lg overflow-hidden">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-emerald-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                  <FastForward className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-800">Adelantos de Hoy</h3>
+                  <p className="text-xs font-semibold text-slate-500">Cuotas futuras cobradas hoy en efectivo</p>
+                </div>
+              </div>
+              <button onClick={() => setIsAdelantosOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
+              <div className="flex justify-between items-center bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 mb-4">
+                <span className="font-bold text-emerald-700 text-sm">Total adelantado hoy</span>
+                <span className="font-black text-emerald-700 text-lg">{formatCurrency(stats?.adelantosHoy?.total ?? 0)}</span>
+              </div>
+              {(stats?.adelantosHoy?.clientes || []).map((a: any) => (
+                <div key={a.loanId} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-slate-800 text-sm">{a.clientName}</span>
+                    <span className="font-black text-emerald-700">{formatCurrency(a.totalAdelantado)}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-slate-500">
+                    <span>Cuota diaria: <strong className="text-slate-700">{formatCurrency(a.cuotaDiaria)}</strong></span>
+                    <span>Días cubiertos: <strong className="text-emerald-600">{a.diasCubiertos} d{a.diasCubiertos !== 1 ? 'ías' : 'ía'}</strong></span>
+                  </div>
+                </div>
+              ))}
+              {(stats?.adelantosHoy?.clientes?.length ?? 0) === 0 && (
+                <p className="text-center text-slate-400 py-6">No hay adelantos registrados hoy.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <AdminCreateLoanModal
         isOpen={isCreateLoanOpen}
