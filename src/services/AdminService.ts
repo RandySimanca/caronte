@@ -340,7 +340,6 @@ export class AdminService {
       `)
       .eq('paid_date', todayStr)
       .gt('scheduled_date', todayStr)
-      .eq('is_prepaid', false)
       .gt('paid_amount', 0);
 
     // ── Esperado (hoy) ───────────────────────────────────────────────────────
@@ -464,6 +463,7 @@ export class AdminService {
       cuotaDiaria: number;
     }>();
     for (const inst of adelantosRawData) {
+      if (inst.is_prepaid === true) continue;
       const loanId: string = inst.loan_id;
       const clientName: string = (inst.loan as any)?.client?.full_name || 'Cliente desconocido';
       const cuotaDiaria: number = Number((inst.loan as any)?.daily_installment || inst.scheduled_amount || 0);

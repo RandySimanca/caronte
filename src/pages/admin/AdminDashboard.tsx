@@ -298,8 +298,7 @@ export function AdminDashboard() {
         )}
 
         {/* 1b. Adelantos de hoy (cuotas futuras cobradas hoy) */}
-        {(stats?.adelantosHoy?.count ?? 0) > 0 && (
-          <button
+        <button
             onClick={() => setIsAdelantosOpen(true)}
             className="bg-white rounded-3xl border border-emerald-100 shadow-sm p-6 hover:shadow-md hover:border-emerald-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
           >
@@ -324,7 +323,6 @@ export function AdminDashboard() {
               </p>
             </div>
           </button>
-        )}
 
         {/* 2. Sorteo de boletas */}
         <button
