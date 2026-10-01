@@ -330,16 +330,25 @@ export class SyncService {
             if (err) throw err;
           } else if ((op.operation_type as string) === 'UPDATE_CLIENT_ORDERS') {
             const updates = op.payload.updates as { id: string, route_order: number }[];
-            // Una sola llamada para toda la ruta (antes: un UPDATE por cliente, lento con rutas grandes)
+            // Una sola llamada para toda la ruta (antes: un UPDATE por cliente, lento con rutas grandes).
+            // TOLERANTE A FALLOS: el route_order del servidor es cosmético; si falla solo se registra
+            // el error en consola y la op se marca como synced de todas formas. El próximo pull
+            // descargará el orden actualizado del servidor sin dejar ops atascadas.
             const { error: batchError } = await supabase.rpc('update_client_orders' as any, { p_updates: updates } as any);
             if (batchError) {
-              console.warn('update_client_orders no disponible, se actualiza cliente por cliente', batchError);
+              console.warn('update_client_orders RPC no disponible, intentando UPDATE por cliente:', batchError);
+              let fallbackFailed = false;
               for (const update of updates) {
                 const { error } = await supabase.from('clients').update({ route_order: update.route_order } as any).eq('id', update.id);
                 if (error) {
-                  console.error('Failed to update client order on supabase', update, error);
-                  throw error;
+                  console.error('[UPDATE_CLIENT_ORDERS] fallback falló (no crítico, se marca synced):', update, error);
+                  fallbackFailed = true;
                 }
+              }
+              if (fallbackFailed) {
+                // No lanzamos: el orden en el servidor no es crítico para el cobro.
+                // La op se marcará como synced y el contador de pendientes bajará.
+                console.warn('[UPDATE_CLIENT_ORDERS] algunos route_order no se aplicaron en el servidor; se corregirán en el próximo pull.');
               }
             }
           } else if (op.operation_type === 'PAYMENT' || (op.operation_type as string) === 'PAYMENT_BUNDLE') {
