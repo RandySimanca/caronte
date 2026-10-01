@@ -117,6 +117,7 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
         { sheetName: 'Liquidación', data: [
           { Concepto: 'Base Inicial', Valor: baseAmount },
           { Concepto: 'Total Recaudado', Valor: detail.totalCobrado },
+          { Concepto: 'Cobros por Transferencia', Valor: -(detail.totalTransferencias || 0) },
           { Concepto: 'Gastos Operativos', Valor: -detail.totalGastos },
           { Concepto: 'Viático Asignado', Valor: -detail.viaticoDia },
           { Concepto: 'Préstamos Nuevos', Valor: -detail.totalPrestado },
@@ -209,6 +210,14 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                     (-) Viático del día
                   </div>
                   <span className="font-bold">-{formatCurrency(detail.viaticoDia)}</span>
+                </div>
+
+                <div className="flex justify-between items-center text-indigo-600">
+                  <div className="flex items-center gap-2 font-bold">
+                    <TrendingDown className="w-5 h-5 opacity-0" />
+                    (-) Cobros por transferencia
+                  </div>
+                  <span className="font-bold">-{formatCurrency(detail.totalTransferencias || 0)}</span>
                 </div>
 
                 <div className="flex justify-between items-center text-blue-600">

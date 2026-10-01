@@ -633,8 +633,11 @@ export class AdminService {
    * Obtiene el detalle de ingresos, gastos y préstamos para liquidar una ruta
    */
   static async getRouteLiquidationDetail(routeId: string, dateStr: string) {
-    const startOfDay = dateStr + 'T00:00:00.000Z';
-    const endOfDay = dateStr + 'T23:59:59.999Z';
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const startLocal = new Date(year, month - 1, day, 0, 0, 0);
+    const endLocal = new Date(year, month - 1, day, 23, 59, 59, 999);
+    const startOfDay = startLocal.toISOString();
+    const endOfDay = endLocal.toISOString();
 
     // Obtener los IDs de administradores para excluirlos de la liquidación del cobrador
     const { data: roleData } = await supabase.from('roles').select('id').eq('name', 'ADMINISTRADOR').single();
@@ -645,7 +648,7 @@ export class AdminService {
     }
 
     const [paymentsRes, expensesRes, loansRes, settingsRes, salarySettingRes, assignmentRes] = await Promise.all([
-      supabase.from('payments').select('total_amount, collector_id').eq('route_id', routeId).gte('collected_at', startOfDay).lte('collected_at', endOfDay),
+      supabase.from('payments').select('total_amount, collector_id, is_transfer').eq('route_id', routeId).gte('collected_at', startOfDay).lte('collected_at', endOfDay),
       supabase.from('expenses').select('amount, category:expense_categories(name)').eq('route_id', routeId).eq('expense_date', dateStr),
       supabase.from('loans').select('amount_delivered, collector_id').eq('route_id', routeId).eq('disbursement_date', dateStr),
       supabase.from('system_settings').select('value').eq('key', 'default_viaticum').maybeSingle(),
@@ -654,8 +657,11 @@ export class AdminService {
       supabase.from('route_assignments').select('viaticum, salary').eq('route_id', routeId).is('date_end', null).maybeSingle()
     ]);
 
-    // Solo sumar pagos que no fueron hechos por el administrador
-    const totalCobrado = paymentsRes.data?.filter(p => !adminUserIds.has(p.collector_id)).reduce((sum, p: any) => sum + Number(p.total_amount), 0) || 0;
+    // Solo procesar pagos que no fueron hechos por el administrador
+    const collectorPayments = paymentsRes.data?.filter(p => !adminUserIds.has(p.collector_id)) || [];
+    const totalCobrado = collectorPayments.reduce((sum, p: any) => sum + Number(p.total_amount), 0);
+    const totalTransferencias = collectorPayments.filter(p => p.is_transfer).reduce((sum, p: any) => sum + Number(p.total_amount), 0);
+
     const totalGastos = expensesRes.data?.reduce((sum, e: any) => sum + Number(e.amount), 0) || 0;
     
     // Solo contar préstamos entregados por el cobrador
@@ -681,10 +687,11 @@ export class AdminService {
     }
 
     // El salario es un costo informativo (no se descuenta del monto a entregar diario)
-    const totalEntregar = totalCobrado - totalGastos - viaticoDia - totalPrestado;
+    const totalEntregar = totalCobrado - totalGastos - viaticoDia - totalPrestado - totalTransferencias;
 
     return {
       totalCobrado,
+      totalTransferencias,
       totalGastos,
       detalleGastos: expensesRes.data || [],
       viaticoDia,
