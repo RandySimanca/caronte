@@ -76,6 +76,11 @@ export function ClientDetailPage() {
     const isPaidToday = !!todayInstallment &&
       ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInstallment.status);
 
+    // Partial installment for today
+    const todayIsPartial = todayInstallment?.status === 'PARCIAL';
+    const todayPaidAmount = todayIsPartial ? Math.round(Number(todayInstallment?.paid_amount || 0)) : 0;
+    const todayPartialBalance = todayIsPartial ? Math.round(Number(todayInstallment?.balance || 0)) : 0;
+
     // Only truly pending installments (not paid ones)
     const pending = installments.filter(i =>
       ['PENDIENTE', 'PARCIAL', 'ATRASADA'].includes(i.status)
@@ -93,6 +98,9 @@ export function ClientDetailPage() {
       i => i.scheduled_date > today && ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(i.status)
     ).length;
 
+    // Total collected from this loan (sum of paid_amount across all installments)
+    const totalPaid = Math.round(installments.reduce((sum, i) => sum + Number(i.paid_amount || 0), 0));
+
     return {
       todayQuota,
       arrears,
@@ -102,6 +110,10 @@ export function ClientDetailPage() {
       // Pass null as todayInstallment when already paid so modal won't try to re-apply it
       todayInstallment: isPaidToday ? null : (todayInstallment ?? null),
       isPaidToday,
+      totalPaid,
+      todayIsPartial,
+      todayPaidAmount,
+      todayPartialBalance,
     };
   }, [loan, installments, today]);
 
@@ -367,21 +379,44 @@ export function ClientDetailPage() {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-2 mb-4">
-                <div className="text-center p-2 rounded-xl bg-slate-50 border border-slate-100">
-                  <p className="text-[10px] uppercase text-slate-500 font-semibold mb-1">Cuota de hoy</p>
-                  <p className="text-sm font-bold text-brand-600">{formatCurrency(financialState.todayQuota)}</p>
+              <>
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  <div className="text-center p-2 rounded-xl bg-slate-50 border border-slate-100">
+                    <p className="text-[10px] uppercase text-slate-500 font-semibold mb-1">Cuota de hoy</p>
+                    <p className="text-sm font-bold text-brand-600">{formatCurrency(financialState.todayQuota)}</p>
+                  </div>
+                  <div className="text-center p-2 rounded-xl bg-rose-50 border border-rose-100">
+                    <p className="text-[10px] uppercase text-rose-500 font-semibold mb-1">Atrasos</p>
+                    <p className="text-sm font-bold text-rose-600">{formatCurrency(financialState.arrears)}</p>
+                  </div>
+                  <div className="text-center p-2 rounded-xl bg-emerald-50 border border-emerald-100">
+                    <p className="text-[10px] uppercase text-emerald-600 font-semibold mb-1">Adelantos</p>
+                    <p className="text-sm font-bold text-emerald-600">{financialState.advances} día{financialState.advances !== 1 ? 's' : ''}</p>
+                  </div>
                 </div>
-                <div className="text-center p-2 rounded-xl bg-rose-50 border border-rose-100">
-                  <p className="text-[10px] uppercase text-rose-500 font-semibold mb-1">Atrasos</p>
-                  <p className="text-sm font-bold text-rose-600">{formatCurrency(financialState.arrears)}</p>
-                </div>
-                <div className="text-center p-2 rounded-xl bg-emerald-50 border border-emerald-100">
-                  <p className="text-[10px] uppercase text-emerald-600 font-semibold mb-1">Adelantos</p>
-                  <p className="text-sm font-bold text-emerald-600">{financialState.advances} día{financialState.advances !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
+
+                {/* Partial installment alert */}
+                {financialState.todayIsPartial && (
+                  <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-[10px] uppercase font-bold text-amber-700 mb-2">⚠ Cuota de hoy — Pago parcial</p>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-600">Ya entregó</span>
+                      <span className="font-bold text-emerald-700">{formatCurrency(financialState.todayPaidAmount)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm mt-1">
+                      <span className="text-slate-600">Le falta</span>
+                      <span className="font-bold text-rose-600">{formatCurrency(financialState.todayPartialBalance)}</span>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
+
+            {/* Total collected from client */}
+            <div className="flex justify-between items-center py-2.5 px-3 rounded-xl bg-slate-50 border border-slate-100 mb-3">
+              <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Total pagado por el cliente</span>
+              <span className="font-bold text-slate-800 text-sm">{formatCurrency(financialState.totalPaid)}</span>
+            </div>
 
             <button
               onClick={() => setIsPaymentModalOpen(true)}
