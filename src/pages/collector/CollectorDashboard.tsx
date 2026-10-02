@@ -78,10 +78,9 @@ export function CollectorDashboard() {
   }, [allLoans, clients, lotteryDraw]);
 
   const stats = useMemo(() => {
-    let expected = 0;
-    let expectedTodayOnly = 0;
-    let expectedArrears = 0;
-    let arrearsTotal = 0;
+    let targetTodayOnly = 0;
+    let currentTodayOnly = 0;
+    let currentArrears = 0;
     let arrearsClients = 0;
     let visitedCount = 0;
     let newCount = 0;
@@ -102,19 +101,38 @@ export function CollectorDashboard() {
         i.scheduled_date < today && ['PENDIENTE', 'PARCIAL', 'ATRASADA'].includes(i.status)
       );
 
-      // Si la cuota de hoy ya fue adelantada (balance=0), no suma al esperado.
-      // Usamos el balance real de la cuota en vez del daily_installment fijo.
-      // IMPORTANTE: Si no hay cuota para hoy y el préstamo ya pasó su end_date,
-      // no sumamos nada (evita montos fantasma de préstamos vencidos sin sincronizar).
       const loanEnded = loan.end_date && loan.end_date < today;
-      const todayBalance = loan.start_date > today
-        ? 0
-        : (todayInst ? Number(todayInst.balance || 0) : (loanEnded ? 0 : Number(loan.daily_installment || 0)));
-      const todayArrears = arrearsInsts.reduce((s, i) => s + Number(i.balance || 0), 0);
+      
+      // 1. Target today (doesn't discount when paid today)
+      let loanTargetToday = 0;
+      if (loan.start_date > today || loanEnded) {
+        loanTargetToday = 0;
+      } else if (todayInst) {
+        if (todayInst.balance <= 0 && todayInst.paid_date && todayInst.paid_date < today) {
+          loanTargetToday = 0; // Prepaid before today
+        } else {
+          loanTargetToday = Number(todayInst.scheduled_amount || loan.daily_installment);
+        }
+      } else {
+        loanTargetToday = Number(loan.daily_installment || 0);
+      }
+      
+      // 2. Current pending for today (discounts when paid today)
+      let loanCurrentToday = 0;
+      if (loan.start_date > today || loanEnded) {
+        loanCurrentToday = 0;
+      } else if (todayInst) {
+        loanCurrentToday = Number(todayInst.balance || 0);
+      } else {
+        loanCurrentToday = Number(loan.daily_installment || 0);
+      }
 
-      expectedTodayOnly += todayBalance;
-      expectedArrears += todayArrears;
-      expected += todayBalance + todayArrears;
+      // 3. Current arrears
+      const loanCurrentArrears = arrearsInsts.reduce((s, i) => s + Number(i.balance || 0), 0);
+
+      targetTodayOnly += loanTargetToday;
+      currentTodayOnly += loanCurrentToday;
+      currentArrears += loanCurrentArrears;
 
       if (todayInst && todayInst.balance <= 0 && todayInst.paid_date && todayInst.paid_date < today) {
         prepaidTodayClients.push({
@@ -125,21 +143,28 @@ export function CollectorDashboard() {
         });
       }
 
-      if (todayArrears > 0) arrearsClients++;
-      arrearsTotal += todayArrears;
+      if (loanCurrentArrears > 0) arrearsClients++;
 
       const isTodayPaid = todayInst && todayInst.balance <= 0;
       const isFutureStart = loan.start_date > today;
 
       if (isFutureStart) {
         newCount++;
-      } else if (isTodayPaid && todayArrears === 0) {
+      } else if (isTodayPaid && loanCurrentArrears === 0) {
         visitedCount++;
       }
     }
 
     const serverPayments = allSettings.find(s => s.key === paymentsTodaySettingKey(today))?.value as any[] | undefined;
     const collected = sumTodayPayments(mergeTodayPayments(serverPayments, syncQueue, today)).collected;
+
+    // Derived values
+    const collectedTodayOnly = Math.max(0, targetTodayOnly - currentTodayOnly);
+    const collectedArrears = Math.max(0, collected - collectedTodayOnly);
+    
+    // For expected totals, we show target values that don't discount today
+    const targetArrears = currentArrears + collectedArrears;
+    const targetExpected = targetTodayOnly + targetArrears;
 
     const todayNewLoans = allLoans.filter(l => l.disbursement_date === today);
     const newLoansTodayClients = todayNewLoans.map(l => ({
@@ -151,16 +176,18 @@ export function CollectorDashboard() {
     const newLoansTodayAmount = newLoansTodayClients.reduce((s, c) => s + c.amount, 0);
 
     return {
-      expected,
-      expectedTodayOnly,
-      expectedArrears,
+      targetExpected,
+      targetTodayOnly,
+      targetArrears,
       collected,
-      pending: Math.max(expected - collected, 0),
+      collectedTodayOnly,
+      collectedArrears,
+      pending: Math.max(targetExpected - collected, 0),
       clientsTotal: clients.length,
       clientsVisited: visitedCount,
       clientsNew: newCount,
       clientsPending: clients.length - visitedCount - newCount,
-      arrearsAmount: arrearsTotal,
+      arrearsAmount: currentArrears, // For the generic "arrears" red box, they want the pending ones
       arrearsClients,
       prepaidTodayCount: prepaidTodayClients.length,
       prepaidTodayClients,
@@ -170,7 +197,7 @@ export function CollectorDashboard() {
     };
   }, [loans, allLoans, installments, clients, today, lotterySetting?.value, allSettings, syncQueue]);
 
-  const collectedPercent = stats.expected > 0 ? Math.round((stats.collected / stats.expected) * 100) : 0;
+  const collectedPercent = stats.targetExpected > 0 ? Math.round((stats.collected / stats.targetExpected) * 100) : 0;
   const pendingPercent = 100 - collectedPercent;
 
   const handleSync = async () => {
@@ -256,16 +283,16 @@ export function CollectorDashboard() {
             <p className="text-xs font-bold text-brand-100 uppercase tracking-wider">Cuotas del Día (Hoy)</p>
             <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold">Del día</span>
           </div>
-          <p className="text-3xl font-black tracking-tight mb-3">{formatCurrency(stats.expectedTodayOnly)}</p>
+          <p className="text-3xl font-black tracking-tight mb-3">{formatCurrency(stats.targetTodayOnly)}</p>
 
           <div className="pt-2 border-t border-white/20 text-xs space-y-1">
             <div className="flex justify-between text-brand-100">
               <span>+ Atrasos acumulados:</span>
-              <span className="font-bold text-amber-200">{formatCurrency(stats.expectedArrears)}</span>
+              <span className="font-bold text-amber-200">{formatCurrency(stats.targetArrears)}</span>
             </div>
             <div className="flex justify-between font-bold text-white pt-1 border-t border-white/10">
               <span>Total a recoger (Hoy + Atrasos):</span>
-              <span className="font-black">{formatCurrency(stats.expected)}</span>
+              <span className="font-black">{formatCurrency(stats.targetExpected)}</span>
             </div>
           </div>
         </div>
@@ -273,22 +300,38 @@ export function CollectorDashboard() {
 
       {/* Grid Cards */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-emerald-500 rounded-2xl p-4 text-white shadow-sm shadow-emerald-500/20">
-          <p className="text-emerald-50 text-xs font-medium">Cobrado (hoy)</p>
-          <p className="text-2xl font-bold mt-1 mb-2">{formatCurrency(stats.collected)}</p>
-          <div className="w-full bg-emerald-700/30 rounded-full h-1.5 mb-1">
-            <div className="bg-white h-1.5 rounded-full transition-all" style={{ width: `${collectedPercent}%` }}></div>
+        <div className="bg-emerald-500 rounded-2xl p-4 text-white shadow-sm shadow-emerald-500/20 flex flex-col justify-between">
+          <div>
+            <p className="text-emerald-50 text-[11px] font-medium uppercase tracking-wider">Cobrado (Hoy)</p>
+            <p className="text-2xl font-black mt-1 mb-1 leading-none">{formatCurrency(stats.collectedTodayOnly)}</p>
           </div>
-          <p className="text-[10px] text-emerald-100 text-right">{collectedPercent}%</p>
+          <div className="pt-2 border-t border-emerald-400/40 mt-3">
+            <div className="flex justify-between items-center text-[10px] text-emerald-100 mb-0.5">
+              <span>Atrasos (y otros):</span>
+              <span className="font-bold text-emerald-50">{formatCurrency(stats.collectedArrears)}</span>
+            </div>
+            <div className="flex justify-between items-center text-[11px] font-bold text-white">
+              <span>Total recaudado:</span>
+              <span>{formatCurrency(stats.collected)}</span>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-orange-400 rounded-2xl p-4 text-white shadow-sm shadow-orange-400/20">
-          <p className="text-orange-50 text-xs font-medium">Por cobrar (hoy)</p>
-          <p className="text-2xl font-bold mt-1 mb-2">{formatCurrency(stats.pending)}</p>
-          <div className="w-full bg-orange-600/30 rounded-full h-1.5 mb-1">
-            <div className="bg-white h-1.5 rounded-full transition-all" style={{ width: `${pendingPercent}%` }}></div>
+        <div className="bg-orange-400 rounded-2xl p-4 text-white shadow-sm shadow-orange-400/20 flex flex-col justify-between">
+          <div>
+            <p className="text-orange-50 text-[11px] font-medium uppercase tracking-wider">Por cobrar (Hoy)</p>
+            <p className="text-2xl font-black mt-1 mb-1 leading-none">{formatCurrency(stats.targetTodayOnly)}</p>
           </div>
-          <p className="text-[10px] text-orange-100 text-right">{pendingPercent}%</p>
+          <div className="pt-2 border-t border-orange-300/40 mt-3">
+            <div className="flex justify-between items-center text-[10px] text-orange-100 mb-0.5">
+              <span>Atrasos (Esperado):</span>
+              <span className="font-bold text-orange-50">{formatCurrency(stats.targetArrears)}</span>
+            </div>
+            <div className="flex justify-between items-center text-[11px] font-bold text-white">
+              <span>Total esperado:</span>
+              <span>{formatCurrency(stats.targetExpected)}</span>
+            </div>
+          </div>
         </div>
 
         <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col justify-between">
