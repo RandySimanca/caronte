@@ -9,6 +9,7 @@ import { AdminCreateLoanModal } from '@/components/admin/AdminCreateLoanModal';
 import { TransferVouchersModal } from '@/components/admin/TransferVouchersModal';
 import { EditPaymentModal } from '@/components/admin/EditPaymentModal';
 import { ExcelMigrationModal } from '@/components/admin/ExcelMigrationModal';
+import { NewLoansTodayModal } from '@/components/admin/NewLoansTodayModal';
 import toast from 'react-hot-toast';
 
 export function AdminDashboard() {
@@ -26,6 +27,7 @@ export function AdminDashboard() {
   const [isEditPaymentOpen, setIsEditPaymentOpen] = useState(false);
   const [isExcelMigrationOpen, setIsExcelMigrationOpen] = useState(false);
   const [isAdelantosOpen, setIsAdelantosOpen] = useState(false);
+  const [isNewLoansOpen, setIsNewLoansOpen] = useState(false);
 
   // Load route list only once
   useEffect(() => {
@@ -56,6 +58,7 @@ export function AdminDashboard() {
           esperado: 0,
           prepaidToday: { count: 0, clients: [] },
           adelantosHoy: { count: 0, total: 0, clientes: [] },
+          nuevosHoy: { count: 0, total: 0, clients: [] },
           alerts: [],
           cobradores: 0,
           rutas: 0
@@ -196,22 +199,24 @@ export function AdminDashboard() {
           <p className="text-xs text-slate-400">{routeSubtitle}</p>
         </button>
 
-        {/* Nuevos — clickable with only today filter */}
+        {/* Préstamos nuevos del día — suma desembolsada */}
         <button
-          onClick={() => setClientsModal({ open: true, onlyToday: true })}
+          onClick={() => setIsNewLoansOpen(true)}
           className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm text-left hover:shadow-md hover:border-blue-200 transition-all group"
         >
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2 text-slate-500 font-bold">
               <UserPlus className="w-5 h-5 text-blue-500" />
-              Nuevos (esta semana)
+              Préstamos nuevos (hoy)
             </div>
             <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 transition-colors" />
           </div>
-          <div className={`text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
-            {stats?.nuevos ?? '—'}
+          <div className={`text-3xl sm:text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+            {formatCurrency(stats?.nuevosHoy?.total ?? 0)}
           </div>
-          <p className="text-xs text-slate-400">{routeSubtitle}</p>
+          <p className="text-xs text-slate-400">
+            {stats?.nuevosHoy?.count ?? 0} préstamo{(stats?.nuevosHoy?.count ?? 0) !== 1 ? 's' : ''} · {routeSubtitle}
+          </p>
         </button>
 
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
@@ -518,6 +523,13 @@ export function AdminDashboard() {
         isOpen={isPrepaidModalOpen}
         onClose={() => setIsPrepaidModalOpen(false)}
         clients={stats?.prepaidToday?.clients || []}
+      />
+
+      <NewLoansTodayModal
+        isOpen={isNewLoansOpen}
+        onClose={() => setIsNewLoansOpen(false)}
+        clients={stats?.nuevosHoy?.clients || []}
+        onClientClick={() => {}}
       />
 
       {/* Modal Adelantos de Hoy */}

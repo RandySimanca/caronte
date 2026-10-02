@@ -14,9 +14,10 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   clients: NewLoanTodayClient[];
+  onClientClick?: (clientId: string) => void;
 }
 
-export function NewLoansTodayModal({ isOpen, onClose, clients }: Props) {
+export function NewLoansTodayModal({ isOpen, onClose, clients, onClientClick }: Props) {
   const navigate = useNavigate();
 
   if (!isOpen) return null;
@@ -24,6 +25,11 @@ export function NewLoansTodayModal({ isOpen, onClose, clients }: Props) {
   const totalDelivered = clients.reduce((s, c) => s + c.amount, 0);
 
   const openClient = (clientId: string) => {
+    if (onClientClick) {
+      onClose();
+      onClientClick(clientId);
+      return;
+    }
     onClose();
     navigate(`/client/${clientId}`);
   };

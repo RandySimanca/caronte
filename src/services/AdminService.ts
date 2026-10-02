@@ -315,6 +315,10 @@ export class AdminService {
     // 3. Prepare queries
     let clientsQuery = supabase.from('clients').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVO');
     let loansQuery = supabase.from('loans').select('*', { count: 'exact', head: true }).gte('start_date', startOfWeekStr);
+    let newLoansTodayQuery = supabase
+      .from('loans')
+      .select('id, client_id, amount_delivered, client:clients(full_name)')
+      .eq('disbursement_date', todayStr);
     // ── Adelantos de hoy (cuotas FUTURAS cobradas hoy en efectivo) ───────────
     // Son cuotas cuya scheduled_date > hoy, paid_date = hoy y NO son
     // is_prepaid del sistema (esas son domingos pre-pagados automáticamente).
@@ -386,6 +390,7 @@ export class AdminService {
     if (routeId && routeId !== 'all') {
       clientsQuery = clientsQuery.eq('route_id', routeId);
       loansQuery = loansQuery.eq('route_id', routeId);
+      newLoansTodayQuery = newLoansTodayQuery.eq('route_id', routeId);
       todayInstsQuery = (todayInstsQuery as any).eq('loan.route_id', routeId);
       arrearsQuery = (arrearsQuery as any).eq('loan.route_id', routeId);
       prepaidTodayQuery = (prepaidTodayQuery as any).eq('loan.route_id', routeId);
@@ -399,6 +404,7 @@ export class AdminService {
       usersRes,
       routesRes,
       loansRes,
+      newLoansTodayRes,
       todayInstsRes,
       arrearsRes,
       prepaidTodayRes,
@@ -409,6 +415,7 @@ export class AdminService {
       supabase.from('users').select('*', { count: 'exact', head: true }).eq('active', true).eq('role_id', cobradorRoleId),
       supabase.from('routes').select('*', { count: 'exact', head: true }).eq('active', true),
       loansQuery,
+      newLoansTodayQuery,
       todayInstsQuery,
       arrearsQuery,
       prepaidTodayQuery,
@@ -467,6 +474,14 @@ export class AdminService {
       cuotaDiaria: data.cuotaDiaria,
     }));
     const totalAdelantadoHoy = adelantosHoyData.reduce((s, a) => s + a.totalAdelantado, 0);
+
+    const newLoansTodayClients = (newLoansTodayRes.data || []).map((l: any) => ({
+      loanId: l.id,
+      clientId: l.client_id,
+      clientName: l.client?.full_name || 'Cliente',
+      amount: Number(l.amount_delivered || 0),
+    }));
+    const newLoansTodayAmount = newLoansTodayClients.reduce((s, c) => s + c.amount, 0);
     
     // Calcular recaudo en oficina (Admin)
     const recaudoOficina = alertsData
@@ -517,6 +532,11 @@ export class AdminService {
         count: adelantosHoyData.length,
         total: totalAdelantadoHoy,
         clientes: adelantosHoyData,
+      },
+      nuevosHoy: {
+        count: newLoansTodayClients.length,
+        total: newLoansTodayAmount,
+        clients: newLoansTodayClients,
       },
     };
   }
