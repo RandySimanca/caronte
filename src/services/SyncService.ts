@@ -191,11 +191,14 @@ export class SyncService {
               throw new Error('El servidor no confirmó el préstamo completo');
             }
 
-            // sync_new_loan_bundle no guarda la posición en la ruta: se aplica aquí
+            // route_order es cosmético: si falla NO debe dejar la op en "pendiente"
+            // (el préstamo ya quedó en el servidor y el admin lo ve).
             if (typeof client.route_order === 'number') {
               const { error: orderError } = await supabase.from('clients')
                 .update({ route_order: client.route_order } as any).eq('id', client.id);
-              if (orderError) throw orderError;
+              if (orderError) {
+                console.warn('[NEW_LOAN_BUNDLE] route_order no aplicado (no crítico):', orderError);
+              }
             }
 
             await db.clients.update(client.id, {
@@ -444,6 +447,37 @@ export class SyncService {
           await db.syncQueue.update(op.id!, { status: 'synced' });
         } catch (error: any) {
           console.error(`Failed to sync operation ${op.operation_id}:`, error);
+
+          // Si el préstamo YA está en el servidor (RPC ok pero falló un paso posterior,
+          // o reintento tras éxito parcial), limpiar la notificación del cobrador.
+          if (op.operation_type === 'NEW_LOAN_BUNDLE' || op.operation_type === 'LOAN') {
+            const loanId = op.operation_type === 'NEW_LOAN_BUNDLE'
+              ? op.payload?.loan?.id
+              : op.payload?.loanId;
+            const clientId = op.operation_type === 'NEW_LOAN_BUNDLE'
+              ? op.payload?.client?.id
+              : op.payload?.clientId;
+            if (loanId) {
+              try {
+                const { data: existingLoan } = await supabase
+                  .from('loans')
+                  .select('id')
+                  .eq('id', loanId)
+                  .maybeSingle();
+                if (existingLoan) {
+                  if (clientId) {
+                    await db.clients.update(clientId, { sync_status: 'synced' } as any);
+                  }
+                  await db.loans.update(loanId, { sync_status: 'synced' } as any);
+                  await db.syncQueue.update(op.id!, { status: 'synced', error_message: undefined });
+                  continue;
+                }
+              } catch (reconcileErr) {
+                console.warn('No se pudo reconciliar NEW_LOAN_BUNDLE ya aplicado:', reconcileErr);
+              }
+            }
+          }
+
           const newRetryCount = (op.retry_count || 0) + 1;
 
           // Antes, tras 5 fallos la operación se BORRABA (el préstamo nunca llegaba al servidor y
@@ -735,6 +769,26 @@ export class SyncService {
         if (settingsToKeep.length > 0) await db.settings.bulkPut(settingsToKeep);
       });
 
+      // Si un NEW_LOAN_BUNDLE/LOAN quedó "pending/failed" pero el préstamo ya bajó del
+      // servidor, limpiar la cola para que el dashboard del cobrador no muestre falso pendiente.
+      for (const op of pendingOps) {
+        try {
+          const isBundle = op.operation_type === 'NEW_LOAN_BUNDLE';
+          const isLoan = op.operation_type === 'LOAN';
+          if (!isBundle && !isLoan) continue;
+
+          const loanId = isBundle ? op.payload?.loan?.id : op.payload?.loanId;
+          const clientId = isBundle ? op.payload?.client?.id : op.payload?.clientId;
+          if (!loanId || !serverLoanIds.has(loanId)) continue;
+
+          if (clientId) await db.clients.update(clientId, { sync_status: 'synced' } as any);
+          await db.loans.update(loanId, { sync_status: 'synced' } as any);
+          await db.syncQueue.update(op.id!, { status: 'synced', error_message: undefined });
+        } catch (e) {
+          console.warn('[SyncService] No se pudo limpiar op de préstamo ya en servidor:', op.operation_id, e);
+        }
+      }
+
       // Saldar localmente cualquier ganador que aún figure ACTIVO (antes del pull completo)
       await applyLotteryDrawLocally(lotteryDraw);
 
@@ -743,6 +797,7 @@ export class SyncService {
     } finally {
       useSyncStore.getState().setSyncing(false);
       useSyncStore.getState().setLastSync(new Date());
+      this.updatePendingCount();
     }
   }
 
