@@ -1,4 +1,4 @@
-import { Bell, ChevronRight, RefreshCw, AlertCircle, WifiOff, CalendarCheck, Trophy } from 'lucide-react';
+import { Bell, ChevronRight, RefreshCw, AlertCircle, WifiOff, CalendarCheck, Trophy, Banknote } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { mergeTodayPayments, paymentsTodaySettingKey, sumTodayPayments } from '@/lib/dailyCollection';
 import { format } from 'date-fns';
@@ -10,6 +10,7 @@ import { SyncService } from '@/services/SyncService';
 import { useMemo, useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
+import { NewLoansTodayModal } from '@/components/admin/NewLoansTodayModal';
 import { applyLotteryDrawLocally, isLotteryWinnerLoan, parseLotteryLastDraw } from '@/lib/lottery';
 import { NavLink } from 'react-router-dom';
 
@@ -42,6 +43,7 @@ export function CollectorDashboard() {
   const routeName = routes.length > 0 ? routes[0].name : 'Cargando ruta...';
 
   const [isPrepaidModalOpen, setIsPrepaidModalOpen] = useState(false);
+  const [isNewLoansModalOpen, setIsNewLoansModalOpen] = useState(false);
 
   const lotteryDraw = parseLotteryLastDraw(lotterySetting?.value);
 
@@ -139,6 +141,15 @@ export function CollectorDashboard() {
     const serverPayments = allSettings.find(s => s.key === paymentsTodaySettingKey(today))?.value as any[] | undefined;
     const collected = sumTodayPayments(mergeTodayPayments(serverPayments, syncQueue, today)).collected;
 
+    const todayNewLoans = allLoans.filter(l => l.disbursement_date === today);
+    const newLoansTodayClients = todayNewLoans.map(l => ({
+      loanId: l.id,
+      clientId: l.client_id,
+      clientName: clients.find(c => c.id === l.client_id)?.full_name || 'Cliente',
+      amount: Number(l.amount_delivered || 0),
+    }));
+    const newLoansTodayAmount = newLoansTodayClients.reduce((s, c) => s + c.amount, 0);
+
     return {
       expected,
       expectedTodayOnly,
@@ -153,8 +164,11 @@ export function CollectorDashboard() {
       arrearsClients,
       prepaidTodayCount: prepaidTodayClients.length,
       prepaidTodayClients,
+      newLoansTodayCount: newLoansTodayClients.length,
+      newLoansTodayAmount,
+      newLoansTodayClients,
     };
-  }, [loans, installments, clients, today, lotterySetting?.value, allSettings, syncQueue]);
+  }, [loans, allLoans, installments, clients, today, lotterySetting?.value, allSettings, syncQueue]);
 
   const collectedPercent = stats.expected > 0 ? Math.round((stats.collected / stats.expected) * 100) : 0;
   const pendingPercent = 100 - collectedPercent;
@@ -291,21 +305,44 @@ export function CollectorDashboard() {
         </div>
       </div>
 
-      {/* Arrears card */}
-      {stats.arrearsAmount > 0 && (
-        <button className="w-full bg-rose-50 border border-rose-100 rounded-2xl p-4 flex items-center justify-between active:scale-[0.98] transition-transform">
-          <div className="flex items-start">
-            <div className="bg-rose-100 p-2 rounded-full mr-3 text-rose-500">
-              <AlertCircle className="w-5 h-5" />
-            </div>
-            <div className="text-left">
-              <p className="text-rose-600 text-xs font-semibold uppercase tracking-wider mb-0.5">Atrasos por recuperar</p>
-              <p className="text-xl font-bold text-rose-700">{formatCurrency(stats.arrearsAmount)}</p>
-              <p className="text-xs text-rose-500 mt-1">De {stats.arrearsClients} clientes</p>
-            </div>
-          </div>
-          <ChevronRight className="text-rose-300 w-5 h-5" />
-        </button>
+      {/* Arrears + New loans cards */}
+      {(stats.arrearsAmount > 0 || stats.newLoansTodayCount > 0) && (
+        <div className={`grid gap-3 ${stats.arrearsAmount > 0 && stats.newLoansTodayCount > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          {stats.arrearsAmount > 0 && (
+            <button className="w-full bg-rose-50 border border-rose-100 rounded-2xl p-4 flex items-center justify-between active:scale-[0.98] transition-transform">
+              <div className="flex items-start min-w-0">
+                <div className="bg-rose-100 p-2 rounded-full mr-3 text-rose-500 shrink-0">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div className="text-left min-w-0">
+                  <p className="text-rose-600 text-[10px] font-semibold uppercase tracking-wider mb-0.5 leading-tight">Atrasos por recuperar</p>
+                  <p className="text-lg font-bold text-rose-700 truncate">{formatCurrency(stats.arrearsAmount)}</p>
+                  <p className="text-xs text-rose-500 mt-1">{stats.arrearsClients} clientes</p>
+                </div>
+              </div>
+              <ChevronRight className="text-rose-300 w-5 h-5 shrink-0" />
+            </button>
+          )}
+
+          {stats.newLoansTodayCount > 0 && (
+            <button
+              onClick={() => setIsNewLoansModalOpen(true)}
+              className="w-full bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between active:scale-[0.98] transition-transform"
+            >
+              <div className="flex items-start min-w-0">
+                <div className="bg-emerald-100 p-2 rounded-full mr-3 text-emerald-600 shrink-0">
+                  <Banknote className="w-5 h-5" />
+                </div>
+                <div className="text-left min-w-0">
+                  <p className="text-emerald-600 text-[10px] font-semibold uppercase tracking-wider mb-0.5 leading-tight">Préstamos nuevos hoy</p>
+                  <p className="text-lg font-bold text-emerald-700 truncate">{formatCurrency(stats.newLoansTodayAmount)}</p>
+                  <p className="text-xs text-emerald-500 mt-1">{stats.newLoansTodayCount} préstamo{stats.newLoansTodayCount !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <ChevronRight className="text-emerald-300 w-5 h-5 shrink-0" />
+            </button>
+          )}
+        </div>
       )}
 
       {/* Cuotas adelantadas para hoy */}
@@ -381,6 +418,12 @@ export function CollectorDashboard() {
         isOpen={isPrepaidModalOpen}
         onClose={() => setIsPrepaidModalOpen(false)}
         clients={stats.prepaidTodayClients}
+      />
+
+      <NewLoansTodayModal
+        isOpen={isNewLoansModalOpen}
+        onClose={() => setIsNewLoansModalOpen(false)}
+        clients={stats.newLoansTodayClients}
       />
     </div>
   );
