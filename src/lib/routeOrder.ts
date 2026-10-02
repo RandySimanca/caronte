@@ -20,7 +20,11 @@ export function sortByRouteOrder<T extends RouteClientLike>(clients: T[]): T[] {
   );
 }
 
-/** Guarda cuál fue el último cliente cobrado hoy. Se llama dentro de la transacción del cobro. */
+/**
+ * Guarda "por dónde va la ruta hoy": el último cliente cobrado o, si después se creó un cliente nuevo,
+ * ese cliente nuevo (así varios préstamos seguidos quedan uno debajo del otro).
+ * Se llama dentro de la transacción del cobro y de la creación del préstamo.
+ */
 export async function markLastCollected(clientId: string, date: string): Promise<void> {
   await db.settings.put({ key: LAST_COLLECTED_KEY, value: { client_id: clientId, date } });
 }

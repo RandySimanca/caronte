@@ -11,7 +11,7 @@ import { useSyncStore } from '@/stores/syncStore';
 import { useAuthStore } from '@/stores/authStore';
 import { loanFinancials } from '@/lib/money';
 import { SyncService } from '@/services/SyncService';
-import { getLastCollectedToday, insertAfterLastCollected } from '@/lib/routeOrder';
+import { getLastCollectedToday, insertAfterLastCollected, markLastCollected } from '@/lib/routeOrder';
 
 export function NewLoanWizard() {
   const navigate = useNavigate();
@@ -228,6 +228,9 @@ export function NewLoanWizard() {
 
         // Save client locally
         await db.clients.add(clientData as any);
+
+        // El cliente nuevo pasa a ser "por donde va la ruta": el siguiente préstamo nuevo se inserta debajo de este
+        await markLastCollected(clientId, today);
 
         // Save loan locally
         await db.loans.add(loanData as any);
