@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 export function DailyClosingPage() {
   const navigate = useNavigate();
   const [baseAmount, setBaseAmount] = useState(0);
+  const [noBaseAmount, setNoBaseAmount] = useState(false);
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -107,8 +108,8 @@ export function DailyClosingPage() {
   const totalEntregar = baseAmount + collected - totalExpenses - viaticumAsignado - newLoansDelivered - totalTransfers - totalOfficePayments;
 
   const handleClose = async () => {
-    if (!baseAmount || baseAmount <= 0) {
-      toast.error('La base inicial no puede estar vacía o en cero. Es necesaria para calcular el total a entregar.');
+    if (!noBaseAmount && (!baseAmount || baseAmount <= 0)) {
+      toast.error('La base inicial no puede estar vacía o en cero. Si no recibiste base inicial, marca la opción correspondiente.');
       return;
     }
 
@@ -158,7 +159,8 @@ export function DailyClosingPage() {
                 inputMode="numeric"
                 value={formatNumberInput(baseAmount.toString())}
                 onChange={(e) => setBaseAmount(Number(parseNumberInput(e.target.value)) || 0)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-7 pr-3 py-2 text-right font-bold text-slate-800 focus:ring-2 focus:ring-brand-500 outline-none text-sm"
+                disabled={noBaseAmount}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-7 pr-3 py-2 text-right font-bold text-slate-800 focus:ring-2 focus:ring-brand-500 outline-none text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 placeholder="0"
               />
             </div>
@@ -166,6 +168,21 @@ export function DailyClosingPage() {
           <p className="text-xs text-slate-400 mt-2">
             Dinero que el jefe le entrego para salir a cobrar hoy.
           </p>
+          <div className="mt-3 flex items-start gap-2">
+            <input
+              type="checkbox"
+              id="noBaseAmount"
+              checked={noBaseAmount}
+              onChange={(e) => {
+                setNoBaseAmount(e.target.checked);
+                if (e.target.checked) setBaseAmount(0);
+              }}
+              className="mt-1 w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500 cursor-pointer"
+            />
+            <label htmlFor="noBaseAmount" className="text-sm text-slate-600 cursor-pointer select-none">
+              Hoy no recibí base inicial
+            </label>
+          </div>
         </div>
 
         {/* Resumen financiero */}
