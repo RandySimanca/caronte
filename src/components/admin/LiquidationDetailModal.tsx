@@ -138,45 +138,46 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
   if (!isOpen || !route) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-0">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4">
       <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
       
-      <div className="relative bg-white rounded-3xl shadow-xl w-full max-w-lg overflow-hidden transform transition-all">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-brand-100 text-brand-600 flex items-center justify-center">
-              <Calculator className="w-6 h-6" />
+      <div className="relative bg-white rounded-2xl sm:rounded-3xl shadow-xl w-full max-w-lg max-h-[min(92dvh,920px)] flex flex-col overflow-hidden transform transition-all">
+        <div className="shrink-0 px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+          <div className="flex items-center gap-3 min-w-0 pr-2">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-brand-100 text-brand-600 flex items-center justify-center shrink-0">
+              <Calculator className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <h3 className="text-xl font-black text-slate-800">Liquidación de Ruta</h3>
-              <p className="text-sm font-semibold text-slate-500">{route.ruta} • {route.cobrador}</p>
+            <div className="min-w-0">
+              <h3 className="text-lg sm:text-xl font-black text-slate-800 truncate">Liquidación de Ruta</h3>
+              <p className="text-xs sm:text-sm font-semibold text-slate-500 truncate">{route.ruta} • {route.cobrador}</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors"
+            aria-label="Cerrar"
+            className="shrink-0 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
 
-        <div className="p-6">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6">
           {isLoading ? (
             <div className="flex justify-center py-12">
               <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
             </div>
           ) : detail ? (
-            <div className="space-y-6">
+            <div className="space-y-5 sm:space-y-6">
               
               {/* Resumen Matemático */}
-              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 space-y-4">
+              <div className="bg-slate-50 rounded-2xl p-4 sm:p-5 border border-slate-200 space-y-3 sm:space-y-4">
                 
-                <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                  <div className="flex items-center gap-2 text-brand-600 font-bold">
-                    <HandCoins className="w-5 h-5" />
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                  <div className="flex items-center gap-2 text-brand-600 font-bold text-sm sm:text-base">
+                    <HandCoins className="w-5 h-5 shrink-0" />
                     (+) Base Inicial (Mañana)
                   </div>
-                  <div className="relative w-32">
+                  <div className="relative w-full sm:w-32">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">$</span>
                     <input 
                       type="text" 
@@ -189,49 +190,49 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center pt-2">
-                  <div className="flex items-center gap-2 text-emerald-600 font-bold">
-                    <TrendingUp className="w-5 h-5" />
-                    (+) Recaudo del día
+                <div className="flex justify-between items-center gap-3 pt-1">
+                  <div className="flex items-center gap-2 text-emerald-600 font-bold text-sm sm:text-base min-w-0">
+                    <TrendingUp className="w-5 h-5 shrink-0" />
+                    <span className="truncate">(+) Recaudo del día</span>
                   </div>
-                  <span className="font-black text-slate-800 text-lg">{formatCurrency(detail.totalCobrado)}</span>
+                  <span className="font-black text-slate-800 text-base sm:text-lg shrink-0">{formatCurrency(detail.totalCobrado)}</span>
                 </div>
 
-                <div className="flex justify-between items-center text-rose-600 border-t border-slate-100 pt-3">
-                  <div className="flex items-center gap-2 font-bold">
-                    <TrendingDown className="w-5 h-5" />
-                    (-) Gastos reportados
+                <div className="flex justify-between items-center gap-3 text-rose-600 border-t border-slate-100 pt-3">
+                  <div className="flex items-center gap-2 font-bold text-sm sm:text-base min-w-0">
+                    <TrendingDown className="w-5 h-5 shrink-0" />
+                    <span className="truncate">(-) Gastos reportados</span>
                   </div>
-                  <span className="font-bold">-{formatCurrency(detail.totalGastos)}</span>
+                  <span className="font-bold shrink-0">-{formatCurrency(detail.totalGastos)}</span>
                 </div>
 
-                <div className="flex justify-between items-center text-rose-600">
-                  <div className="flex items-center gap-2 font-bold">
-                    <TrendingDown className="w-5 h-5 opacity-0" />
-                    (-) Viático del día
+                <div className="flex justify-between items-center gap-3 text-rose-600">
+                  <div className="flex items-center gap-2 font-bold text-sm sm:text-base min-w-0">
+                    <TrendingDown className="w-5 h-5 opacity-0 shrink-0" />
+                    <span className="truncate">(-) Viático del día</span>
                   </div>
-                  <span className="font-bold">-{formatCurrency(detail.viaticoDia)}</span>
+                  <span className="font-bold shrink-0">-{formatCurrency(detail.viaticoDia)}</span>
                 </div>
 
-                <div className="flex justify-between items-center text-indigo-600">
-                  <div className="flex items-center gap-2 font-bold">
-                    <TrendingDown className="w-5 h-5 opacity-0" />
-                    (-) Cobros por transferencia
+                <div className="flex justify-between items-center gap-3 text-indigo-600">
+                  <div className="flex items-center gap-2 font-bold text-sm sm:text-base min-w-0">
+                    <TrendingDown className="w-5 h-5 opacity-0 shrink-0" />
+                    <span className="truncate">(-) Cobros por transferencia</span>
                   </div>
-                  <span className="font-bold">-{formatCurrency(detail.totalTransferencias || 0)}</span>
+                  <span className="font-bold shrink-0">-{formatCurrency(detail.totalTransferencias || 0)}</span>
                 </div>
 
-                <div className="flex justify-between items-center text-blue-600">
-                  <div className="flex items-center gap-2 font-bold">
-                    <HandCoins className="w-5 h-5 opacity-0" />
-                    (-) Préstamos Nuevos ({detail.prestamosNuevos})
+                <div className="flex justify-between items-center gap-3 text-blue-600">
+                  <div className="flex items-center gap-2 font-bold text-sm sm:text-base min-w-0">
+                    <HandCoins className="w-5 h-5 opacity-0 shrink-0" />
+                    <span className="truncate">(-) Préstamos Nuevos ({detail.prestamosNuevos})</span>
                   </div>
-                  <span className="font-bold">-{formatCurrency(detail.totalPrestado)}</span>
+                  <span className="font-bold shrink-0">-{formatCurrency(detail.totalPrestado)}</span>
                 </div>
 
-                <div className="flex justify-between items-center border-t-2 border-slate-200 pt-4 mt-2">
-                  <span className="text-lg font-black text-slate-800">TOTAL A ENTREGAR</span>
-                  <span className={`text-2xl font-black ${detail.totalEntregar + baseAmount < 0 ? 'text-rose-600' : 'text-brand-600'}`}>
+                <div className="flex justify-between items-center gap-3 border-t-2 border-slate-200 pt-4 mt-2">
+                  <span className="text-base sm:text-lg font-black text-slate-800">TOTAL A ENTREGAR</span>
+                  <span className={`text-xl sm:text-2xl font-black shrink-0 ${detail.totalEntregar + baseAmount < 0 ? 'text-rose-600' : 'text-brand-600'}`}>
                     {formatCurrency(detail.totalEntregar + baseAmount)}
                   </span>
                 </div>
@@ -240,7 +241,7 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
               {/* Costos de Personal — informativo */}
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
                 <div className="flex items-center gap-2 text-amber-700 font-bold text-sm">
-                  <UserCheck className="w-4 h-4" />
+                  <UserCheck className="w-4 h-4 shrink-0" />
                   Costos de Personal (referencia)
                   <div className="ml-auto group relative">
                     <Info className="w-4 h-4 text-amber-400 cursor-help" />
@@ -252,12 +253,12 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-white rounded-xl p-3 border border-amber-100">
                     <p className="text-xs text-slate-500 mb-1">Viático del día</p>
-                    <p className="text-base font-black text-slate-800">{formatCurrency(detail.viaticoDia)}</p>
+                    <p className="text-sm sm:text-base font-black text-slate-800">{formatCurrency(detail.viaticoDia)}</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">Descargado del recaudo</p>
                   </div>
                   <div className="bg-white rounded-xl p-3 border border-amber-100">
                     <p className="text-xs text-slate-500 mb-1">Salario mensual</p>
-                    <p className="text-base font-black text-amber-600">{formatCurrency(detail.salarioCobrador || 0)}</p>
+                    <p className="text-sm sm:text-base font-black text-amber-600">{formatCurrency(detail.salarioCobrador || 0)}</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">Pago por fuera</p>
                   </div>
                 </div>
@@ -271,8 +272,8 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
 
               {route.estado === 'Liquidado' ? (
                 <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded-xl flex flex-col items-center justify-center font-bold space-y-3">
-                  <div className="flex items-center">
-                    <CheckCircle className="w-5 h-5 mr-2" />
+                  <div className="flex items-center text-center text-sm sm:text-base">
+                    <CheckCircle className="w-5 h-5 mr-2 shrink-0" />
                     Esta ruta ya fue liquidada hoy.
                   </div>
                   <button
@@ -299,7 +300,7 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                 </button>
               )}
 
-              <div className="flex gap-4 mt-4">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pb-1">
                 <button onClick={exportPdf} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-sm">
                   <FileDown className="w-4 h-4" />
                   Imprimir (PDF)
