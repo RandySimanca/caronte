@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { User, Role } from '@/lib/database.types';
+import { dayRangeIso } from '@/lib/dailyCollection';
 
 export interface UserWithRole extends User {
   roles: {
@@ -296,9 +297,9 @@ export class AdminService {
   static async getDashboardStats(routeId?: string) {
     // 1. Start of day and week for filters
     const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     // Today as YYYY-MM-DD (local date) — used to exclude loans whose first installment starts tomorrow
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const { start: startOfDay, end: endOfDay } = dayRangeIso(todayStr);
 
     const dayOfWeek = now.getDay();
     const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Monday as first day
@@ -314,16 +315,6 @@ export class AdminService {
     // 3. Prepare queries
     let clientsQuery = supabase.from('clients').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVO');
     let loansQuery = supabase.from('loans').select('*', { count: 'exact', head: true }).gte('start_date', startOfWeekStr);
-    // ── Recaudo (hoy) ────────────────────────────────────────────────────────
-    // Calculado desde loan_installments (paid_date = hoy) para coincidir
-    // exactamente con la lógica del cobrador: cuota del día + atrasos pagados
-    // hoy + adelantos reales de cuotas futuras en efectivo.
-    let recaudoInstQuery = supabase
-      .from('loan_installments')
-      .select('loan_id, paid_amount, scheduled_date, is_prepaid, loan:loans!inner(route_id, daily_installment, client:clients(full_name))')
-      .eq('paid_date', todayStr)
-      .gt('paid_amount', 0);
-
     // ── Adelantos de hoy (cuotas FUTURAS cobradas hoy en efectivo) ───────────
     // Son cuotas cuya scheduled_date > hoy, paid_date = hoy y NO son
     // is_prepaid del sistema (esas son domingos pre-pagados automáticamente).
@@ -388,13 +379,13 @@ export class AdminService {
       loan:loans!inner(route_id, client:clients(full_name))
     `)
     .gte('collected_at', startOfDay)
+    .lte('collected_at', endOfDay)
     .order('collected_at', { ascending: false });
     
     // Apply route filter if provided
     if (routeId && routeId !== 'all') {
       clientsQuery = clientsQuery.eq('route_id', routeId);
       loansQuery = loansQuery.eq('route_id', routeId);
-      recaudoInstQuery = (recaudoInstQuery as any).eq('loan.route_id', routeId);
       todayInstsQuery = (todayInstsQuery as any).eq('loan.route_id', routeId);
       arrearsQuery = (arrearsQuery as any).eq('loan.route_id', routeId);
       prepaidTodayQuery = (prepaidTodayQuery as any).eq('loan.route_id', routeId);
@@ -408,7 +399,6 @@ export class AdminService {
       usersRes,
       routesRes,
       loansRes,
-      recaudoInstRes,
       todayInstsRes,
       arrearsRes,
       prepaidTodayRes,
@@ -419,7 +409,6 @@ export class AdminService {
       supabase.from('users').select('*', { count: 'exact', head: true }).eq('active', true).eq('role_id', cobradorRoleId),
       supabase.from('routes').select('*', { count: 'exact', head: true }).eq('active', true),
       loansQuery,
-      recaudoInstQuery,
       todayInstsQuery,
       arrearsQuery,
       prepaidTodayQuery,
@@ -427,15 +416,11 @@ export class AdminService {
       adelantosHoyQuery
     ]);
 
-    // Recaudo: suma paid_amount de cuotas con paid_date=hoy.
-    // Se excluyen SOLO los is_prepaid del sistema (domingos pre-cargados al crear préstamo)
-    // cuando su scheduled_date es futura. Los adelantos reales en efectivo (is_prepaid=false,
-    // scheduled_date > hoy) SÍ se incluyen porque el cobrador ya tiene ese dinero en mano.
-    const recaudoHoy = (recaudoInstRes.data || []).reduce((sum: number, i: any) => {
-      const isFuturePrepaidSystem = i.scheduled_date > todayStr && i.is_prepaid === true;
-      if (isFuturePrepaidSystem) return sum;
-      return sum + Number(i.paid_amount);
-    }, 0);
+    const alertsData = alertsRes.data || [];
+
+    // Recaudo del día = suma de cobros reales (payments), no paid_amount de cuotas.
+    // paid_amount incluye abonos PARCIALES de días anteriores cuando la cuota se completa hoy.
+    const recaudoHoy = alertsData.reduce((sum: number, p: any) => sum + Number(p.total_amount || 0), 0);
 
     // Esperado: suma del balance de cuotas de hoy con saldo > 0 (descuenta adelantadas)
     // + saldo de atrasos vencidos pendientes
@@ -450,8 +435,6 @@ export class AdminService {
       amount: Number((i.loan as any)?.daily_installment || i.scheduled_amount),
       paidDate: i.paid_date as string,
     }));
-
-    const alertsData = alertsRes.data || [];
 
     // ── Adelantos de hoy: cuotas FUTURAS cobradas hoy en efectivo (no is_prepaid del sistema) ──
     // Se agrupan por loan_id para mostrar por cliente: monto total adelantado y días cubiertos.
@@ -633,11 +616,7 @@ export class AdminService {
    * Obtiene el detalle de ingresos, gastos y préstamos para liquidar una ruta
    */
   static async getRouteLiquidationDetail(routeId: string, dateStr: string) {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const startLocal = new Date(year, month - 1, day, 0, 0, 0);
-    const endLocal = new Date(year, month - 1, day, 23, 59, 59, 999);
-    const startOfDay = startLocal.toISOString();
-    const endOfDay = endLocal.toISOString();
+    const { start: startOfDay, end: endOfDay } = dayRangeIso(dateStr);
 
     // Obtener los IDs de administradores para excluirlos de la liquidación del cobrador
     const { data: roleData } = await supabase.from('roles').select('id').eq('name', 'ADMINISTRADOR').single();
@@ -1666,7 +1645,7 @@ export class AdminService {
         paid_amount: newPaidAmount,
         balance: newBalance,
         status: newStatus,
-        paid_date: todayStr
+        paid_date: newBalance === 0 ? todayStr : inst.paid_date
       });
 
       let allocationType = 'DIA_ACTUAL';
@@ -1784,8 +1763,7 @@ export class AdminService {
    * Obtiene los pagos por transferencia del día para el administrador.
    */
   static async getTransferPayments(date: string, routeId?: string) {
-    const startOfDay = `${date}T00:00:00.000Z`;
-    const endOfDay = `${date}T23:59:59.999Z`;
+    const { start: startOfDay, end: endOfDay } = dayRangeIso(date);
 
     let query = supabase
       .from('payments')
@@ -1820,8 +1798,7 @@ export class AdminService {
    * Usado por el admin para buscar un cobro a corregir.
    */
   static async getPaymentsByDate(date: string, clientSearch?: string) {
-    const startOfDay = new Date(`${date}T00:00:00-05:00`).toISOString();
-    const endOfDay   = new Date(`${date}T23:59:59.999-05:00`).toISOString();
+    const { start: startOfDay, end: endOfDay } = dayRangeIso(date);
 
     const { data, error } = await supabase
       .from('payments')
@@ -2012,10 +1989,15 @@ export class AdminService {
         status = 'PARCIAL';
       }
 
-      await supabase
-        .from('loan_installments')
-        .update({ paid_amount: newPaid, balance: newBalance, status, paid_date: todayStr })
-        .eq('id', inst.id);
+        await supabase
+          .from('loan_installments')
+          .update({
+            paid_amount: newPaid,
+            balance: newBalance,
+            status,
+            paid_date: newBalance === 0 ? todayStr : inst.paid_date,
+          })
+          .eq('id', inst.id);
 
       let allocationType = 'DIA_ACTUAL';
       if (inst.scheduled_date < todayStr) {

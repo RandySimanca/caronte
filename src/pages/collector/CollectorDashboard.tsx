@@ -1,5 +1,6 @@
 import { Bell, ChevronRight, RefreshCw, AlertCircle, WifiOff, CalendarCheck, Trophy } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { mergeTodayPayments, paymentsTodaySettingKey, sumTodayPayments } from '@/lib/dailyCollection';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -34,6 +35,8 @@ export function CollectorDashboard() {
   const allLoans = useLiveQuery(() => db.loans.toArray()) || [];
   const installments = useLiveQuery(() => db.installments.toArray()) || [];
   const pendingOps = useLiveQuery(() => db.syncQueue.where('status').anyOf(['pending', 'failed']).count()) || 0;
+  const syncQueue = useLiveQuery(() => db.syncQueue.toArray(), []) || [];
+  const allSettings = useLiveQuery(() => db.settings.toArray(), []) || [];
   const lotterySetting = useLiveQuery(() => db.settings.get('lottery_last_draw'));
 
   const routeName = routes.length > 0 ? routes[0].name : 'Cargando ruta...';
@@ -76,7 +79,6 @@ export function CollectorDashboard() {
     let expected = 0;
     let expectedTodayOnly = 0;
     let expectedArrears = 0;
-    let collected = 0;
     let arrearsTotal = 0;
     let arrearsClients = 0;
     let visitedCount = 0;
@@ -112,7 +114,6 @@ export function CollectorDashboard() {
       expectedArrears += todayArrears;
       expected += todayBalance + todayArrears;
 
-      // Detectar cuotas adelantadas para hoy: pagadas ANTES de hoy
       if (todayInst && todayInst.balance <= 0 && todayInst.paid_date && todayInst.paid_date < today) {
         prepaidTodayClients.push({
           loanId: loan.id,
@@ -121,18 +122,6 @@ export function CollectorDashboard() {
           paidDate: todayInst.paid_date,
         });
       }
-
-      // Cobrado hoy:
-      // Cualquier cuota (del día, atraso o adelanto futuro) cuyo paid_date sea hoy
-      // y no sea un domingo pre-pagado automáticamente al crear el préstamo.
-      // Esto es equivalente a la lógica del admin (loan_installments WHERE paid_date = hoy).
-      // Una cuota adelantada en días anteriores tiene paid_date != hoy → NO se cuenta.
-      const collectedToday = loanInsts
-        .filter(i =>
-          i.paid_date === today && i.paid_amount > 0 && !i.is_prepaid
-        )
-        .reduce((s, i) => s + Number(i.paid_amount || 0), 0);
-      collected += collectedToday;
 
       if (todayArrears > 0) arrearsClients++;
       arrearsTotal += todayArrears;
@@ -146,6 +135,9 @@ export function CollectorDashboard() {
         visitedCount++;
       }
     }
+
+    const serverPayments = allSettings.find(s => s.key === paymentsTodaySettingKey(today))?.value as any[] | undefined;
+    const collected = sumTodayPayments(mergeTodayPayments(serverPayments, syncQueue, today)).collected;
 
     return {
       expected,
@@ -162,7 +154,7 @@ export function CollectorDashboard() {
       prepaidTodayCount: prepaidTodayClients.length,
       prepaidTodayClients,
     };
-  }, [loans, installments, clients, today, lotterySetting?.value]);
+  }, [loans, installments, clients, today, lotterySetting?.value, allSettings, syncQueue]);
 
   const collectedPercent = stats.expected > 0 ? Math.round((stats.collected / stats.expected) * 100) : 0;
   const pendingPercent = 100 - collectedPercent;

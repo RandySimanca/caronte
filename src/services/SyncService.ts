@@ -8,6 +8,7 @@ import {
   parseLotteryLastDraw,
 } from '@/lib/lottery';
 import { LAST_COLLECTED_KEY } from '@/lib/routeOrder';
+import { dayRangeIso, paymentsTodaySettingKey } from '@/lib/dailyCollection';
 
 /** Usuario de la sesión local (no hace request de red, funciona con conexión inestable). */
 async function getCurrentUser() {
@@ -569,26 +570,29 @@ export class SyncService {
       }
 
       const today = format(new Date(), 'yyyy-MM-dd');
-      const todayStart = today + 'T00:00:00.000Z';
-      const todayEnd = today + 'T23:59:59.999Z';
+      const { start: todayStart, end: todayEnd } = dayRangeIso(today);
 
-      // 7. Fetch Admin Office Payments for these routes for today
-      // This is crucial so the collector isn't charged for money the admin collected in the office.
-      const { data: adminPayments } = await supabase
+      const { data: todayPayments } = await supabase
         .from('payments')
-        .select('total_amount, is_transfer')
+        .select('operation_id, total_amount, is_transfer, device_id, collected_at')
         .in('route_id', routeIds)
-        .eq('device_id', 'admin_panel')
         .gte('collected_at', todayStart)
         .lte('collected_at', todayEnd);
 
+      const paymentsToday = (todayPayments || []).map((p: any) => ({
+        operation_id: p.operation_id,
+        total_amount: Number(p.total_amount || 0),
+        is_transfer: !!p.is_transfer,
+        device_id: p.device_id || null,
+      }));
+      localSettings.push({ key: paymentsTodaySettingKey(today), value: paymentsToday });
+
       let officeCash = 0;
       let officeTransfers = 0;
-      if (adminPayments) {
-        for (const p of adminPayments) {
-          if (p.is_transfer) officeTransfers += p.total_amount;
-          else officeCash += p.total_amount;
-        }
+      for (const p of paymentsToday) {
+        if (p.device_id !== 'admin_panel') continue;
+        if (p.is_transfer) officeTransfers += p.total_amount;
+        else officeCash += p.total_amount;
       }
       localSettings.push({ key: `office_cash_${today}`, value: officeCash });
       localSettings.push({ key: `office_transfers_${today}`, value: officeTransfers });

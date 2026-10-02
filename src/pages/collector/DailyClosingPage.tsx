@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { ArrowLeft, CheckCircle, HandCoins, TrendingDown, TrendingUp, Smartphone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
+import { mergeTodayPayments, paymentsTodaySettingKey, sumTodayPayments } from '@/lib/dailyCollection';
 import { motion } from 'framer-motion';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
@@ -66,9 +67,8 @@ export function DailyClosingPage() {
   
   const totalOfficePayments = officeCash + officeTransfers;
 
-  const { expected, collected, newLoansDelivered, newLoansCount } = useMemo(() => {
+  const { expected, collected, newLoansDelivered, newLoansCount, totalTransfersFromPayments } = useMemo(() => {
     let exp = 0;
-    let col = 0;
 
     for (const loan of loans) {
       const loanInsts = installments.filter(i => i.loan_id === loan.id);
@@ -77,35 +77,38 @@ export function DailyClosingPage() {
       );
       const todayInst = loanInsts.find(i => i.scheduled_date === today);
       const loanEnded = loan.end_date && loan.end_date < today;
-      // Si no hay cuota para hoy y el préstamo ya terminó, no sumar nada (evita montos fantasma).
       const todayQuota = loan.start_date > today
         ? 0
         : (todayInst ? Number(todayInst.balance || 0) : (loanEnded ? 0 : Number(loan.daily_installment || 0)));
       const todayArrears = arrearsInsts.reduce((s, i) => s + Number(i.balance || 0), 0);
       exp += todayQuota + todayArrears;
-
-      // Cobrado hoy: cualquier cuota (normal, atrasada o adelantada) cuyo
-      // paid_date sea hoy y no sea un domingo pre-pagado automáticamente.
-      // Esto incluye días atrasados pagados hoy (scheduled_date < today).
-      const collectedToday = loanInsts
-        .filter(i => i.paid_date === today && i.paid_amount > 0 && !i.is_prepaid)
-        .reduce((s, i) => s + Number(i.paid_amount || 0), 0);
-      col += collectedToday;
     }
 
-    // Prestamos nuevos desembolsados hoy
     const todayLoans = allLoans.filter(l => l.disbursement_date === today);
     const newLoansDelivered = todayLoans.reduce((s, l) => s + (l.amount_delivered || 0), 0);
     const newLoansCount = todayLoans.length;
 
-    return { expected: exp, collected: col, newLoansDelivered, newLoansCount };
-  }, [loans, allLoans, installments, today]);
+    const serverPayments = allSettings.find(s => s.key === paymentsTodaySettingKey(today))?.value as any[] | undefined;
+    const merged = mergeTodayPayments(serverPayments, syncQueue, today);
+    const sums = sumTodayPayments(merged);
+
+    return {
+      expected: exp,
+      collected: sums.collected,
+      newLoansDelivered,
+      newLoansCount,
+      totalTransfersFromPayments: sums.transfers,
+    };
+  }, [loans, allLoans, installments, today, allSettings, syncQueue]);
+
+  const transfersForClosing = totalTransfersFromPayments > 0 ? totalTransfersFromPayments : totalTransfers;
 
   const pendingSync = syncQueue.filter(op => op.status === 'pending' || op.status === 'failed').length;
 
   // Formula identica al admin:
-  // Total a entregar = Base inicial + Total cobrado - Gastos - Viaticos - Prestamos nuevos - Transferencias cobrador - Pagos Oficina
-  const totalEntregar = baseAmount + collected - totalExpenses - viaticumAsignado - newLoansDelivered - totalTransfers - totalOfficePayments;
+  // Total a entregar = Base inicial + Total cobrado - Gastos - Viaticos - Prestamos nuevos - Transferencias
+  // Cobros de oficina no entran al recaudo del cobrador (el admin ya los tiene).
+  const totalEntregar = baseAmount + collected - totalExpenses - viaticumAsignado - newLoansDelivered - transfersForClosing;
 
   const handleClose = async () => {
     if (!noBaseAmount && (!baseAmount || baseAmount <= 0)) {
@@ -249,7 +252,7 @@ export function DailyClosingPage() {
                 <Smartphone className="w-4 h-4" />
                 (-) Tus cobros por transferencia
               </div>
-              <span className="font-semibold text-indigo-500">-{formatCurrency(totalTransfers)}</span>
+              <span className="font-semibold text-indigo-500">-{formatCurrency(transfersForClosing)}</span>
             </div>
 
             {/* Cobros en oficina */}
