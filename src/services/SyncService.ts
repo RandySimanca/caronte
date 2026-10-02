@@ -109,6 +109,14 @@ export class SyncService {
       // en 'syncing' para siempre. Aquí ya sabemos que no hay otro push corriendo: se reintentan.
       await db.syncQueue.where('status').equals('syncing').modify({ status: 'pending' });
 
+      // UPDATE_CLIENT_ORDERS fallidas no bloquean la app: el route_order en el servidor
+      // es cosmético y se corregirá en el próximo pull completo. Se eliminan para que el
+      // contador de "operaciones pendientes" no muestre false-positives al cobrador.
+      await db.syncQueue
+        .where('status').equals('failed')
+        .and(op => (op.operation_type as string) === 'UPDATE_CLIENT_ORDERS')
+        .delete();
+
       const pendingOps = await db.syncQueue
         .where('status')
         .anyOf(['pending', 'failed'])
