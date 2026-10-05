@@ -511,6 +511,16 @@ export class AdminService {
         is_transfer: !!alert.is_transfer,
       }));
 
+    const pagosHoy = alertsData.map((p: any) => ({
+      loanId: p.loan_id,
+      clientName: p.loan?.client?.full_name || 'Cliente desconocido',
+      amount: Number(p.total_amount),
+      collectedAt: p.collected_at,
+      isTransfer: !!p.is_transfer,
+      isOffice: p.collector?.role_id === adminRoleId,
+      collectorName: p.collector?.full_name || undefined,
+    }));
+
     return {
       clientes: clientsRes.count || 0,
       nuevos: loansRes.count || 0,
@@ -524,6 +534,7 @@ export class AdminService {
       cobradores: usersRes.count || 0,
       rutas: routesRes.count || 0,
       alerts: enrichedAlerts,
+      pagosHoy,
       prepaidToday: {
         count: prepaidTodayData.length,
         clients: prepaidTodayData,
@@ -1301,6 +1312,83 @@ export class AdminService {
     });
 
     return { viaticumRate, salaryMonthly };
+  }
+
+  /**
+   * Obtiene el monto total programado y el saldo pendiente de cobro
+   * para las cuotas cuya fecha cae dentro del rango dado.
+   * Usado para la tarjeta "Dinero por Recoger" en reportes.
+   */
+  static async getPendingCollectionAmount(
+    startDate: string,
+    endDate: string,
+    routeId?: string
+  ): Promise<{ totalScheduled: number; totalPending: number; totalPaid: number; installmentCount: number; pendingCount: number }> {
+    // Obtener rutas activas (sin date_end)
+    const { data: activeAssignments } = await supabase
+      .from('route_assignments')
+      .select('route_id')
+      .is('date_end', null);
+    const activeRouteIds = activeAssignments?.map((a: any) => a.route_id) || [];
+
+    // Construir query de préstamos activos filtrados por ruta
+    let loansQuery = supabase
+      .from('loans')
+      .select('id')
+      .eq('status', 'ACTIVO');
+
+    if (routeId && routeId !== 'all') {
+      if (!activeRouteIds.includes(routeId)) {
+        return { totalScheduled: 0, totalPending: 0, totalPaid: 0, installmentCount: 0, pendingCount: 0 };
+      }
+      loansQuery = loansQuery.eq('route_id', routeId);
+    } else {
+      if (activeRouteIds.length > 0) {
+        loansQuery = loansQuery.in('route_id', activeRouteIds);
+      } else {
+        return { totalScheduled: 0, totalPending: 0, totalPaid: 0, installmentCount: 0, pendingCount: 0 };
+      }
+    }
+
+    const { data: loans, error: loansError } = await loansQuery;
+    if (loansError) throw loansError;
+    if (!loans || loans.length === 0) {
+      return { totalScheduled: 0, totalPending: 0, totalPaid: 0, installmentCount: 0, pendingCount: 0 };
+    }
+
+    const loanIds = loans.map((l: any) => l.id);
+    const chunkSize = 100;
+    let totalScheduled = 0;
+    let totalPending = 0;
+    let totalPaid = 0;
+    let installmentCount = 0;
+    let pendingCount = 0;
+
+    for (let i = 0; i < loanIds.length; i += chunkSize) {
+      const chunk = loanIds.slice(i, i + chunkSize);
+      const { data: installments, error } = await supabase
+        .from('loan_installments')
+        .select('scheduled_amount, balance, paid_amount, status')
+        .in('loan_id', chunk)
+        .gte('scheduled_date', startDate)
+        .lte('scheduled_date', endDate);
+
+      if (error) throw error;
+      if (!installments) continue;
+
+      installments.forEach((inst: any) => {
+        const scheduled = Number(inst.scheduled_amount);
+        const balance = Number(inst.balance);
+        const paid = Number(inst.paid_amount);
+        totalScheduled += scheduled;
+        totalPending += balance;
+        totalPaid += paid;
+        installmentCount++;
+        if (balance > 0) pendingCount++;
+      });
+    }
+
+    return { totalScheduled, totalPending, totalPaid, installmentCount, pendingCount };
   }
 
   // ─── ADMIN TRANSACTIONS ──────────────────────────────────────────────

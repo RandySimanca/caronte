@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { BarChart3, Calendar, Filter, TrendingDown, DollarSign, Activity, FileDown, FileSpreadsheet, Briefcase, BookOpen, Download, UserCheck, Car } from 'lucide-react';
+import { BarChart3, Calendar, Filter, TrendingDown, DollarSign, Activity, FileDown, FileSpreadsheet, Briefcase, BookOpen, Download, UserCheck, Car, Wallet, CheckCheck } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import toast from 'react-hot-toast';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
@@ -24,6 +24,7 @@ export function ReportsPage() {
   const [data, setData] = useState<{ payments: any[], expenses: any[], loans: any[], assignments: any[] }>({ payments: [], expenses: [], loans: [], assignments: [] });
   const [portfolioData, setPortfolioData] = useState<{ loans: any[], arrearsInstallments: any[] }>({ loans: [], arrearsInstallments: [] });
   const [ledgerData, setLedgerData] = useState<any[]>([]);
+  const [pendingCollection, setPendingCollection] = useState<{ totalScheduled: number; totalPending: number; totalPaid: number; installmentCount: number; pendingCount: number }>({ totalScheduled: 0, totalPending: 0, totalPaid: 0, installmentCount: 0, pendingCount: 0 });
   
   const [routeStates, setRouteStates] = useState<any[]>([]);
   // Costos de personal: viático diario y salario mensual
@@ -47,14 +48,16 @@ export function ReportsPage() {
   const fetchReports = async () => {
     setIsLoading(true);
     try {
-      const [resumen, cartera, ledger] = await Promise.all([
+      const [resumen, cartera, ledger, pending] = await Promise.all([
         AdminService.getReportsData(startDate, endDate, selectedRoute),
         AdminService.getPortfolioState(selectedRoute),
-        AdminService.getLedgerTransactions(startDate, endDate, selectedRoute)
+        AdminService.getLedgerTransactions(startDate, endDate, selectedRoute),
+        AdminService.getPendingCollectionAmount(startDate, endDate, selectedRoute)
       ]);
       setData(resumen);
       setPortfolioData(cartera);
       setLedgerData(ledger);
+      setPendingCollection(pending);
     } catch (error: any) {
       toast.error('Error al cargar datos del reporte');
     } finally {
@@ -380,6 +383,60 @@ export function ReportsPage() {
         <>
           {activeTab === 'RESUMEN' && (
             <div className="space-y-8 animate-in fade-in duration-300">
+
+              {/* ── Tarjeta Por Recoger (ancho completo) ── */}
+              {(() => {
+                const pct = pendingCollection.totalScheduled > 0
+                  ? Math.min(100, (pendingCollection.totalPaid / pendingCollection.totalScheduled) * 100)
+                  : 0;
+                const pctLeft = 100 - pct;
+                return (
+                  <div className="bg-gradient-to-br from-cyan-50 to-sky-100 p-6 rounded-2xl border border-sky-200 shadow-sm relative overflow-hidden">
+                    {/* Decorative circles */}
+                    <div className="absolute -right-8 -top-8 w-40 h-40 bg-sky-200/40 rounded-full blur-3xl pointer-events-none" />
+                    <div className="absolute -left-4 -bottom-6 w-28 h-28 bg-cyan-300/20 rounded-full blur-2xl pointer-events-none" />
+
+                    <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                      {/* Left: main metric */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 text-sky-700 font-bold mb-1">
+                          <div className="p-2 bg-sky-200 rounded-lg"><Wallet className="w-5 h-5" /></div>
+                          Dinero por Recoger · Período Seleccionado
+                        </div>
+                        <div className="text-4xl font-black text-sky-900 mt-2">{formatCurrency(pendingCollection.totalPending)}</div>
+                        <p className="text-sm text-sky-600 mt-1">
+                          De <strong>{formatCurrency(pendingCollection.totalScheduled)}</strong> programados · <strong>{pendingCollection.pendingCount}</strong> cuota{pendingCollection.pendingCount !== 1 ? 's' : ''} pendiente{pendingCollection.pendingCount !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+
+                      {/* Right: already collected badge */}
+                      <div className="flex flex-col items-start sm:items-end gap-1 shrink-0">
+                        <div className="flex items-center gap-2 text-emerald-700 font-bold">
+                          <CheckCheck className="w-4 h-4" />
+                          Ya cobrado
+                        </div>
+                        <div className="text-2xl font-black text-emerald-800">{formatCurrency(pendingCollection.totalPaid)}</div>
+                        <div className="text-sm text-emerald-600">{pct.toFixed(1)}% completado</div>
+                      </div>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="relative z-10 mt-5">
+                      <div className="flex justify-between text-xs text-sky-600 mb-1">
+                        <span>Progreso de Recaudo</span>
+                        <span className="font-bold text-sky-700">{pct.toFixed(1)}% cobrado · {pctLeft.toFixed(1)}% pendiente</span>
+                      </div>
+                      <div className="w-full h-3 bg-sky-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-700 ease-out"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Summary Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
                 <div className="xl:col-span-2 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group hover:border-emerald-200 transition-colors">

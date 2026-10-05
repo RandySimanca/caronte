@@ -1,6 +1,6 @@
 import { Bell, ChevronRight, RefreshCw, WifiOff, CalendarCheck, Trophy } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
-import { mergeTodayPayments, paymentsTodaySettingKey, sumTodayPayments } from '@/lib/dailyCollection';
+import { colombiaDateFromIso, mergeTodayPayments, paymentsTodaySettingKey, sumTodayPayments } from '@/lib/dailyCollection';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -11,6 +11,7 @@ import { useMemo, useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
 import { NewLoansTodayModal } from '@/components/admin/NewLoansTodayModal';
+import { PaidTodayModal, type PaidTodayEntry } from '@/components/admin/PaidTodayModal';
 import { applyLotteryDrawLocally, isLotteryWinnerLoan, parseLotteryLastDraw } from '@/lib/lottery';
 import { NavLink } from 'react-router-dom';
 
@@ -44,6 +45,7 @@ export function CollectorDashboard() {
 
   const [isPrepaidModalOpen, setIsPrepaidModalOpen] = useState(false);
   const [isNewLoansModalOpen, setIsNewLoansModalOpen] = useState(false);
+  const [isPaidTodayOpen, setIsPaidTodayOpen] = useState(false);
 
   const lotteryDraw = parseLotteryLastDraw(lotterySetting?.value);
 
@@ -156,7 +158,54 @@ export function CollectorDashboard() {
     }
 
     const serverPayments = allSettings.find(s => s.key === paymentsTodaySettingKey(today))?.value as any[] | undefined;
-    const collected = sumTodayPayments(mergeTodayPayments(serverPayments, syncQueue, today)).collected;
+    const mergedPayments = mergeTodayPayments(serverPayments, syncQueue, today);
+    const collected = sumTodayPayments(mergedPayments).collected;
+
+    // Build PaidTodayEntries for the detail modal
+    // serverPayments entries have operation_id; we try to match back loan info from installments
+    const paidTodayEntries: PaidTodayEntry[] = [];
+    // From server payments (already synced — enriched list stored in settings)
+    if (serverPayments) {
+      for (const sp of serverPayments as any[]) {
+        if (!sp.operation_id) continue;
+        // skip admin_panel entries (office payments) — collector doesn't need to show them
+        const loanId = sp.loan_id || '';
+        const clientName = clients.find(c => {
+          const loan = allLoans.find(l => l.id === loanId);
+          return loan && c.id === loan.client_id;
+        })?.full_name || (sp.client_name || 'Cliente');
+        paidTodayEntries.push({
+          loanId,
+          clientName,
+          amount: Number(sp.total_amount || 0),
+          collectedAt: sp.collected_at || sp.collectedAt || new Date().toISOString(),
+          isTransfer: !!sp.is_transfer,
+          isOffice: sp.device_id === 'admin_panel',
+        });
+      }
+    }
+    // From local syncQueue (offline payments not yet synced)
+    for (const op of syncQueue) {
+      if (op.operation_type !== 'PAYMENT' && op.operation_type !== 'PAYMENT_BUNDLE') continue;
+      const p = op.payload?.payment ?? op.payload;
+      if (!p) continue;
+      const collectedAt = p.collectedAt || p.collected_at || op.local_timestamp || '';
+      if (colombiaDateFromIso(collectedAt) !== today) continue;
+      const opId = p.operationId || p.operation_id;
+      // Avoid duplicating entries already in serverPayments
+      if (serverPayments && (serverPayments as any[]).some((sp: any) => sp.operation_id === opId)) continue;
+      const loanId = p.loanId || p.loan_id || '';
+      const loan = allLoans.find(l => l.id === loanId);
+      const clientName = loan ? (clients.find(c => c.id === loan.client_id)?.full_name || 'Cliente') : 'Cliente';
+      paidTodayEntries.push({
+        loanId,
+        clientName,
+        amount: Number(p.totalAmount ?? p.total_amount ?? 0),
+        collectedAt,
+        isTransfer: !!(p.isTransfer ?? p.is_transfer),
+        isOffice: false,
+      });
+    }
 
     // Derived values
     const collectedTodayOnly = Math.max(0, targetTodayOnly - currentTodayOnly);
@@ -187,13 +236,14 @@ export function CollectorDashboard() {
       clientsVisited: visitedCount,
       clientsNew: newCount,
       clientsPending: clients.length - visitedCount - newCount,
-      arrearsAmount: currentArrears, // For the generic "arrears" red box, they want the pending ones
+      arrearsAmount: currentArrears,
       arrearsClients,
       prepaidTodayCount: prepaidTodayClients.length,
       prepaidTodayClients,
       newLoansTodayCount: newLoansTodayClients.length,
       newLoansTodayAmount,
       newLoansTodayClients,
+      paidTodayEntries,
     };
   }, [loans, allLoans, installments, clients, today, lotterySetting?.value, allSettings, syncQueue]);
 
@@ -300,11 +350,15 @@ export function CollectorDashboard() {
 
       {/* Grid Cards */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-emerald-500 rounded-2xl p-4 text-white shadow-sm shadow-emerald-500/20 flex flex-col justify-between">
-          <div>
+        <button
+          onClick={() => setIsPaidTodayOpen(true)}
+          className="bg-emerald-500 rounded-2xl p-4 text-white shadow-sm shadow-emerald-500/20 flex flex-col justify-between text-left active:scale-[0.98] transition-transform"
+        >
+          <div className="flex items-center justify-between">
             <p className="text-emerald-50 text-[11px] font-medium uppercase tracking-wider">Cobrado (Hoy)</p>
-            <p className="text-2xl font-black mt-1 mb-1 leading-none">{formatCurrency(stats.collectedTodayOnly)}</p>
+            <ChevronRight className="w-3.5 h-3.5 text-emerald-200 -mr-0.5" />
           </div>
+          <p className="text-2xl font-black mt-1 mb-1 leading-none">{formatCurrency(stats.collectedTodayOnly)}</p>
           <div className="pt-2 border-t border-emerald-400/40 mt-3">
             <div className="flex justify-between items-center text-[10px] text-emerald-100 mb-0.5">
               <span>Atrasos (y otros):</span>
@@ -315,7 +369,7 @@ export function CollectorDashboard() {
               <span>{formatCurrency(stats.collected)}</span>
             </div>
           </div>
-        </div>
+        </button>
 
         <div className="bg-orange-400 rounded-2xl p-4 text-white shadow-sm shadow-orange-400/20 flex flex-col justify-between">
           <div>
@@ -451,6 +505,12 @@ export function CollectorDashboard() {
         isOpen={isNewLoansModalOpen}
         onClose={() => setIsNewLoansModalOpen(false)}
         clients={stats.newLoansTodayClients}
+      />
+
+      <PaidTodayModal
+        isOpen={isPaidTodayOpen}
+        onClose={() => setIsPaidTodayOpen(false)}
+        entries={stats.paidTodayEntries}
       />
     </div>
   );

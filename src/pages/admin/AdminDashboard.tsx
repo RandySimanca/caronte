@@ -5,6 +5,7 @@ import { ClientsModal } from '@/components/admin/ClientsModal';
 import { LotteryModule } from '@/components/admin/LotteryModule';
 import { ObservationsModal } from '@/components/admin/ObservationsModal';
 import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
+import { PaidTodayModal } from '@/components/admin/PaidTodayModal';
 import { AdminCreateLoanModal } from '@/components/admin/AdminCreateLoanModal';
 import { TransferVouchersModal } from '@/components/admin/TransferVouchersModal';
 import { EditPaymentModal } from '@/components/admin/EditPaymentModal';
@@ -28,6 +29,7 @@ export function AdminDashboard() {
   const [isExcelMigrationOpen, setIsExcelMigrationOpen] = useState(false);
   const [isAdelantosOpen, setIsAdelantosOpen] = useState(false);
   const [isNewLoansOpen, setIsNewLoansOpen] = useState(false);
+  const [isPaidTodayOpen, setIsPaidTodayOpen] = useState(false);
 
   // Load route list only once
   useEffect(() => {
@@ -221,9 +223,19 @@ export function AdminDashboard() {
 
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-2 text-slate-500 font-bold mb-4">
-              <DollarSign className="w-5 h-5 text-emerald-500" />
-              Recaudo (hoy)
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-slate-500 font-bold">
+                <DollarSign className="w-5 h-5 text-emerald-500" />
+                Recaudo (hoy)
+              </div>
+              <button
+                onClick={() => setIsPaidTodayOpen(true)}
+                disabled={!stats?.recaudo}
+                className="text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full hover:bg-emerald-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                Ver lista
+                <ChevronRight className="w-3 h-3" />
+              </button>
             </div>
             <div className={`text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
               {formatCurrency(stats?.recaudo ?? 0)}
@@ -600,6 +612,13 @@ export function AdminDashboard() {
         onClose={() => setIsExcelMigrationOpen(false)}
         routeStates={routeStates}
         onSuccess={() => setIsExcelMigrationOpen(false)}
+      />
+
+      <PaidTodayModal
+        isOpen={isPaidTodayOpen}
+        onClose={() => setIsPaidTodayOpen(false)}
+        entries={stats?.pagosHoy || []}
+        routeLabel={isFiltered ? selectedRouteData?.ruta : undefined}
       />
     </div>
   );
