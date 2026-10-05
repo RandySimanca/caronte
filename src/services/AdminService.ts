@@ -347,6 +347,15 @@ export class AdminService {
       .eq('scheduled_date', todayStr)
       .gt('balance', 0);
 
+    // ── Cuotas del Día (scheduled_amount) — equivalente a targetTodayOnly del cobrador ──
+    // Suma el scheduled_amount de todas las cuotas programadas para hoy,
+    // excluyendo las prepagadas antes de hoy (balance = 0 y paid_date < hoy).
+    // Esto es exactamente lo que el cobrador ve como "Cuotas del Día (Hoy)".
+    let todayInstsScheduledQuery = supabase
+      .from('loan_installments')
+      .select('scheduled_amount, paid_date, balance, loan:loans!inner(route_id)')
+      .eq('scheduled_date', todayStr);
+
     // Cuotas vencidas pendientes (atrasos) — mismo cálculo que el cobrador
     let arrearsQuery = supabase
       .from('loan_installments')
@@ -392,6 +401,7 @@ export class AdminService {
       loansQuery = loansQuery.eq('route_id', routeId);
       newLoansTodayQuery = newLoansTodayQuery.eq('route_id', routeId);
       todayInstsQuery = (todayInstsQuery as any).eq('loan.route_id', routeId);
+      todayInstsScheduledQuery = (todayInstsScheduledQuery as any).eq('loan.route_id', routeId);
       arrearsQuery = (arrearsQuery as any).eq('loan.route_id', routeId);
       prepaidTodayQuery = (prepaidTodayQuery as any).eq('loan.route_id', routeId);
       alertsQuery = (alertsQuery as any).eq('loan.route_id', routeId);
@@ -406,6 +416,7 @@ export class AdminService {
       loansRes,
       newLoansTodayRes,
       todayInstsRes,
+      todayInstsScheduledRes,
       arrearsRes,
       prepaidTodayRes,
       alertsRes,
@@ -417,6 +428,7 @@ export class AdminService {
       loansQuery,
       newLoansTodayQuery,
       todayInstsQuery,
+      todayInstsScheduledQuery,
       arrearsQuery,
       prepaidTodayQuery,
       alertsQuery,
@@ -434,6 +446,14 @@ export class AdminService {
     const todayInstsTotal = (todayInstsRes.data || []).reduce((sum: number, i: any) => sum + Number(i.balance), 0);
     const arrearsTotal = (arrearsRes.data || []).reduce((sum: number, i: any) => sum + Number(i.balance), 0);
     const recaudoEsperado = todayInstsTotal + arrearsTotal;
+
+    // targetTodayOnly: equivalente al cobrador — suma scheduled_amount de cuotas de hoy
+    // excluyendo las que fueron prepagadas antes de hoy (balance = 0 y paid_date < todayStr)
+    const targetTodayOnly = (todayInstsScheduledRes.data || []).reduce((sum: number, i: any) => {
+      const wasPrepaidBefore = Number(i.balance) <= 0 && i.paid_date && i.paid_date < todayStr;
+      if (wasPrepaidBefore) return sum;
+      return sum + Number(i.scheduled_amount || 0);
+    }, 0);
 
     // Adelantadas para hoy: cuotas de hoy ya pagadas en días anteriores
     const prepaidTodayData = (prepaidTodayRes.data || []).map((i: any) => ({
@@ -529,7 +549,8 @@ export class AdminService {
       recaudoTransferencias,
       recaudoCobrador: Math.max(0, recaudoCobrador),
       esperado: recaudoEsperado,
-      esperadoCuotasHoy: todayInstsTotal,
+      esperadoCuotasHoy: targetTodayOnly,
+      esperadoCuotasHoyBalance: todayInstsTotal,
       esperadoAtrasos: arrearsTotal,
       cobradores: usersRes.count || 0,
       rutas: routesRes.count || 0,
