@@ -222,7 +222,7 @@ export function AdminDashboard() {
         </button>
 
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
-          <div>
+          <div className="flex flex-col h-full">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2 text-slate-500 font-bold">
                 <DollarSign className="w-5 h-5 text-emerald-500" />
@@ -237,23 +237,44 @@ export function AdminDashboard() {
                 <ChevronRight className="w-3 h-3" />
               </button>
             </div>
-            <div className={`text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+            
+            <div className={`text-3xl sm:text-4xl font-black text-slate-800 mb-3 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
               {formatCurrency(stats?.recaudo ?? 0)}
             </div>
-            <div className={`text-sm font-bold text-slate-600 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
-              Cobrador: {formatCurrency(stats?.recaudoCobrador ?? 0)}
+
+            <div className={`flex-1 flex flex-col justify-end transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+              <div className="pt-2 border-t border-slate-100 space-y-1 text-xs">
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>De cuotas del día:</span>
+                  <span className="font-bold text-emerald-600">{formatCurrency(stats?.recaudoCuotasHoy ?? 0)}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>De atrasos recuperados:</span>
+                  <span className="font-bold text-emerald-600">{formatCurrency(stats?.recaudoAtrasos ?? 0)}</span>
+                </div>
+              </div>
+
+              <div className="pt-2 mt-2 border-t border-slate-100 space-y-1 text-xs">
+                <div className="flex justify-between items-center text-slate-500">
+                  <span>Por cobrador (Físico):</span>
+                  <span className="font-semibold">{formatCurrency(stats?.recaudoCobrador ?? 0)}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500">
+                  <span>En oficina:</span>
+                  <span className="font-semibold">{formatCurrency(stats?.recaudoOficina ?? 0)}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500">
+                  <span>Transferencias:</span>
+                  <button 
+                    onClick={() => setIsTransferModalOpen(true)}
+                    className="font-semibold text-indigo-600 hover:text-indigo-700 underline underline-offset-2"
+                  >
+                    {formatCurrency(stats?.recaudoTransferencias ?? 0)}
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className={`text-sm font-bold text-brand-600 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
-              Oficina: {formatCurrency(stats?.recaudoOficina ?? 0)}
-            </div>
-            <button
-              onClick={() => setIsTransferModalOpen(true)}
-              className={`text-sm font-bold text-indigo-600 mb-2 hover:text-indigo-700 transition-all text-left flex items-center gap-1 ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}
-            >
-              Transferencias: {formatCurrency(stats?.recaudoTransferencias ?? 0)}
-            </button>
           </div>
-          <p className="text-xs text-slate-400">{routeSubtitle}</p>
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">

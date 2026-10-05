@@ -541,10 +541,16 @@ export class AdminService {
       collectorName: p.collector?.full_name || undefined,
     }));
 
+    // Split collected amount into "today installments" and "arrears", just like collector does
+    const recaudoCuotasHoy = Math.max(0, targetTodayOnly - todayInstsTotal);
+    const recaudoAtrasos = Math.max(0, recaudoHoy - recaudoCuotasHoy);
+
     return {
       clientes: clientsRes.count || 0,
       nuevos: loansRes.count || 0,
       recaudo: recaudoHoy,
+      recaudoCuotasHoy,
+      recaudoAtrasos,
       recaudoOficina,
       recaudoTransferencias,
       recaudoCobrador: Math.max(0, recaudoCobrador),
