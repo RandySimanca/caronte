@@ -86,9 +86,23 @@ export function CollectorDashboard() {
     let arrearsClients = 0;
     let visitedCount = 0;
     let newCount = 0;
+    
+    let totalCollectedAdelantos = 0;
+    let totalCollectedTodayOnly = 0;
+    let totalCollectedArrears = 0;
+
     const prepaidTodayClients: { loanId: string; clientName: string; amount: number; paidDate: string }[] = [];
 
     const draw = parseLotteryLastDraw(lotterySetting?.value);
+
+    const serverPayments = allSettings.find(s => s.key === paymentsTodaySettingKey(today))?.value as any[] | undefined;
+    const mergedPayments = mergeTodayPayments(serverPayments, syncQueue, today);
+    const paidTodayByLoan = new Map<string, number>();
+    for (const p of mergedPayments) {
+      const amt = Number(p.totalAmount ?? p.total_amount ?? 0);
+      const loanId = p.loanId ?? p.loan_id;
+      if (loanId) paidTodayByLoan.set(loanId, (paidTodayByLoan.get(loanId) || 0) + amt);
+    }
 
     for (const loan of loans) {
       if (isLotteryWinnerLoan(loan, draw)) continue;
@@ -155,10 +169,40 @@ export function CollectorDashboard() {
       } else if (isTodayPaid && loanCurrentArrears === 0) {
         visitedCount++;
       }
+
+      let paidToday = paidTodayByLoan.get(loan.id) || 0;
+      if (paidToday > 0) {
+        let advanceForLoan = 0;
+        let todayForLoan = 0;
+        let arrearsForLoan = 0;
+        
+        const sortedInsts = [...loanInsts].sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date));
+        for (const inst of sortedInsts) {
+          if (paidToday <= 0) break;
+          const scheduled = Number(inst.scheduled_amount || loan.daily_installment || 0);
+          const balance = Number(inst.balance || 0);
+          const restoredAmt = Math.min(paidToday, Math.max(0, scheduled - balance));
+          
+          if (restoredAmt > 0) {
+            paidToday -= restoredAmt;
+            if (inst.scheduled_date > today) {
+              advanceForLoan += restoredAmt;
+            } else if (inst.scheduled_date === today) {
+              todayForLoan += restoredAmt;
+            } else {
+              arrearsForLoan += restoredAmt;
+            }
+          }
+        }
+        if (paidToday > 0) {
+          advanceForLoan += paidToday; // Any excess goes to advances
+        }
+        totalCollectedAdelantos += advanceForLoan;
+        totalCollectedTodayOnly += todayForLoan;
+        totalCollectedArrears += arrearsForLoan;
+      }
     }
 
-    const serverPayments = allSettings.find(s => s.key === paymentsTodaySettingKey(today))?.value as any[] | undefined;
-    const mergedPayments = mergeTodayPayments(serverPayments, syncQueue, today);
     const collected = sumTodayPayments(mergedPayments).collected;
 
     // Build PaidTodayEntries for the detail modal
@@ -208,11 +252,8 @@ export function CollectorDashboard() {
     }
 
     // Derived values
-    const collectedTodayOnly = Math.max(0, targetTodayOnly - currentTodayOnly);
-    const collectedArrears = Math.max(0, collected - collectedTodayOnly);
-    
     // For expected totals, we show target values that don't discount today
-    const targetArrears = currentArrears + collectedArrears;
+    const targetArrears = currentArrears + totalCollectedArrears;
     const targetExpected = targetTodayOnly + targetArrears;
 
     const todayNewLoans = allLoans.filter(l => l.disbursement_date === today);
@@ -229,8 +270,9 @@ export function CollectorDashboard() {
       targetTodayOnly,
       targetArrears,
       collected,
-      collectedTodayOnly,
-      collectedArrears,
+      collectedTodayOnly: totalCollectedTodayOnly,
+      collectedArrears: totalCollectedArrears,
+      collectedAdelantos: totalCollectedAdelantos,
       pending: Math.max(targetExpected - collected, 0),
       clientsTotal: clients.length,
       clientsVisited: visitedCount,
@@ -361,10 +403,14 @@ export function CollectorDashboard() {
           <p className="text-2xl font-black mt-1 mb-1 leading-none">{formatCurrency(stats.collectedTodayOnly)}</p>
           <div className="pt-2 border-t border-emerald-400/40 mt-3">
             <div className="flex justify-between items-center text-[10px] text-emerald-100 mb-0.5">
-              <span>Atrasos (y otros):</span>
+              <span>Atrasos:</span>
               <span className="font-bold text-emerald-50">{formatCurrency(stats.collectedArrears)}</span>
             </div>
-            <div className="flex justify-between items-center text-[11px] font-bold text-white">
+            <div className="flex justify-between items-center text-[10px] text-emerald-100 mb-0.5">
+              <span>Adelantos:</span>
+              <span className="font-bold text-emerald-50">{formatCurrency(stats.collectedAdelantos)}</span>
+            </div>
+            <div className="flex justify-between items-center text-[11px] font-bold text-white mt-1 pt-1 border-t border-emerald-400/20">
               <span>Total recaudado:</span>
               <span>{formatCurrency(stats.collected)}</span>
             </div>
