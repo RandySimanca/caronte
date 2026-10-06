@@ -97,11 +97,55 @@ export function CollectorDashboard() {
 
     const serverPayments = allSettings.find(s => s.key === paymentsTodaySettingKey(today))?.value as any[] | undefined;
     const mergedPayments = mergeTodayPayments(serverPayments, syncQueue, today);
+
+    // Build paidTodayEntries FIRST so we can derive paidTodayByLoan from it
+    // (TodayPayment doesn't carry loan_id, so we use the enriched server payload)
+    const paidTodayEntries: PaidTodayEntry[] = [];
+    if (serverPayments) {
+      for (const sp of serverPayments as any[]) {
+        if (!sp.operation_id) continue;
+        const loanId = sp.loan_id || '';
+        const clientName = clients.find(c => {
+          const loan = allLoans.find(l => l.id === loanId);
+          return loan && c.id === loan.client_id;
+        })?.full_name || (sp.client_name || 'Cliente');
+        paidTodayEntries.push({
+          loanId,
+          clientName,
+          amount: Number(sp.total_amount || 0),
+          collectedAt: sp.collected_at || sp.collectedAt || new Date().toISOString(),
+          isTransfer: !!sp.is_transfer,
+          isOffice: sp.device_id === 'admin_panel',
+        });
+      }
+    }
+    for (const op of syncQueue) {
+      if (op.operation_type !== 'PAYMENT' && op.operation_type !== 'PAYMENT_BUNDLE') continue;
+      const p = op.payload?.payment ?? op.payload;
+      if (!p) continue;
+      const collectedAt = p.collectedAt || p.collected_at || op.local_timestamp || '';
+      if (colombiaDateFromIso(collectedAt) !== today) continue;
+      const opId = p.operationId || p.operation_id;
+      if (serverPayments && (serverPayments as any[]).some((sp: any) => sp.operation_id === opId)) continue;
+      const loanId = p.loanId || p.loan_id || '';
+      const loan = allLoans.find(l => l.id === loanId);
+      const clientName = loan ? (clients.find(c => c.id === loan.client_id)?.full_name || 'Cliente') : 'Cliente';
+      paidTodayEntries.push({
+        loanId,
+        clientName,
+        amount: Number(p.totalAmount ?? p.total_amount ?? 0),
+        collectedAt,
+        isTransfer: !!(p.isTransfer ?? p.is_transfer),
+        isOffice: false,
+      });
+    }
+
+    // Build paidTodayByLoan from enriched entries (has loanId)
     const paidTodayByLoan = new Map<string, number>();
-    for (const p of mergedPayments) {
-      const amt = Number(p.totalAmount ?? p.total_amount ?? 0);
-      const loanId = p.loanId ?? p.loan_id;
-      if (loanId) paidTodayByLoan.set(loanId, (paidTodayByLoan.get(loanId) || 0) + amt);
+    for (const entry of paidTodayEntries) {
+      if (entry.loanId) {
+        paidTodayByLoan.set(entry.loanId, (paidTodayByLoan.get(entry.loanId) || 0) + entry.amount);
+      }
     }
 
     for (const loan of loans) {
@@ -205,51 +249,7 @@ export function CollectorDashboard() {
 
     const collected = sumTodayPayments(mergedPayments).collected;
 
-    // Build PaidTodayEntries for the detail modal
-    // serverPayments entries have operation_id; we try to match back loan info from installments
-    const paidTodayEntries: PaidTodayEntry[] = [];
-    // From server payments (already synced — enriched list stored in settings)
-    if (serverPayments) {
-      for (const sp of serverPayments as any[]) {
-        if (!sp.operation_id) continue;
-        // skip admin_panel entries (office payments) — collector doesn't need to show them
-        const loanId = sp.loan_id || '';
-        const clientName = clients.find(c => {
-          const loan = allLoans.find(l => l.id === loanId);
-          return loan && c.id === loan.client_id;
-        })?.full_name || (sp.client_name || 'Cliente');
-        paidTodayEntries.push({
-          loanId,
-          clientName,
-          amount: Number(sp.total_amount || 0),
-          collectedAt: sp.collected_at || sp.collectedAt || new Date().toISOString(),
-          isTransfer: !!sp.is_transfer,
-          isOffice: sp.device_id === 'admin_panel',
-        });
-      }
-    }
-    // From local syncQueue (offline payments not yet synced)
-    for (const op of syncQueue) {
-      if (op.operation_type !== 'PAYMENT' && op.operation_type !== 'PAYMENT_BUNDLE') continue;
-      const p = op.payload?.payment ?? op.payload;
-      if (!p) continue;
-      const collectedAt = p.collectedAt || p.collected_at || op.local_timestamp || '';
-      if (colombiaDateFromIso(collectedAt) !== today) continue;
-      const opId = p.operationId || p.operation_id;
-      // Avoid duplicating entries already in serverPayments
-      if (serverPayments && (serverPayments as any[]).some((sp: any) => sp.operation_id === opId)) continue;
-      const loanId = p.loanId || p.loan_id || '';
-      const loan = allLoans.find(l => l.id === loanId);
-      const clientName = loan ? (clients.find(c => c.id === loan.client_id)?.full_name || 'Cliente') : 'Cliente';
-      paidTodayEntries.push({
-        loanId,
-        clientName,
-        amount: Number(p.totalAmount ?? p.total_amount ?? 0),
-        collectedAt,
-        isTransfer: !!(p.isTransfer ?? p.is_transfer),
-        isOffice: false,
-      });
-    }
+    // paidTodayEntries was already built above (before the loan loop)
 
     // Derived values
     // For expected totals, we show target values that don't discount today
