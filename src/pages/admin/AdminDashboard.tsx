@@ -13,6 +13,107 @@ import { ExcelMigrationModal } from '@/components/admin/ExcelMigrationModal';
 import { NewLoansTodayModal } from '@/components/admin/NewLoansTodayModal';
 import toast from 'react-hot-toast';
 
+
+interface EffectivenessCardProps {
+  title: string;
+  collected: number;
+  expected: number;
+  collectedLabel: string;
+  remainingLabel: string;
+  goalLabel: string;
+  isLoading: boolean;
+  formatCurrency: (n: number) => string;
+}
+
+function EffectivenessCard({
+  title, collected, expected,
+  collectedLabel, remainingLabel, goalLabel,
+  isLoading, formatCurrency
+}: EffectivenessCardProps) {
+  const pct = expected > 0 ? Math.min(100, (collected / expected) * 100) : 0;
+  const remaining = Math.max(0, expected - collected);
+
+  const gaugeColor = pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+  const bgClass = pct >= 80 ? 'from-emerald-50 to-green-100 border-emerald-200'
+    : pct >= 50 ? 'from-amber-50 to-yellow-100 border-amber-200'
+      : 'from-red-50 to-rose-100 border-red-200';
+  const labelClass = pct >= 80 ? 'text-emerald-700' : pct >= 50 ? 'text-amber-700' : 'text-red-700';
+  const titleClass = pct >= 80 ? 'text-emerald-900' : pct >= 50 ? 'text-amber-900' : 'text-red-900';
+
+  const radius = 52;
+  const circ = 2 * Math.PI * radius;
+  const dashOff = circ * (1 - pct / 100);
+
+  return (
+    <div className={`bg-gradient-to-br ${bgClass} border rounded-2xl p-6 shadow-sm relative overflow-hidden`}>
+      <div
+        className="absolute -right-10 -top-10 w-48 h-48 rounded-full blur-3xl opacity-30"
+        style={{ background: gaugeColor }}
+      />
+
+      <div className="relative z-10 flex flex-col sm:flex-row xl:flex-col 2xl:flex-row items-center gap-6">
+        {/* Gauge */}
+        <div className="relative shrink-0" style={{ width: 140, height: 140 }}>
+          <svg width="140" height="140" viewBox="0 0 140 140">
+            <circle cx="70" cy="70" r={radius} fill="none" stroke="white" strokeWidth="14" strokeOpacity="0.6" />
+            <circle
+              cx="70" cy="70" r={radius}
+              fill="none" stroke={gaugeColor} strokeWidth="14" strokeLinecap="round"
+              strokeDasharray={circ}
+              strokeDashoffset={isLoading ? circ : dashOff}
+              transform="rotate(-90 70 70)"
+              style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1)' }}
+            />
+            <text x="70" y="62" textAnchor="middle" dominantBaseline="middle"
+              fontSize="26" fontWeight="900" fill={gaugeColor}>
+              {isLoading ? '…' : `${Math.round(pct)}%`}
+            </text>
+            <text x="70" y="84" textAnchor="middle" dominantBaseline="middle"
+              fontSize="10" fontWeight="700" fill={gaugeColor} opacity="0.7">
+              recaudado
+            </text>
+          </svg>
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0 w-full">
+          <p className={`text-xs font-extrabold uppercase tracking-widest mb-1 ${labelClass}`}>{title}</p>
+          <h2 className={`text-3xl font-black leading-tight mb-3 ${titleClass}`}>
+            {isLoading ? '—' : `${Math.round(pct)}% cobrado`}
+          </h2>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white/60 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/80">
+              <p className="text-xs text-slate-500 font-semibold mb-0.5">{collectedLabel}</p>
+              <p className={`text-lg font-black ${labelClass}`}>{formatCurrency(collected)}</p>
+            </div>
+            <div className="bg-white/60 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/80">
+              <p className="text-xs text-slate-500 font-semibold mb-0.5">{remainingLabel}</p>
+              <p className="text-lg font-black text-slate-700">{formatCurrency(remaining)}</p>
+            </div>
+            <div className="col-span-2 bg-white/60 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/80">
+              <p className="text-xs text-slate-500 font-semibold mb-0.5">{goalLabel}</p>
+              <p className="text-lg font-black text-slate-700">{formatCurrency(expected)}</p>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="w-full h-2.5 bg-white/70 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-1000 ease-out"
+                style={{ width: `${pct}%`, background: gaugeColor }}
+              />
+            </div>
+            <div className="flex justify-between text-[10px] font-bold mt-1" style={{ color: gaugeColor }}>
+              <span>0%</span><span>50%</span><span>100%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AdminDashboard() {
   const [stats, setStats] = useState<any>(null);
   const [routeStates, setRouteStates] = useState<any[]>([]);
@@ -310,107 +411,32 @@ export function AdminDashboard() {
         </div>
       </div>
 
-      {/* ─── EFECTIVIDAD DE RECAUDO DEL DÍA ─── */}
-      {selectedRoute && (() => {
-        const collected = stats?.recaudoCuotasHoy ?? 0;
-        const expected = stats?.esperadoCuotasHoy ?? stats?.esperado ?? 0;
-        const pct = expected > 0 ? Math.min(100, (collected / expected) * 100) : 0;
-        const remaining = Math.max(0, expected - collected);
+      {/* ─── EFECTIVIDAD DE RECAUDO ─── */}
+      {selectedRoute && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <EffectivenessCard
+            title="Efectividad · Cuotas de Hoy"
+            collected={stats?.recaudoCuotasHoy ?? 0}
+            expected={stats?.esperadoCuotasHoy ?? 0}
+            collectedLabel="Ya cobrado"
+            remainingLabel="Por recoger"
+            goalLabel="Meta del día (cuotas)"
+            isLoading={isStatsLoading}
+            formatCurrency={formatCurrency}
+          />
 
-        // Colores según porcentaje
-        const gaugeColor = pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
-        const bgClass = pct >= 80 ? 'from-emerald-50 to-green-100 border-emerald-200'
-          : pct >= 50 ? 'from-amber-50 to-yellow-100 border-amber-200'
-            : 'from-red-50 to-rose-100 border-red-200';
-        const labelClass = pct >= 80 ? 'text-emerald-700' : pct >= 50 ? 'text-amber-700' : 'text-red-700';
-        const titleClass = pct >= 80 ? 'text-emerald-900' : pct >= 50 ? 'text-amber-900' : 'text-red-900';
-
-        // SVG circular gauge
-        const radius = 52;
-        const circ = 2 * Math.PI * radius;
-        const dashOff = circ * (1 - pct / 100);
-
-        return (
-          <div className={`bg-gradient-to-br ${bgClass} border rounded-2xl p-6 shadow-sm relative overflow-hidden`}>
-            {/* Decorative blur orb */}
-            <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full blur-3xl opacity-30"
-              style={{ background: gaugeColor }} />
-
-            <div className="relative z-10 flex flex-col sm:flex-row items-center gap-8">
-
-              {/* Gauge circular */}
-              <div className="relative shrink-0" style={{ width: 140, height: 140 }}>
-                <svg width="140" height="140" viewBox="0 0 140 140">
-                  {/* Track */}
-                  <circle
-                    cx="70" cy="70" r={radius}
-                    fill="none" stroke="white" strokeWidth="14" strokeOpacity="0.6"
-                  />
-                  {/* Progress */}
-                  <circle
-                    cx="70" cy="70" r={radius}
-                    fill="none"
-                    stroke={gaugeColor}
-                    strokeWidth="14"
-                    strokeLinecap="round"
-                    strokeDasharray={circ}
-                    strokeDashoffset={isStatsLoading ? circ : dashOff}
-                    transform="rotate(-90 70 70)"
-                    style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1)' }}
-                  />
-                  {/* Center text */}
-                  <text x="70" y="62" textAnchor="middle" dominantBaseline="middle"
-                    fontSize="26" fontWeight="900" fill={gaugeColor}>
-                    {isStatsLoading ? '…' : `${Math.round(pct)}%`}
-                  </text>
-                  <text x="70" y="84" textAnchor="middle" dominantBaseline="middle"
-                    fontSize="10" fontWeight="700" fill={gaugeColor} opacity="0.7">
-                    recaudado
-                  </text>
-                </svg>
-              </div>
-
-              {/* Info right */}
-              <div className="flex-1 min-w-0">
-                <p className={`text-xs font-extrabold uppercase tracking-widest mb-1 ${labelClass}`}>Efectividad de Recaudo · Hoy</p>
-                <h2 className={`text-3xl sm:text-4xl font-black leading-tight mb-3 ${titleClass}`}>
-                  {isStatsLoading ? '—' : `${Math.round(pct)}% cobrado`}
-                </h2>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-white/60 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/80">
-                    <p className="text-xs text-slate-500 font-semibold mb-0.5"> Ya cobrado</p>
-                    <p className={`text-lg font-black ${labelClass}`}>{formatCurrency(collected)}</p>
-                  </div>
-                  <div className="bg-white/60 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/80">
-                    <p className="text-xs text-slate-500 font-semibold mb-0.5"> Por recoger</p>
-                    <p className="text-lg font-black text-slate-700">{formatCurrency(remaining)}</p>
-                  </div>
-                  <div className="col-span-2 bg-white/60 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/80">
-                    <p className="text-xs text-slate-500 font-semibold mb-0.5"> Meta del día (cuotas)</p>
-                    <p className="text-lg font-black text-slate-700">{formatCurrency(expected)}</p>
-                  </div>
-                </div>
-
-                {/* Bar */}
-                <div className="mt-4">
-                  <div className="w-full h-2.5 bg-white/70 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-1000 ease-out"
-                      style={{ width: `${pct}%`, background: gaugeColor }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-[10px] font-bold mt-1" style={{ color: gaugeColor }}>
-                    <span>0%</span>
-                    <span>50%</span>
-                    <span>100%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+          <EffectivenessCard
+            title="Efectividad · Atrasos"
+            collected={stats?.recaudoAtrasos ?? 0}
+            expected={stats?.esperadoAtrasos ?? 0}
+            collectedLabel="Atrasos recuperados"
+            remainingLabel="Atrasos pendientes"
+            goalLabel="Total de atrasos"
+            isLoading={isStatsLoading}
+            formatCurrency={formatCurrency}
+          />
+        </div>
+      )}
 
       {/* ─── ACTION MODULES GRID ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
