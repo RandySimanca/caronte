@@ -343,23 +343,25 @@ export class AdminService {
     let activeLoansQuery = supabase
       .from('loans')
       .select('id, client_id, start_date, end_date, daily_installment, raffle_number, status')
-      .eq('status', 'ACTIVO');
+      .eq('status', 'ACTIVO')
+      .limit(5000);
 
-    // Cuotas de hoy para todos los préstamos activos de la ruta
+    // Cuotas de hoy — se obtienen todas y se filtra en JS por loan_id activo (igual que el cobrador)
     let todayInstsScheduledQuery = supabase
       .from('loan_installments')
-      .select('loan_id, scheduled_amount, paid_date, balance, loan:loans!inner(route_id, status)')
+      .select('loan_id, scheduled_amount, paid_date, balance, loan:loans!inner(route_id)')
       .eq('scheduled_date', todayStr)
-      .eq('loan.status', 'ACTIVO');
+      .limit(5000);
 
-    // Cuotas vencidas pendientes (atrasos) de préstamos activos de la ruta
+    // Cuotas vencidas pendientes (atrasos) — filtro por status de cuota solamente;
+    // el filtro por préstamos activos se aplica en el loop JS usando los IDs de activeLoans.
     let arrearsQuery = supabase
       .from('loan_installments')
-      .select('loan_id, balance, loan:loans!inner(route_id, status)')
+      .select('loan_id, balance, loan:loans!inner(route_id)')
       .lt('scheduled_date', todayStr)
       .in('status', ['PENDIENTE', 'PARCIAL', 'ATRASADA'])
       .gt('balance', 0)
-      .eq('loan.status', 'ACTIVO');
+      .limit(5000);
 
     // Sorteo de lotería para excluir ganadores
     const lotterySettingQuery = supabase.from('system_settings').select('value').eq('key', 'lottery_last_draw').maybeSingle();
