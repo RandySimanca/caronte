@@ -550,6 +550,12 @@ export class SyncService {
       const clients = await fetchAllByIds<any>('clients', 'route_id', routeIds, q => q.eq('status', 'ACTIVO'));
       const clientIds = clients.map(c => c.id as string);
 
+      // También descargamos los IDs de TODOS los clientes de esta ruta (activos e inactivos)
+      // para poder limpiar del celular los que ya no son activos en el servidor.
+      // Usamos select mínimo (solo id) para no impactar el ancho de banda.
+      const allRouteClientIds = await fetchAllByIds<{ id: string }>('clients', 'route_id', routeIds, q => q.select('id'));
+      const allServerClientIds = new Set(allRouteClientIds.map(c => c.id));
+
       const loans = await fetchAllByIds<any>('loans', 'client_id', clientIds, q => q.eq('status', 'ACTIVO'));
       const loanIds = loans.map(l => l.id as string);
 
@@ -705,7 +711,14 @@ export class SyncService {
         }
         const allLocalClients = await db.clients.toArray();
         const clientsToDelete = allLocalClients
-          .filter(c => !serverClientIds.has(c.id) && !protectedClientIds.has(c.id) && c.sync_status !== 'pending')
+          .filter(c => {
+            if (serverClientIds.has(c.id)) return false;       // Está activo en servidor → conservar
+            if (protectedClientIds.has(c.id)) return false;    // Tiene op pendiente → conservar
+            // Si el servidor conoce al cliente (pero no está activo) → inactivado: eliminar siempre
+            if (allServerClientIds.has(c.id)) return true;
+            // El servidor no lo conoce: solo eliminar si no es un nuevo cliente pendiente de sincronizar
+            return c.sync_status !== 'pending';
+          })
           .map(c => c.id);
         if (clientsToDelete.length > 0) await db.clients.bulkDelete(clientsToDelete);
 
