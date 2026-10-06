@@ -602,7 +602,7 @@ export class AdminService {
       esperado: recaudoEsperado,
       esperadoCuotasHoy: targetTodayOnly,
       esperadoCuotasHoyBalance: todayInstsTotal,
-      esperadoAtrasos: arrearsTotal,
+      esperadoAtrasos: arrearsTotal + recaudoAtrasos,
       cobradores: usersRes.count || 0,
       rutas: routesRes.count || 0,
       alerts: enrichedAlerts,
