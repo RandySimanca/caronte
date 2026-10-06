@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type { User, Role } from '@/lib/database.types';
 import { dayRangeIso } from '@/lib/dailyCollection';
+import { parseLotteryLastDraw, isLotteryWinnerLoan } from '@/lib/lottery';
 
 export interface UserWithRole extends User {
   roles: {
@@ -337,32 +338,31 @@ export class AdminService {
       .gt('scheduled_date', todayStr)
       .gt('paid_amount', 0);
 
-    // ── Esperado (hoy) ───────────────────────────────────────────────────────
-    // Se suma el balance de las cuotas de HOY que aún tienen saldo pendiente.
-    // Si un cliente adelantó la cuota de hoy en días anteriores, su balance = 0
-    // y no suma al esperado → el cobrador no necesita cobrarle.
-    let todayInstsQuery = supabase
-      .from('loan_installments')
-      .select('balance, loan:loans!inner(route_id)')
-      .eq('scheduled_date', todayStr)
-      .gt('balance', 0);
+    // ── Esperado (hoy) & Cuotas del Día ─────────────────────────────────────
+    // Fetch all active loans to perfectly match collector's logic (including missing installments and lottery)
+    let activeLoansQuery = supabase
+      .from('loans')
+      .select('id, client_id, start_date, end_date, daily_installment, raffle_number, status')
+      .eq('status', 'ACTIVO');
 
-    // ── Cuotas del Día (scheduled_amount) — equivalente a targetTodayOnly del cobrador ──
-    // Suma el scheduled_amount de todas las cuotas programadas para hoy,
-    // excluyendo las prepagadas antes de hoy (balance = 0 y paid_date < hoy).
-    // Esto es exactamente lo que el cobrador ve como "Cuotas del Día (Hoy)".
+    // Cuotas de hoy para todos los préstamos activos de la ruta
     let todayInstsScheduledQuery = supabase
       .from('loan_installments')
-      .select('scheduled_amount, paid_date, balance, loan:loans!inner(route_id)')
-      .eq('scheduled_date', todayStr);
+      .select('loan_id, scheduled_amount, paid_date, balance, loan:loans!inner(route_id, status)')
+      .eq('scheduled_date', todayStr)
+      .eq('loan.status', 'ACTIVO');
 
-    // Cuotas vencidas pendientes (atrasos) — mismo cálculo que el cobrador
+    // Cuotas vencidas pendientes (atrasos) de préstamos activos de la ruta
     let arrearsQuery = supabase
       .from('loan_installments')
-      .select('balance, loan_id, loan:loans!inner(route_id)')
+      .select('loan_id, balance, loan:loans!inner(route_id, status)')
       .lt('scheduled_date', todayStr)
       .in('status', ['PENDIENTE', 'PARCIAL', 'ATRASADA'])
-      .gt('balance', 0);
+      .gt('balance', 0)
+      .eq('loan.status', 'ACTIVO');
+
+    // Sorteo de lotería para excluir ganadores
+    const lotterySettingQuery = supabase.from('system_settings').select('value').eq('key', 'lottery_last_draw').maybeSingle();
 
     // ── Adelantadas para hoy ─────────────────────────────────────────────────
     // Cuotas cuya fecha programada es hoy pero que ya fueron pagadas en días
@@ -400,7 +400,7 @@ export class AdminService {
       clientsQuery = clientsQuery.eq('route_id', routeId);
       loansQuery = loansQuery.eq('route_id', routeId);
       newLoansTodayQuery = newLoansTodayQuery.eq('route_id', routeId);
-      todayInstsQuery = (todayInstsQuery as any).eq('loan.route_id', routeId);
+      activeLoansQuery = activeLoansQuery.eq('route_id', routeId);
       todayInstsScheduledQuery = (todayInstsScheduledQuery as any).eq('loan.route_id', routeId);
       arrearsQuery = (arrearsQuery as any).eq('loan.route_id', routeId);
       prepaidTodayQuery = (prepaidTodayQuery as any).eq('loan.route_id', routeId);
@@ -415,24 +415,26 @@ export class AdminService {
       routesRes,
       loansRes,
       newLoansTodayRes,
-      todayInstsRes,
+      activeLoansRes,
       todayInstsScheduledRes,
       arrearsRes,
       prepaidTodayRes,
       alertsRes,
-      adelantosHoyRes
+      adelantosHoyRes,
+      lotterySettingRes
     ] = await Promise.all([
       clientsQuery,
       supabase.from('users').select('*', { count: 'exact', head: true }).eq('active', true).eq('role_id', cobradorRoleId),
       supabase.from('routes').select('*', { count: 'exact', head: true }).eq('active', true),
       loansQuery,
       newLoansTodayQuery,
-      todayInstsQuery,
+      activeLoansQuery,
       todayInstsScheduledQuery,
       arrearsQuery,
       prepaidTodayQuery,
       alertsQuery,
-      adelantosHoyQuery
+      adelantosHoyQuery,
+      lotterySettingQuery
     ]);
 
     const alertsData = alertsRes.data || [];
@@ -441,19 +443,55 @@ export class AdminService {
     // paid_amount incluye abonos PARCIALES de días anteriores cuando la cuota se completa hoy.
     const recaudoHoy = alertsData.reduce((sum: number, p: any) => sum + Number(p.total_amount || 0), 0);
 
-    // Esperado: suma del balance de cuotas de hoy con saldo > 0 (descuenta adelantadas)
-    // + saldo de atrasos vencidos pendientes
-    const todayInstsTotal = (todayInstsRes.data || []).reduce((sum: number, i: any) => sum + Number(i.balance), 0);
-    const arrearsTotal = (arrearsRes.data || []).reduce((sum: number, i: any) => sum + Number(i.balance), 0);
-    const recaudoEsperado = todayInstsTotal + arrearsTotal;
+    // Esperado: Cálculo exacto igual al del cobrador
+    const draw = lotterySettingRes.data ? parseLotteryLastDraw(lotterySettingRes.data.value) : null;
+    let targetTodayOnly = 0;
+    let todayInstsTotal = 0;
+    let arrearsTotal = 0;
 
-    // targetTodayOnly: equivalente al cobrador — suma scheduled_amount de cuotas de hoy
-    // excluyendo las que fueron prepagadas antes de hoy (balance = 0 y paid_date < todayStr)
-    const targetTodayOnly = (todayInstsScheduledRes.data || []).reduce((sum: number, i: any) => {
-      const wasPrepaidBefore = Number(i.balance) <= 0 && i.paid_date && i.paid_date < todayStr;
-      if (wasPrepaidBefore) return sum;
-      return sum + Number(i.scheduled_amount || 0);
-    }, 0);
+    const activeLoans = activeLoansRes.data || [];
+    const todayInsts = todayInstsScheduledRes.data || [];
+    const arrearsInsts = arrearsRes.data || [];
+
+    for (const loan of activeLoans) {
+      if (isLotteryWinnerLoan(loan as any, draw)) continue;
+
+      const loanEnded = loan.end_date && loan.end_date < todayStr;
+      const todayInst = todayInsts.find((i: any) => i.loan_id === loan.id);
+      
+      // Target today
+      let loanTargetToday = 0;
+      if (loan.start_date > todayStr || loanEnded) {
+        loanTargetToday = 0;
+      } else if (todayInst) {
+        if (Number(todayInst.balance) <= 0 && todayInst.paid_date && todayInst.paid_date < todayStr) {
+          loanTargetToday = 0;
+        } else {
+          loanTargetToday = Number(todayInst.scheduled_amount || loan.daily_installment);
+        }
+      } else {
+        loanTargetToday = Number(loan.daily_installment || 0);
+      }
+      
+      // Current pending today (for expected balance calculation)
+      let loanCurrentToday = 0;
+      if (loan.start_date > todayStr || loanEnded) {
+        loanCurrentToday = 0;
+      } else if (todayInst) {
+        loanCurrentToday = Number(todayInst.balance || 0);
+      } else {
+        loanCurrentToday = Number(loan.daily_installment || 0);
+      }
+
+      // Arrears
+      const loanArrears = arrearsInsts.filter((i: any) => i.loan_id === loan.id).reduce((sum: number, i: any) => sum + Number(i.balance), 0);
+
+      targetTodayOnly += loanTargetToday;
+      todayInstsTotal += loanCurrentToday;
+      arrearsTotal += loanArrears;
+    }
+
+    const recaudoEsperado = todayInstsTotal + arrearsTotal;
 
     // Adelantadas para hoy: cuotas de hoy ya pagadas en días anteriores
     const prepaidTodayData = (prepaidTodayRes.data || []).map((i: any) => ({
