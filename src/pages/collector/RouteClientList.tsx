@@ -136,7 +136,7 @@ export function RouteClientList() {
         avatarUrl: client.photo_face_url
       };
     })
-    .sort((a, b) => (a.route_order || 0) - (b.route_order || 0) || a.full_name.localeCompare(b.full_name))
+    .sort((a, b) => (a.route_order ?? 999999) - (b.route_order ?? 999999) || a.full_name.localeCompare(b.full_name))
     .filter(c => c.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [clients, loans, installments, searchTerm, today, lotteryDraw]);
 
@@ -166,11 +166,8 @@ export function RouteClientList() {
 
   async function saveOrder() {
     try {
-      // Solo los clientes cuya posición cambió (menos datos que sincronizar)
       const updates = orderedClients
-        .map((c, i) => ({ id: c.id, route_order: i, changed: (c.route_order || 0) !== i }))
-        .filter(u => u.changed)
-        .map(({ id, route_order }) => ({ id, route_order }));
+        .map((c, i) => ({ id: c.id, route_order: i }));
       if (updates.length === 0) {
         setIsReordering(false);
         return;

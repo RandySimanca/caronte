@@ -16,7 +16,7 @@ export interface RouteOrderUpdate {
 /** Orden de la ruta: primero route_order y, si hay empate, por nombre (igual que la lista del cobrador). */
 export function sortByRouteOrder<T extends RouteClientLike>(clients: T[]): T[] {
   return [...clients].sort(
-    (a, b) => (a.route_order || 0) - (b.route_order || 0) || a.full_name.localeCompare(b.full_name)
+    (a, b) => (a.route_order ?? 999999) - (b.route_order ?? 999999) || a.full_name.localeCompare(b.full_name)
   );
 }
 
