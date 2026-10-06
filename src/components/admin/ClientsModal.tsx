@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Search, Users, Calendar, Filter, CheckCircle, Camera, FileText, DollarSign, ChevronDown, ChevronUp, Eye, Trash2, Edit, Plus } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
+import { colombiaDateFromIso } from '@/lib/dailyCollection';
 import toast from 'react-hot-toast';
 import { PaymentCardModal } from './PaymentCardModal';
 import { EditClientModal } from './EditClientModal';
@@ -12,6 +13,7 @@ interface ClientsModalProps {
   onClose: () => void;
   initialRouteId?: string;
   initialOnlyToday?: boolean;
+  initialDate?: string;
   routeStates: { id: string; ruta: string }[];
 }
 
@@ -133,11 +135,11 @@ function LoanDetail({ loan, onOpenPaymentCard, onAdminPayment }: { loan: any, on
 }
 
 // ---------- Main modal ----------
-export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialOnlyToday = false, routeStates }: ClientsModalProps) {
+export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialOnlyToday = false, initialDate = '', routeStates }: ClientsModalProps) {
   const [clients, setClients] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [onlyToday, setOnlyToday] = useState(initialOnlyToday);
+  const [createdDate, setCreatedDate] = useState<string>('');
   const [routeId, setRouteId] = useState(initialRouteId);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paymentCardLoanId, setPaymentCardLoanId] = useState<string | null>(null);
@@ -146,21 +148,23 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
   const [isCreateLoanOpen, setIsCreateLoanOpen] = useState(false);
   const [createLoanClientId, setCreateLoanClientId] = useState<string | undefined>(undefined);
 
+  const todayStr = colombiaDateFromIso(new Date().toISOString());
+
   useEffect(() => {
     if (isOpen) {
       setRouteId(initialRouteId);
-      setOnlyToday(initialOnlyToday);
+      setCreatedDate(initialDate || (initialOnlyToday ? todayStr : ''));
       setSearch('');
       setExpandedId(null);
     }
-  }, [isOpen, initialRouteId, initialOnlyToday]);
+  }, [isOpen, initialRouteId, initialOnlyToday, initialDate]);
 
   useEffect(() => {
     if (!isOpen) return;
     const load = async () => {
       setIsLoading(true);
       try {
-        const data = await AdminService.getClients({ routeId, onlyToday, search });
+        const data = await AdminService.getClients({ routeId, createdDate, search });
         setClients(data);
       } catch (error: any) {
         toast.error('Error cargando clientes: ' + error.message);
@@ -170,7 +174,7 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
     };
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
-  }, [isOpen, routeId, onlyToday, search, editClient, adminPaymentLoan, isCreateLoanOpen]); // Added dependencies to refresh data
+  }, [isOpen, routeId, createdDate, search, editClient, adminPaymentLoan, isCreateLoanOpen]);
 
   const handleDeleteClient = async (clientId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -243,8 +247,8 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
         </div>
 
         {/* Filters */}
-        <div className="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row gap-3 shrink-0 bg-white">
-          <div className="relative flex-1">
+        <div className="px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 shrink-0 bg-white items-stretch md:items-center">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
@@ -254,30 +258,58 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
               className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-brand-500 transition"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-400 shrink-0" />
-            <select
-              value={routeId}
-              onChange={e => setRouteId(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-500"
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+              <select
+                value={routeId}
+                onChange={e => setRouteId(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-500 font-medium text-slate-700"
+              >
+                <option value="all">Todas las rutas</option>
+                {routeStates.map(r => (
+                  <option key={r.id} value={r.id}>{r.ruta}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Date filter selector */}
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm">
+              <Calendar className="w-4 h-4 text-brand-600 shrink-0" />
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:inline">Fecha:</span>
+              <input
+                type="date"
+                value={createdDate}
+                onChange={e => setCreatedDate(e.target.value)}
+                className="bg-transparent text-sm font-bold text-slate-800 outline-none cursor-pointer"
+                title="Filtrar por fecha de adición del cliente"
+              />
+              {createdDate && (
+                <button
+                  type="button"
+                  onClick={() => setCreatedDate('')}
+                  className="p-1 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-200 transition-colors"
+                  title="Ver todos los clientes (quitar filtro de fecha)"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setCreatedDate(createdDate === todayStr ? '' : todayStr)}
+              className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
+                createdDate === todayStr
+                  ? 'bg-brand-600 border-brand-600 text-white shadow-md shadow-brand-500/20'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-brand-400'
+              }`}
             >
-              <option value="all">Todas las rutas</option>
-              {routeStates.map(r => (
-                <option key={r.id} value={r.id}>{r.ruta}</option>
-              ))}
-            </select>
+              <Calendar className="w-3.5 h-3.5" />
+              Hoy
+            </button>
           </div>
-          <button
-            onClick={() => setOnlyToday(v => !v)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-bold transition-all ${
-              onlyToday
-                ? 'bg-brand-600 border-brand-600 text-white shadow-md shadow-brand-500/20'
-                : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-brand-400'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            Solo hoy
-          </button>
         </div>
 
         {/* Table */}
@@ -429,10 +461,24 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
         </div>
 
         {/* Footer */}
-        {onlyToday && !isLoading && (
-          <div className="px-6 py-3 border-t border-slate-100 bg-brand-50 shrink-0 flex items-center gap-2 text-sm text-brand-700 font-medium">
-            <CheckCircle className="w-4 h-4" />
-            Mostrando solo clientes creados hoy
+        {createdDate && !isLoading && (
+          <div className="px-6 py-3 border-t border-slate-100 bg-brand-50 shrink-0 flex items-center justify-between text-sm text-brand-700 font-medium">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-brand-600" />
+              <span>
+                Mostrando clientes agregados el{' '}
+                <strong className="font-bold text-brand-800">
+                  {createdDate === todayStr ? `hoy (${createdDate})` : createdDate}
+                </strong>
+                {clients.length > 0 && ` (${clients.length} cliente${clients.length !== 1 ? 's' : ''})`}
+              </span>
+            </div>
+            <button
+              onClick={() => setCreatedDate('')}
+              className="text-xs text-brand-700 hover:text-brand-900 underline font-bold"
+            >
+              Ver todos los clientes
+            </button>
           </div>
         )}
       </div>

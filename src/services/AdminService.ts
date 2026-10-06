@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { User, Role } from '@/lib/database.types';
-import { dayRangeIso } from '@/lib/dailyCollection';
+import { dayRangeIso, colombiaDateFromIso } from '@/lib/dailyCollection';
 import { parseLotteryLastDraw, isLotteryWinnerLoan } from '@/lib/lottery';
 
 export interface UserWithRole extends User {
@@ -853,7 +853,7 @@ export class AdminService {
   /**
    * Obtiene clientes con filtros opcionales de ruta y fecha de creación.
    */
-  static async getClients(filters?: { routeId?: string; onlyToday?: boolean; search?: string }) {
+  static async getClients(filters?: { routeId?: string; onlyToday?: boolean; createdDate?: string; search?: string }) {
     let query = supabase
       .from('clients')
       .select(`
@@ -893,11 +893,13 @@ export class AdminService {
       query = query.eq('route_id', filters.routeId);
     }
 
-    if (filters?.onlyToday) {
-      const now = new Date();
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
-      query = query.gte('created_at', startOfDay).lte('created_at', endOfDay);
+    if (filters?.createdDate && filters.createdDate.trim() !== '') {
+      const { start, end } = dayRangeIso(filters.createdDate);
+      query = query.gte('created_at', start).lte('created_at', end);
+    } else if (filters?.onlyToday) {
+      const todayStr = colombiaDateFromIso(new Date().toISOString());
+      const { start, end } = dayRangeIso(todayStr);
+      query = query.gte('created_at', start).lte('created_at', end);
     }
 
     const { data, error } = await query;
@@ -915,6 +917,30 @@ export class AdminService {
 
     return data;
   }
+
+  /**
+   * Obtiene préstamos desembolsados en una fecha específica, opcionalmente filtrados por ruta.
+   */
+  static async getNewLoansByDate(dateStr: string, routeId?: string) {
+    let query = supabase
+      .from('loans')
+      .select('id, client_id, amount_delivered, client:clients(full_name)')
+      .eq('disbursement_date', dateStr);
+
+    if (routeId && routeId !== 'all') {
+      query = query.eq('route_id', routeId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).map((l: any) => ({
+      loanId: l.id,
+      clientId: l.client_id,
+      clientName: l.client?.full_name || 'Sin nombre',
+      amount: l.amount_delivered || 0
+    }));
+  }
+
 
   /**
    * Recalcula y reconcilia las cuotas y el saldo del préstamo basándose en los pagos reales

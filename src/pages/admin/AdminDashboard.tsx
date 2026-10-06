@@ -668,6 +668,7 @@ export function AdminDashboard() {
         isOpen={isNewLoansOpen}
         onClose={() => setIsNewLoansOpen(false)}
         clients={stats?.nuevosHoy?.clients || []}
+        routeId={selectedRoute}
         onClientClick={() => {}}
       />
 
