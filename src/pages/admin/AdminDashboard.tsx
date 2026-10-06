@@ -252,6 +252,10 @@ export function AdminDashboard() {
                   <span>De atrasos recuperados:</span>
                   <span className="font-bold text-emerald-600">{formatCurrency(stats?.recaudoAtrasos ?? 0)}</span>
                 </div>
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>De adelantos:</span>
+                  <span className="font-bold text-emerald-600">{formatCurrency(stats?.recaudoAdelantos ?? 0)}</span>
+                </div>
               </div>
 
               <div className="pt-2 mt-2 border-t border-slate-100 space-y-1 text-xs">

@@ -580,14 +580,18 @@ export class SyncService {
 
       const { data: todayPayments } = await supabase
         .from('payments')
-        .select('operation_id, total_amount, is_transfer, device_id, collected_at')
+        .select('operation_id, loan_id, total_amount, day_installment_amount, arrears_amount, advance_amount, is_transfer, device_id, collected_at')
         .in('route_id', routeIds)
         .gte('collected_at', todayStart)
         .lte('collected_at', todayEnd);
 
       const paymentsToday = (todayPayments || []).map((p: any) => ({
         operation_id: p.operation_id,
+        loan_id: p.loan_id || null,
         total_amount: Number(p.total_amount || 0),
+        day_installment_amount: Number(p.day_installment_amount ?? 0),
+        arrears_amount: Number(p.arrears_amount ?? 0),
+        advance_amount: Number(p.advance_amount ?? 0),
         is_transfer: !!p.is_transfer,
         device_id: p.device_id || null,
       }));

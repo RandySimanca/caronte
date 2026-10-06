@@ -213,38 +213,14 @@ export function CollectorDashboard() {
       } else if (isTodayPaid && loanCurrentArrears === 0) {
         visitedCount++;
       }
+    } // end for loan of loans
 
-      let paidToday = paidTodayByLoan.get(loan.id) || 0;
-      if (paidToday > 0) {
-        let advanceForLoan = 0;
-        let todayForLoan = 0;
-        let arrearsForLoan = 0;
-        
-        const sortedInsts = [...loanInsts].sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date));
-        for (const inst of sortedInsts) {
-          if (paidToday <= 0) break;
-          const scheduled = Number(inst.scheduled_amount || loan.daily_installment || 0);
-          const balance = Number(inst.balance || 0);
-          const restoredAmt = Math.min(paidToday, Math.max(0, scheduled - balance));
-          
-          if (restoredAmt > 0) {
-            paidToday -= restoredAmt;
-            if (inst.scheduled_date > today) {
-              advanceForLoan += restoredAmt;
-            } else if (inst.scheduled_date === today) {
-              todayForLoan += restoredAmt;
-            } else {
-              arrearsForLoan += restoredAmt;
-            }
-          }
-        }
-        if (paidToday > 0) {
-          advanceForLoan += paidToday; // Any excess goes to advances
-        }
-        totalCollectedAdelantos += advanceForLoan;
-        totalCollectedTodayOnly += todayForLoan;
-        totalCollectedArrears += arrearsForLoan;
-      }
+    // Tally collected amounts by type using the authoritative fields stored in each payment
+    for (const p of mergedPayments) {
+      if (p.device_id === 'admin_panel') continue; // Exclude office payments
+      totalCollectedTodayOnly += Number(p.day_installment_amount ?? 0);
+      totalCollectedArrears   += Number(p.arrears_amount ?? 0);
+      totalCollectedAdelantos += Number(p.advance_amount ?? 0);
     }
 
     const collected = sumTodayPayments(mergedPayments).collected;

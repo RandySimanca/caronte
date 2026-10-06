@@ -385,6 +385,8 @@ export class AdminService {
       id,
       loan_id,
       total_amount,
+      day_installment_amount,
+      arrears_amount,
       advance_amount,
       collected_at,
       collector_observation,
@@ -582,8 +584,10 @@ export class AdminService {
     }));
 
     // Split collected amount into "today installments", "arrears", and "advances"
-    const recaudoCuotasHoy = Math.max(0, targetTodayOnly - todayInstsTotal);
-    const recaudoAtrasos = Math.max(0, recaudoHoy - recaudoCuotasHoy - totalAdelantadoHoy);
+    // using the authoritative fields stored in each payment record
+    const recaudoCuotasHoy = alertsData.reduce((s: number, p: any) => s + Number(p.day_installment_amount ?? 0), 0);
+    const recaudoAtrasos   = alertsData.reduce((s: number, p: any) => s + Number(p.arrears_amount ?? 0), 0);
+    const recaudoAdelantos = alertsData.reduce((s: number, p: any) => s + Number(p.advance_amount ?? 0), 0);
 
     return {
       clientes: clientsRes.count || 0,
@@ -591,6 +595,7 @@ export class AdminService {
       recaudo: recaudoHoy,
       recaudoCuotasHoy,
       recaudoAtrasos,
+      recaudoAdelantos,
       recaudoOficina,
       recaudoTransferencias,
       recaudoCobrador: Math.max(0, recaudoCobrador),

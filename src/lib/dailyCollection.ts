@@ -20,7 +20,11 @@ export function colombiaDateFromIso(iso: string): string {
 
 export type TodayPayment = {
   operation_id: string;
+  loan_id?: string | null;
   total_amount: number;
+  day_installment_amount?: number;
+  arrears_amount?: number;
+  advance_amount?: number;
   is_transfer?: boolean;
   device_id?: string | null;
 };
@@ -34,7 +38,11 @@ function paymentFromSyncOp(op: { operation_type?: string; payload?: any; local_t
   if (!operationId) return null;
   return {
     operation_id: String(operationId),
+    loan_id: p.loanId || p.loan_id || null,
     total_amount: Number(p.totalAmount ?? p.total_amount ?? 0),
+    day_installment_amount: Number(p.dayInstallmentAmount ?? p.day_installment_amount ?? 0),
+    arrears_amount: Number(p.arrearsAmount ?? p.arrears_amount ?? 0),
+    advance_amount: Number(p.advanceAmount ?? p.advance_amount ?? 0),
     is_transfer: !!(p.isTransfer ?? p.is_transfer),
     device_id: p.deviceId || p.device_id || null,
   };
@@ -62,7 +70,11 @@ export function mergeTodayPayments(
     if (!id) continue;
     map.set(id, {
       operation_id: id,
+      loan_id: p.loan_id || null,
       total_amount: Number(p.total_amount || 0),
+      day_installment_amount: Number(p.day_installment_amount ?? 0),
+      arrears_amount: Number(p.arrears_amount ?? 0),
+      advance_amount: Number(p.advance_amount ?? 0),
       is_transfer: !!p.is_transfer,
       device_id: p.device_id || null,
     });
