@@ -108,8 +108,8 @@ export function AdminDashboard() {
       ? routeStates
       : routeStates.filter(r => r.id === selectedRoute);
 
-  const routeSubtitle = selectedRoute === '' 
-    ? 'Seleccione una ruta' 
+  const routeSubtitle = selectedRoute === ''
+    ? 'Seleccione una ruta'
     : isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas';
 
   return (
@@ -237,7 +237,7 @@ export function AdminDashboard() {
                 <ChevronRight className="w-3 h-3" />
               </button>
             </div>
-            
+
             <div className={`text-3xl sm:text-4xl font-black text-slate-800 mb-3 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
               {formatCurrency(stats?.recaudo ?? 0)}
             </div>
@@ -269,7 +269,7 @@ export function AdminDashboard() {
                 </div>
                 <div className="flex justify-between items-center text-slate-500">
                   <span>Transferencias:</span>
-                  <button 
+                  <button
                     onClick={() => setIsTransferModalOpen(true)}
                     className="font-semibold text-indigo-600 hover:text-indigo-700 underline underline-offset-2"
                   >
@@ -312,23 +312,23 @@ export function AdminDashboard() {
 
       {/* ─── EFECTIVIDAD DE RECAUDO DEL DÍA ─── */}
       {selectedRoute && (() => {
-        const collected   = stats?.recaudo ?? 0;
-        const expected    = stats?.esperadoCuotasHoy ?? stats?.esperado ?? 0;
-        const pct         = expected > 0 ? Math.min(100, (collected / expected) * 100) : 0;
-        const remaining   = Math.max(0, expected - collected);
+        const collected = stats?.recaudoCuotasHoy ?? 0;
+        const expected = stats?.esperadoCuotasHoy ?? stats?.esperado ?? 0;
+        const pct = expected > 0 ? Math.min(100, (collected / expected) * 100) : 0;
+        const remaining = Math.max(0, expected - collected);
 
         // Colores según porcentaje
-        const gaugeColor  = pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
-        const bgClass     = pct >= 80 ? 'from-emerald-50 to-green-100 border-emerald-200'
-                          : pct >= 50 ? 'from-amber-50 to-yellow-100 border-amber-200'
-                          : 'from-red-50 to-rose-100 border-red-200';
-        const labelClass  = pct >= 80 ? 'text-emerald-700' : pct >= 50 ? 'text-amber-700' : 'text-red-700';
-        const titleClass  = pct >= 80 ? 'text-emerald-900' : pct >= 50 ? 'text-amber-900' : 'text-red-900';
+        const gaugeColor = pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+        const bgClass = pct >= 80 ? 'from-emerald-50 to-green-100 border-emerald-200'
+          : pct >= 50 ? 'from-amber-50 to-yellow-100 border-amber-200'
+            : 'from-red-50 to-rose-100 border-red-200';
+        const labelClass = pct >= 80 ? 'text-emerald-700' : pct >= 50 ? 'text-amber-700' : 'text-red-700';
+        const titleClass = pct >= 80 ? 'text-emerald-900' : pct >= 50 ? 'text-amber-900' : 'text-red-900';
 
         // SVG circular gauge
-        const radius   = 52;
-        const circ     = 2 * Math.PI * radius;
-        const dashOff  = circ * (1 - pct / 100);
+        const radius = 52;
+        const circ = 2 * Math.PI * radius;
+        const dashOff = circ * (1 - pct / 100);
 
         return (
           <div className={`bg-gradient-to-br ${bgClass} border rounded-2xl p-6 shadow-sm relative overflow-hidden`}>
@@ -379,15 +379,15 @@ export function AdminDashboard() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-white/60 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/80">
-                    <p className="text-xs text-slate-500 font-semibold mb-0.5">✅ Ya cobrado</p>
+                    <p className="text-xs text-slate-500 font-semibold mb-0.5"> Ya cobrado</p>
                     <p className={`text-lg font-black ${labelClass}`}>{formatCurrency(collected)}</p>
                   </div>
                   <div className="bg-white/60 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/80">
-                    <p className="text-xs text-slate-500 font-semibold mb-0.5">⏳ Por recoger</p>
+                    <p className="text-xs text-slate-500 font-semibold mb-0.5"> Por recoger</p>
                     <p className="text-lg font-black text-slate-700">{formatCurrency(remaining)}</p>
                   </div>
                   <div className="col-span-2 bg-white/60 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/80">
-                    <p className="text-xs text-slate-500 font-semibold mb-0.5">🎯 Meta del día (cuotas)</p>
+                    <p className="text-xs text-slate-500 font-semibold mb-0.5"> Meta del día (cuotas)</p>
                     <p className="text-lg font-black text-slate-700">{formatCurrency(expected)}</p>
                   </div>
                 </div>
@@ -443,30 +443,30 @@ export function AdminDashboard() {
 
         {/* 1b. Adelantos de hoy (cuotas futuras cobradas hoy) */}
         <button
-            onClick={() => setIsAdelantosOpen(true)}
-            className="bg-white rounded-3xl border border-emerald-100 shadow-sm p-6 hover:shadow-md hover:border-emerald-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
-          >
-            <div className="flex items-start justify-between w-full mb-6">
-              <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center relative shadow-inner">
-                <FastForward className="w-7 h-7 text-emerald-600" />
-                <span className="absolute -top-2 -right-2 w-7 h-7 bg-emerald-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md">
-                  {stats!.adelantosHoy!.count}
-                </span>
-              </div>
-              <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
-                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all" />
-              </div>
+          onClick={() => setIsAdelantosOpen(true)}
+          className="bg-white rounded-3xl border border-emerald-100 shadow-sm p-6 hover:shadow-md hover:border-emerald-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
+        >
+          <div className="flex items-start justify-between w-full mb-6">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center relative shadow-inner">
+              <FastForward className="w-7 h-7 text-emerald-600" />
+              <span className="absolute -top-2 -right-2 w-7 h-7 bg-emerald-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md">
+                {stats!.adelantosHoy!.count}
+              </span>
             </div>
-            <div>
-              <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Adelantos de Hoy</h3>
-              <p className="text-sm text-slate-500 leading-relaxed">
-                <strong className="text-emerald-600">{stats!.adelantosHoy!.count}</strong> cliente{stats!.adelantosHoy!.count !== 1 ? 's' : ''} adelantaron cuotas futuras hoy.
-              </p>
-              <p className="text-sm font-black text-emerald-700 mt-1">
-                {formatCurrency(stats!.adelantosHoy!.total)}
-              </p>
+            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
+              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all" />
             </div>
-          </button>
+          </div>
+          <div>
+            <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Adelantos de Hoy</h3>
+            <p className="text-sm text-slate-500 leading-relaxed">
+              <strong className="text-emerald-600">{stats!.adelantosHoy!.count}</strong> cliente{stats!.adelantosHoy!.count !== 1 ? 's' : ''} adelantaron cuotas futuras hoy.
+            </p>
+            <p className="text-sm font-black text-emerald-700 mt-1">
+              {formatCurrency(stats!.adelantosHoy!.total)}
+            </p>
+          </div>
+        </button>
 
         {/* 2. Sorteo de boletas */}
         <button
@@ -669,7 +669,7 @@ export function AdminDashboard() {
         onClose={() => setIsNewLoansOpen(false)}
         clients={stats?.nuevosHoy?.clients || []}
         routeId={selectedRoute}
-        onClientClick={() => {}}
+        onClientClick={() => { }}
       />
 
       {/* Modal Adelantos de Hoy */}
