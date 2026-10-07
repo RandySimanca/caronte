@@ -29,13 +29,17 @@ export const useAuthStore = create<AuthState>((set) => ({
         .eq('id', session.user.id)
         .maybeSingle();
 
+      console.log('[Auth] User data query result:', { data, error });
+
       if (!error && data && (data as any).roles) {
         // @ts-ignore
         set({ role: (data as any).roles.name, companyId: data.company_id || null });
       } else {
+        console.error('[Auth] User not found in users table or error:', error, data);
         set({ role: 'COBRADOR', companyId: null });
       }
-    } catch {
+    } catch (err) {
+      console.error('[Auth] Exception fetching user role:', err);
       set({ role: 'COBRADOR', companyId: null });
     }
   },
@@ -49,7 +53,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       set({ session, user: session?.user || null, isLoading: false });
-      
+
       if (session?.user) {
         try {
           // Use explicit FK hint: roles!role_id(name)
@@ -59,14 +63,17 @@ export const useAuthStore = create<AuthState>((set) => ({
             .eq('id', session.user.id)
             .maybeSingle(); // maybeSingle() returns null instead of error when no row found
 
+          console.log('[Auth] Session check result:', { data, error });
+
           if (!error && data && (data as any).roles) {
             // @ts-ignore - PostgREST embedded response typing
             set({ role: data.roles.name, companyId: data.company_id || null });
           } else {
-            // User row may not exist in custom users table yet; default to COBRADOR
+            console.error('[Auth] User not found in users table or error:', error, data);
             set({ role: 'COBRADOR', companyId: null });
           }
-        } catch {
+        } catch (err) {
+          console.error('[Auth] Exception fetching user role:', err);
           set({ role: 'COBRADOR', companyId: null });
         }
       }
