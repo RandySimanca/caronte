@@ -2,6 +2,7 @@ import { format } from 'date-fns';
 import { db } from '@/db/schema';
 import { supabase } from '@/lib/supabase';
 import { useSyncStore } from '@/stores/syncStore';
+import { useAuthStore } from '@/stores/authStore';
 import {
   applyLotteryDrawLocally,
   isLotteryWinnerLoan,
@@ -548,9 +549,10 @@ export class SyncService {
 
       const installments = await fetchAllByIds<any>('loan_installments', 'loan_id', loanIds);
 
-      // 6. Fetch Global Settings and Categories
-      const { data: settingsRaw } = await supabase.from('system_settings').select('key, value');
-      const { data: categories } = await supabase.from('expense_categories').select('*').eq('active', true);
+      // 6. Fetch Settings and Categories for the user's company
+      const { companyId } = useAuthStore.getState();
+      const { data: settingsRaw } = await supabase.from('system_settings').select('key, value').eq('company_id', companyId);
+      const { data: categories } = await supabase.from('expense_categories').select('*').eq('active', true).eq('company_id', companyId);
       const settings = (settingsRaw || []) as { key: string; value: any }[];
 
       const localSettings = settings.map(s => ({ key: s.key, value: s.value }));
@@ -845,17 +847,21 @@ export class SyncService {
     const isOnline = useSyncStore.getState().isOnline;
     if (!isOnline) return;
 
+    const { companyId } = useAuthStore.getState();
+
     try {
-      // Settings globales
+      // Settings de la empresa
       const { data: settingsRaw2 } = await supabase
         .from('system_settings')
-        .select('key, value');
+        .select('key, value')
+        .eq('company_id', companyId);
 
-      // Categorías de gastos
+      // Categorías de gastos de la empresa
       const { data: categories } = await supabase
         .from('expense_categories')
         .select('*')
-        .eq('active', true);
+        .eq('active', true)
+        .eq('company_id', companyId);
 
       // Viático específico del cobrador desde su asignación activa
       const { data: assignmentsRaw2 } = await supabase

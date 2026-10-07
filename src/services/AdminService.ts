@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import type { User, Role } from '@/lib/database.types';
 import { dayRangeIso, colombiaDateFromIso } from '@/lib/dailyCollection';
 import { parseLotteryLastDraw, isLotteryWinnerLoan } from '@/lib/lottery';
+import { useAuthStore } from '@/stores/authStore';
 
 export interface UserWithRole extends User {
   roles: {
@@ -43,12 +44,12 @@ export class AdminService {
   }
 
   /**
-   * Llama a la función RPC de PostgreSQL para crear un nuevo usuario
+   * Llama a la edge function para crear un nuevo usuario
    * @param payload Datos del nuevo usuario
    */
   static async createUser(payload: {
     email: string;
-    password?: string;
+    password: string;
     full_name: string;
     phone?: string;
     role_id: string;
@@ -58,12 +59,8 @@ export class AdminService {
       throw new Error('No hay conexión a internet. La creación de usuarios requiere conexión.');
     }
 
-    const { data, error } = await supabase.rpc('admin_create_user', {
-      p_email: payload.email,
-      p_full_name: payload.full_name,
-      p_role_id: payload.role_id,
-      p_password: payload.password || null,
-      p_phone: payload.phone || null
+    const { data, error } = await supabase.functions.invoke('admin-create-user', {
+      body: payload
     });
 
     if (error) {
@@ -225,9 +222,11 @@ export class AdminService {
    * Crea o actualiza un feriado
    */
   static async upsertHoliday(payload: { holiday_date: string; name: string; country_code: string; active?: boolean; id?: string }) {
+    const { companyId } = useAuthStore.getState();
+
     const { data, error } = await supabase
       .from('holidays')
-      .upsert(payload as any, { onConflict: 'id' })
+      .upsert({ ...payload, company_id: companyId } as any, { onConflict: 'company_id,holiday_date' })
       .select()
       .single();
 
@@ -252,9 +251,11 @@ export class AdminService {
    * Crea o actualiza una categoría de gastos
    */
   static async upsertExpenseCategory(payload: { name: string; description?: string; active?: boolean; is_system?: boolean; id?: string }) {
+    const { companyId } = useAuthStore.getState();
+
     const { data, error } = await supabase
       .from('expense_categories')
-      .upsert(payload as any, { onConflict: 'id' })
+      .upsert({ ...payload, company_id: companyId } as any, { onConflict: 'company_id,name' })
       .select()
       .single();
 
@@ -279,10 +280,13 @@ export class AdminService {
    * Actualiza un parámetro del sistema
    */
   static async updateSystemSetting(key: string, value: any, updatedBy: string) {
+    const { companyId } = useAuthStore.getState();
+
     const { data, error } = await supabase
       .from('system_settings')
       .update({ value, updated_by: updatedBy, updated_at: new Date().toISOString() } as any)
       .eq('key', key)
+      .eq('company_id', companyId)
       .select()
       .single();
 

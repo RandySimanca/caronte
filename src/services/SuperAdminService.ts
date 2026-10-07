@@ -41,53 +41,53 @@ export interface GlobalSaaSMetrics {
 export class SuperAdminService {
   /**
    * Obtiene métricas globales de la plataforma SaaS para el Super Admin
+   * Usa la función RPC superadmin_company_stats para evitar descargar colecciones completas
    */
   static async getGlobalMetrics(): Promise<GlobalSaaSMetrics> {
-    const { data: companies, error: compErr } = await supabase
-      .from('companies')
-      .select('id, status');
+    // Usar la función de agregación para obtener métricas por empresa
+    const { data: companyStats, error: statsError } = await supabase
+      .rpc('superadmin_company_stats');
 
-    if (compErr) console.error('Error fetching companies for metrics:', compErr);
+    if (statsError) {
+      console.error('Error fetching company stats:', statsError);
+      throw statsError;
+    }
 
-    const total_companies = companies?.length || 0;
-    const active_companies = companies?.filter(c => c.status === 'ACTIVE').length || 0;
-    const suspended_companies = companies?.filter(c => c.status === 'SUSPENDED').length || 0;
+    const stats = companyStats || [];
 
-    // Conteo total de cobradores
-    const { count: total_collectors } = await supabase
-      .from('users')
-      .select('*', { count: 'exact', head: true });
+    // Calcular totales globales
+    const total_companies = stats.length;
+    const active_companies = stats.filter((s: any) => s.is_active).length;
+    const suspended_companies = stats.filter((s: any) => !s.is_active).length;
 
-    // Conteo total de rutas
-    const { count: total_routes } = await supabase
-      .from('routes')
-      .select('*', { count: 'exact', head: true });
+    const total_collectors = stats.reduce((sum: number, s: any) => sum + (s.collectors_count || 0), 0);
+    const total_routes = stats.reduce((sum: number, s: any) => sum + (s.routes_count || 0), 0);
+    const total_loans_active = stats.reduce((sum: number, s: any) => sum + (s.loans_count || 0), 0);
+    const total_active_portfolio = stats.reduce((sum: number, s: any) => sum + (s.active_portfolio || 0), 0);
 
-    // Préstamos activos y cartera global
-    const { data: loans } = await supabase
-      .from('loans')
-      .select('current_balance, status')
-      .eq('status', 'ACTIVO');
-
-    const total_loans_active = loans?.length || 0;
-    const total_active_portfolio = loans?.reduce((acc, l) => acc + (l.current_balance || 0), 0) || 0;
-
-    // Recaudo de hoy global
+    // Recaudo de hoy global (usar count exact para no truncar)
     const todayStr = new Date().toISOString().split('T')[0];
-    const { data: payments } = await supabase
+    const { data: paymentsSum } = await supabase
       .from('payments')
-      .select('total_amount')
+      .select('total_amount', { count: 'exact', head: true })
       .gte('collected_at', `${todayStr}T00:00:00`)
       .lte('collected_at', `${todayStr}T23:59:59`);
 
-    const total_collected_today = payments?.reduce((acc, p) => acc + (p.total_amount || 0), 0) || 0;
+    // Usar agregación SQL para suma exacta
+    const { data: totalCollected } = await supabase
+      .rpc('sum_total_collected_today', {
+        p_start_date: `${todayStr}T00:00:00`,
+        p_end_date: `${todayStr}T23:59:59`
+      });
+
+    const total_collected_today = totalCollected || 0;
 
     return {
       total_companies,
       active_companies,
       suspended_companies,
-      total_collectors: total_collectors || 0,
-      total_routes: total_routes || 0,
+      total_collectors,
+      total_routes,
       total_loans_active,
       total_active_portfolio,
       total_collected_today,
@@ -96,108 +96,63 @@ export class SuperAdminService {
 
   /**
    * Obtiene listado de todas las empresas/prestamistas con sus estadísticas
+   * Usa la función RPC superadmin_company_stats para evitar descargar colecciones completas
    */
   static async getCompanies(): Promise<CompanyWithStats[]> {
-    const { data: companies, error } = await supabase
-      .from('companies')
-      .select('*')
-      .order('created_at', { ascending: false });
+    // Usar la función de agregación para obtener métricas por empresa
+    const { data: companyStats, error: statsError } = await supabase
+      .rpc('superadmin_company_stats');
 
-    if (error) throw error;
+    if (statsError) {
+      console.error('Error fetching company stats:', statsError);
+      throw statsError;
+    }
 
-    // Fetch counts and metrics per company
-    const { data: users } = await supabase.from('users').select('id, company_id, role_id, roles!role_id(name)');
-    const { data: routes } = await supabase.from('routes').select('id, company_id');
-    const { data: loans } = await supabase.from('loans').select('id, route_id, current_balance, status, routes!route_id(company_id)');
-    const { data: clients } = await supabase.from('clients').select('id, route_id, routes!route_id(company_id)');
-
-    return (companies || []).map(company => {
-      const compUsers = users?.filter(u => u.company_id === company.id) || [];
-      const collectors_count = compUsers.filter(u => (u.roles as any)?.name === 'COBRADOR').length;
-      
-      const compRoutes = routes?.filter(r => r.company_id === company.id) || [];
-      const routes_count = compRoutes.length;
-
-      const compClients = clients?.filter(c => (c.routes as any)?.company_id === company.id) || [];
-      const clients_count = compClients.length;
-
-      const compLoans = loans?.filter(l => (l.routes as any)?.company_id === company.id && l.status === 'ACTIVO') || [];
-      const loans_count = compLoans.length;
-      const active_portfolio = compLoans.reduce((sum, l) => sum + (l.current_balance || 0), 0);
-
-      return {
-        ...company,
-        collectors_count,
-        routes_count,
-        clients_count,
-        loans_count,
-        active_portfolio,
-      };
-    });
+    // La función ya devuelve todos los datos necesarios
+    return (companyStats || []).map((stat: any) => ({
+      id: stat.company_id,
+      name: stat.company_name,
+      collectors_count: stat.collectors_count,
+      routes_count: stat.routes_count,
+      clients_count: stat.clients_count,
+      loans_count: stat.loans_count,
+      active_portfolio: stat.active_portfolio,
+      is_active: stat.is_active,
+      // Campos adicionales que podemos necesitar (null por ahora, la función podría expandirse)
+      slug: null,
+      owner_name: null,
+      email: null,
+      phone: null,
+      status: stat.is_active ? 'ACTIVE' : 'INACTIVE',
+      plan: null,
+      max_collectors: null,
+      max_routes: null,
+      subscription_expires_at: null,
+      notes: null,
+      created_at: null,
+      updated_at: null,
+    }));
   }
 
   /**
    * Crea una nueva empresa / prestamista y provisiona su usuario Administrador inicial
+   * Usa la edge function create-company
    */
   static async createCompany(input: CreateCompanyInput): Promise<Company> {
-    const randomSuffix = Math.random().toString(36).substring(2, 6); // ej. "a3f9"
-    const baseSlug = input.slug
-      ? input.slug.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
-      : input.name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-    const slug = `${baseSlug}-${randomSuffix}`;
-
-    // 1. Insertar la empresa
-    const { data: company, error: compError } = await supabase
-      .from('companies')
-      .insert({
-        name: input.name,
-        slug,
-        owner_name: input.owner_name,
-        email: input.email,
-        phone: input.phone || null,
-        plan: input.plan || 'PRO',
-        max_collectors: input.max_collectors || 10,
-        max_routes: input.max_routes || 10,
-        subscription_expires_at: input.subscription_expires_at || null,
-        notes: input.notes || null,
-        status: 'ACTIVE',
-      })
-      .select()
-      .single();
-
-    if (compError) throw compError;
-
-    // 2. Obtener id del rol ADMINISTRADOR
-    const { data: roleData } = await supabase
-      .from('roles')
-      .select('id')
-      .eq('name', 'ADMINISTRADOR')
-      .single();
-
-    if (roleData) {
-      try {
-        // Provisionar usuario administrador usando RPC admin_create_user
-        const { data: newUserId, error: userError } = await supabase.rpc('admin_create_user', {
-          p_email: input.admin_email,
-          p_full_name: input.admin_full_name,
-          p_role_id: roleData.id,
-          p_password: input.admin_password || null,
-          p_phone: input.admin_phone || null,
-        });
-
-        if (!userError && newUserId) {
-          // Asignar el company_id recién creado
-          await supabase
-            .from('users')
-            .update({ company_id: company.id })
-            .eq('id', newUserId);
-        }
-      } catch (err) {
-        console.error('Error provisioning initial admin user for company:', err);
-      }
+    // Check connection first
+    if (!navigator.onLine) {
+      throw new Error('No hay conexión a internet. La creación de empresas requiere conexión.');
     }
 
-    return company;
+    const { data, error } = await supabase.functions.invoke('create-company', {
+      body: input
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Error desconocido al crear empresa');
+    }
+
+    return data.company;
   }
 
   /**

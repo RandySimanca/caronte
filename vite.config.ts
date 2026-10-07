@@ -32,18 +32,9 @@ export default defineConfig({
         // Disable web-vitals performance reporting that causes the startTime error on bfcache
         disableDevLogs: true,
         navigationPreload: false,
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MB limit
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'supabase-api-cache',
-              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 },
-              networkTimeoutSeconds: 5
-            }
-          }
-        ]
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024 // 4 MB limit
+        // Nota: runtimeCaching eliminado - respuestas autenticadas de Supabase no deberían cachearse
+        // La capa offline ya está manejada por Dexie (IndexedDB)
       }
     })
   ],

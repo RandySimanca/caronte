@@ -82,7 +82,7 @@ const router = createBrowserRouter([
   // RUTAS DEL ADMINISTRADOR
   {
     path: '/admin',
-    element: <RequireAuth allowedRoles={['ADMINISTRADOR', 'SUPER_ADMIN']}><AdminLayout /></RequireAuth>,
+    element: <RequireAuth allowedRoles={['ADMINISTRADOR']}><AdminLayout /></RequireAuth>,
     children: [
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: 'dashboard', element: <AdminDashboard /> },
@@ -123,7 +123,8 @@ export function App() {
       if (newSession) {
         useAuthStore.getState().signIn(newSession);
       } else {
-        useAuthStore.setState({ session: null, user: null, role: null });
+        // Limpiar también companyId al cerrar sesión
+        useAuthStore.setState({ session: null, user: null, role: null, companyId: null });
       }
     });
 
