@@ -1,9 +1,10 @@
 -- ============================================================
--- MIGRATION 029: FUNCIÓN DE AGREGACIÓN PARA SUPER_ADMIN
--- Evita que SuperAdminService descargue colecciones completas truncadas
+-- MIGRATION 031: CORRECCIÓN DE PERMISOS DE FUNCIONES DE AGREGACIÓN
+-- Asegura que superadmin_company_stats y sum_total_collected_today
+-- tengan validación de SUPER_ADMIN y permisos correctos
 -- ============================================================
 
--- Función superadmin_company_stats: devuelve métricas por empresa y totales globales
+-- ─── ACTUALIZAR superadmin_company_stats CON VALIDACIÓN ───────
 CREATE OR REPLACE FUNCTION superadmin_company_stats()
 RETURNS TABLE (
   company_id uuid,
@@ -15,7 +16,7 @@ RETURNS TABLE (
   active_portfolio numeric,
   is_active boolean
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public
@@ -65,23 +66,14 @@ BEGIN
 END;
 $$;
 
--- Solo SUPER_ADMIN puede ejecutar esta función (validado dentro de la función)
-REVOKE EXECUTE ON FUNCTION superadmin_company_stats() FROM PUBLIC, anon;
+-- Permisos correctos: authenticated puede ejecutar, pero la función valida internamente
+REVOKE EXECUTE ON FUNCTION superadmin_company_stats() FROM PUBLIC, anon, service_role;
 GRANT EXECUTE ON FUNCTION superadmin_company_stats() TO authenticated;
 
--- Crear una vista para facilitar el acceso desde el cliente (solo SUPER_ADMIN)
-CREATE OR REPLACE VIEW superadmin_metrics_view AS
-SELECT * FROM superadmin_company_stats();
-
--- Política para la vista (solo SUPER_ADMIN puede leer)
-DROP POLICY IF EXISTS superadmin_metrics_view_select ON superadmin_metrics_view;
-CREATE POLICY superadmin_metrics_view_select ON superadmin_metrics_view
-  FOR SELECT USING (is_super_admin());
-
--- Función auxiliar para sumar pagos por rango de fechas (evita truncamiento)
+-- ─── ACTUALIZAR sum_total_collected_today CON VALIDACIÓN ─────
 CREATE OR REPLACE FUNCTION sum_total_collected_today(p_start_date timestamptz, p_end_date timestamptz)
 RETURNS numeric
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public
@@ -100,5 +92,6 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION sum_total_collected_today(timestamptz, timestamptz) FROM PUBLIC, anon;
+-- Permisos correctos: authenticated puede ejecutar, pero la función valida internamente
+REVOKE EXECUTE ON FUNCTION sum_total_collected_today(timestamptz, timestamptz) FROM PUBLIC, anon, service_role;
 GRANT EXECUTE ON FUNCTION sum_total_collected_today(timestamptz, timestamptz) TO authenticated;
