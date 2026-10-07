@@ -7,25 +7,26 @@ import {
 import { NewCompanyModal } from '@/components/superadmin/NewCompanyModal';
 import { formatMoney } from '@/lib/money';
 import type { CompanyStatus } from '@/lib/database.types';
-import { 
-  Building2, 
-  Users, 
-  Compass, 
-  DollarSign, 
-  Plus, 
-  Search, 
-  CheckCircle2, 
-  AlertTriangle, 
-  Power, 
-  Edit3, 
-  Eye, 
+import {
+  Building2,
+  Users,
+  Compass,
+  DollarSign,
+  Plus,
+  Search,
+  CheckCircle2,
+  AlertTriangle,
+  Power,
+  Edit3,
+  Eye,
   Sparkles,
   TrendingUp,
   ShieldCheck,
   Phone,
   Mail,
   Calendar,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -84,6 +85,39 @@ export function SuperAdminDashboard() {
       setCompanyDetails(details);
     } catch (error) {
       toast.error('Error cargando detalles del prestamista');
+    }
+  };
+
+  const handleDeleteCompany = async (company: CompanyWithStats) => {
+    if (!confirm(`¿Estás seguro de eliminar la empresa "${company.name}"?\n\nEsta acción eliminará permanentemente:\n- Todos los usuarios de la empresa\n- Todas las rutas\n- Todos los clientes\n- Todos los préstamos y pagos\n- Todos los datos históricos\n\nEsta acción NO se puede deshacer.`)) {
+      return;
+    }
+
+    try {
+      const result = await SuperAdminService.deleteCompany(company.id);
+      toast.success(result);
+      fetchData();
+      setIsDetailOpen(false);
+    } catch (error: any) {
+      toast.error(error.message || 'Error al eliminar empresa');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    if (!confirm(`¿Estás seguro de eliminar al usuario "${userName}"?\n\nEsta acción eliminará permanentemente:\n- El usuario y su perfil\n- Todos sus datos asignados\n- Su cuenta de autenticación\n\nEsta acción NO se puede deshacer.`)) {
+      return;
+    }
+
+    try {
+      const result = await SuperAdminService.deleteUser(userId);
+      toast.success(result);
+      // Refresh company details
+      if (selectedCompany) {
+        const details = await SuperAdminService.getCompanyDetails(selectedCompany.id);
+        setCompanyDetails(details);
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Error al eliminar usuario');
     }
   };
 
@@ -333,13 +367,21 @@ export function SuperAdminDashboard() {
                   <button
                     onClick={() => handleToggleStatus(company)}
                     className={`flex items-center justify-center p-2 rounded-xl border transition-all ${
-                      company.status === 'ACTIVE' 
-                        ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/30' 
+                      company.status === 'ACTIVE'
+                        ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/30'
                         : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                     }`}
                     title={company.status === 'ACTIVE' ? 'Suspender Empresa' : 'Activar Empresa'}
                   >
                     <Power className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteCompany(company)}
+                    className="flex items-center justify-center p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-all"
+                    title="Eliminar Empresa"
+                  >
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -410,16 +452,34 @@ export function SuperAdminDashboard() {
                         <p className="font-bold text-white">{u.full_name}</p>
                         <p className="text-slate-400 text-[11px]">{u.phone || 'Sin teléfono'}</p>
                       </div>
-                      <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                        {u.roles?.name}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          {u.roles?.name}
+                        </span>
+                        {u.roles?.name !== 'SUPER_ADMIN' && (
+                          <button
+                            onClick={() => handleDeleteUser(u.id, u.full_name)}
+                            className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-all"
+                            title="Eliminar Usuario"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="pt-4 border-t border-slate-800 flex justify-end">
+            <div className="pt-4 border-t border-slate-800 flex justify-between">
+              <button
+                onClick={() => handleDeleteCompany(selectedCompany)}
+                className="px-5 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold rounded-xl text-xs border border-red-500/30 flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Eliminar Empresa</span>
+              </button>
               <button
                 onClick={() => setIsDetailOpen(false)}
                 className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs"

@@ -207,4 +207,42 @@ export class SuperAdminService {
       routes: routes || [],
     };
   }
+
+  /**
+   * Elimina un usuario (solo SUPER_ADMIN)
+   * Elimina físicamente el usuario y todos sus datos relacionados
+   */
+  static async deleteUser(userId: string): Promise<string> {
+    if (!navigator.onLine) {
+      throw new Error('No hay conexión a internet. La eliminación de usuarios requiere conexión.');
+    }
+
+    const { data, error } = await supabase
+      .rpc('superadmin_delete_user', { p_user_id: userId });
+
+    if (error) {
+      throw new Error(error.message || 'Error al eliminar usuario');
+    }
+
+    return data;
+  }
+
+  /**
+   * Elimina una empresa (solo SUPER_ADMIN)
+   * Elimina físicamente la empresa y todos sus datos (usuarios, rutas, préstamos, pagos, etc.)
+   */
+  static async deleteCompany(companyId: string): Promise<string> {
+    if (!navigator.onLine) {
+      throw new Error('No hay conexión a internet. La eliminación de empresas requiere conexión.');
+    }
+
+    const { data, error } = await supabase
+      .rpc('superadmin_delete_company', { p_company_id: companyId });
+
+    if (error) {
+      throw new Error(error.message || 'Error al eliminar empresa');
+    }
+
+    return data;
+  }
 }

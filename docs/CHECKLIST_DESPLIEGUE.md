@@ -45,11 +45,12 @@ O manualmente en el SQL Editor, en este orden:
 
 1. `supabase/migrations/028_saas_multiempresa_isolation.sql` - Aislamiento por empresa
 2. `supabase/migrations/029_superadmin_aggregation.sql` - Funciones de agregación para SuperAdmin
+3. `supabase/migrations/030_superadmin_delete_functions.sql` - Funciones de eliminación para SUPER_ADMIN
 
 **Verificación:**
 - Ejecutar `SELECT version FROM supabase_migrations.schema_migrations ORDER BY version;`
-- Confirmar que 028 y 029 están en la lista
-- La migración 028 debe correr dos veces sin error (es idempotente)
+- Confirmar que 028, 029 y 030 están en la lista
+- Las migraciones deben correr dos veces sin error (son idempotentes)
 
 ---
 
