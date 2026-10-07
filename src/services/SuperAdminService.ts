@@ -175,10 +175,10 @@ export class SuperAdminService {
         // Provisionar usuario administrador usando RPC admin_create_user
         const { data: newUserId, error: userError } = await supabase.rpc('admin_create_user', {
           p_email: input.admin_email,
-          p_password: input.admin_password || null,
           p_full_name: input.admin_full_name,
-          p_phone: input.admin_phone || null,
           p_role_id: roleData.id,
+          p_password: input.admin_password || null,
+          p_phone: input.admin_phone || null,
         });
 
         if (!userError && newUserId) {

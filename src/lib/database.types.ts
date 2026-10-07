@@ -420,10 +420,10 @@ export type Database = {
       admin_create_user: {
         Args: {
           p_email: string
-          p_password: string | null
           p_full_name: string
-          p_phone: string | null
           p_role_id: string
+          p_password: string | null
+          p_phone: string | null
         }
         Returns: string
       }

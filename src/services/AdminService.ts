@@ -60,10 +60,10 @@ export class AdminService {
 
     const { data, error } = await supabase.rpc('admin_create_user', {
       p_email: payload.email,
-      p_password: payload.password || null,
       p_full_name: payload.full_name,
-      p_phone: payload.phone || null,
-      p_role_id: payload.role_id
+      p_role_id: payload.role_id,
+      p_password: payload.password || null,
+      p_phone: payload.phone || null
     });
 
     if (error) {
