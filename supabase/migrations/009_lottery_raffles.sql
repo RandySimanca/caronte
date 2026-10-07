@@ -65,6 +65,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_assign_raffle ON loans;
 CREATE TRIGGER trg_assign_raffle
 BEFORE INSERT ON loans
 FOR EACH ROW EXECUTE FUNCTION assign_raffle_number_trg();

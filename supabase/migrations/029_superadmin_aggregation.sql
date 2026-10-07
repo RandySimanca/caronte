@@ -72,13 +72,9 @@ REVOKE EXECUTE ON FUNCTION superadmin_company_stats() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION superadmin_company_stats() TO authenticated;
 
 -- Crear una vista para facilitar el acceso desde el cliente (solo SUPER_ADMIN)
+-- La seguridad está garantizada por la validación is_super_admin() dentro de la función
 CREATE OR REPLACE VIEW superadmin_metrics_view AS
 SELECT * FROM superadmin_company_stats();
-
--- Política para la vista (solo SUPER_ADMIN puede leer)
-DROP POLICY IF EXISTS superadmin_metrics_view_select ON superadmin_metrics_view;
-CREATE POLICY superadmin_metrics_view_select ON superadmin_metrics_view
-  FOR SELECT USING (is_super_admin());
 
 -- Función auxiliar para sumar pagos por rango de fechas (evita truncamiento)
 DROP FUNCTION IF EXISTS sum_total_collected_today(timestamptz, timestamptz);

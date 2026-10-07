@@ -5,6 +5,8 @@
 -- Agregamos la política faltante para permitir que los cobradores
 -- puedan editar (UPDATE) los datos de los clientes que pertenecen a sus rutas.
 
+DROP POLICY IF EXISTS "clients_collector_update" ON clients;
+
 CREATE POLICY "clients_collector_update" ON clients
   FOR UPDATE USING (
     get_user_role() = 'COBRADOR'

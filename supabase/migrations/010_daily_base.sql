@@ -2,8 +2,16 @@
 -- MIGRATION 010: BASE INICIAL (FONDO DE CAJA) EN CIERRES
 -- ============================================================
 
--- 1. Añadir la columna de base_amount
-ALTER TABLE daily_closings ADD COLUMN base_amount NUMERIC(15,6) NOT NULL DEFAULT 0;
+-- 1. Añadir la columna de base_amount (idempotente)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'daily_closings' AND column_name = 'base_amount'
+  ) THEN
+    ALTER TABLE daily_closings ADD COLUMN base_amount NUMERIC(15,6) NOT NULL DEFAULT 0;
+  END IF;
+END $$;
 
 COMMENT ON COLUMN daily_closings.base_amount IS 'Dinero base o fondo inicial entregado al cobrador al inicio del día.';
 

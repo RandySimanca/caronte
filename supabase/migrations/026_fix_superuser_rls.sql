@@ -142,33 +142,37 @@ CREATE POLICY "daily_closings_collector_select" ON daily_closings
   );
 
 -- ROLES: SUPER_ADMIN puede ver todos los roles
-DROP POLICY IF EXISTS EXISTS ON roles;
+DROP POLICY IF EXISTS "roles_super_admin_all" ON roles;
 CREATE POLICY "roles_super_admin_all" ON roles
   FOR ALL USING (is_super_admin());
 
+DROP POLICY IF EXISTS "roles_admin_select" ON roles;
 CREATE POLICY "roles_admin_select" ON roles
   FOR SELECT USING (get_user_role() = 'ADMINISTRADOR');
 
 -- SYSTEM_SETTINGS: SUPER_ADMIN y ADMINISTRADOR pueden ver/modificar
-DROP POLICY IF EXISTS EXISTS ON system_settings;
+DROP POLICY IF EXISTS "system_settings_super_admin_all" ON system_settings;
 CREATE POLICY "system_settings_super_admin_all" ON system_settings
   FOR ALL USING (is_super_admin());
 
+DROP POLICY IF EXISTS "system_settings_admin_all" ON system_settings;
 CREATE POLICY "system_settings_admin_all" ON system_settings
   FOR ALL USING (get_user_role() = 'ADMINISTRADOR');
 
 -- EXPENSE_CATEGORIES: SUPER_ADMIN y ADMINISTRADOR pueden ver/modificar
-DROP POLICY IF EXISTS EXISTS ON expense_categories;
+DROP POLICY IF EXISTS "expense_categories_super_admin_all" ON expense_categories;
 CREATE POLICY "expense_categories_super_admin_all" ON expense_categories
   FOR ALL USING (is_super_admin());
 
+DROP POLICY IF EXISTS "expense_categories_admin_all" ON expense_categories;
 CREATE POLICY "expense_categories_admin_all" ON expense_categories
   FOR ALL USING (get_user_role() = 'ADMINISTRADOR');
 
 -- HOLIDAYS: SUPER_ADMIN y ADMINISTRADOR pueden ver/modificar
-DROP POLICY IF EXISTS EXISTS ON holidays;
+DROP POLICY IF EXISTS "holidays_super_admin_all" ON holidays;
 CREATE POLICY "holidays_super_admin_all" ON holidays
   FOR ALL USING (is_super_admin());
 
+DROP POLICY IF EXISTS "holidays_admin_all" ON holidays;
 CREATE POLICY "holidays_admin_all" ON holidays
   FOR ALL USING (get_user_role() = 'ADMINISTRADOR');

@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS companies (
 COMMENT ON TABLE companies IS 'Empresas o Prestamistas independientes clientes del SaaS Caronte';
 
 -- Trigger: actualizar updated_at en empresas
+DROP TRIGGER IF EXISTS trg_companies_updated_at ON companies;
 CREATE TRIGGER trg_companies_updated_at
   BEFORE UPDATE ON companies
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -84,9 +85,11 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 -- 7. Políticas de RLS para Companies
 ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "companies_super_admin_all" ON companies;
 CREATE POLICY "companies_super_admin_all" ON companies
   FOR ALL USING (is_super_admin());
 
+DROP POLICY IF EXISTS "companies_tenant_select" ON companies;
 CREATE POLICY "companies_tenant_select" ON companies
   FOR SELECT USING (id = get_user_company_id());
 
