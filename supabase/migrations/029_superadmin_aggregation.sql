@@ -4,10 +4,12 @@
 -- ============================================================
 
 -- Función superadmin_company_stats: devuelve métricas por empresa y totales globales
-CREATE OR REPLACE FUNCTION superadmin_company_stats()
+DROP FUNCTION IF EXISTS superadmin_company_stats();
+
+CREATE FUNCTION superadmin_company_stats()
 RETURNS TABLE (
   company_id uuid,
-  company_name text,
+  company_name varchar(150),
   collectors_count bigint,
   routes_count bigint,
   clients_count bigint,
@@ -15,7 +17,7 @@ RETURNS TABLE (
   active_portfolio numeric,
   is_active boolean
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public
@@ -79,9 +81,11 @@ CREATE POLICY superadmin_metrics_view_select ON superadmin_metrics_view
   FOR SELECT USING (is_super_admin());
 
 -- Función auxiliar para sumar pagos por rango de fechas (evita truncamiento)
-CREATE OR REPLACE FUNCTION sum_total_collected_today(p_start_date timestamptz, p_end_date timestamptz)
+DROP FUNCTION IF EXISTS sum_total_collected_today(timestamptz, timestamptz);
+
+CREATE FUNCTION sum_total_collected_today(p_start_date timestamptz, p_end_date timestamptz)
 RETURNS numeric
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public

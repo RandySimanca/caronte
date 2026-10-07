@@ -5,10 +5,12 @@
 -- ============================================================
 
 -- ─── ACTUALIZAR superadmin_company_stats CON VALIDACIÓN ───────
-CREATE OR REPLACE FUNCTION superadmin_company_stats()
+DROP FUNCTION IF EXISTS superadmin_company_stats();
+
+CREATE FUNCTION superadmin_company_stats()
 RETURNS TABLE (
   company_id uuid,
-  company_name text,
+  company_name varchar(150),
   collectors_count bigint,
   routes_count bigint,
   clients_count bigint,
@@ -71,7 +73,9 @@ REVOKE EXECUTE ON FUNCTION superadmin_company_stats() FROM PUBLIC, anon, service
 GRANT EXECUTE ON FUNCTION superadmin_company_stats() TO authenticated;
 
 -- ─── ACTUALIZAR sum_total_collected_today CON VALIDACIÓN ─────
-CREATE OR REPLACE FUNCTION sum_total_collected_today(p_start_date timestamptz, p_end_date timestamptz)
+DROP FUNCTION IF EXISTS sum_total_collected_today(timestamptz, timestamptz);
+
+CREATE FUNCTION sum_total_collected_today(p_start_date timestamptz, p_end_date timestamptz)
 RETURNS numeric
 LANGUAGE plpgsql
 STABLE
