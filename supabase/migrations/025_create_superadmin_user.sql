@@ -2,7 +2,7 @@
 -- MIGRATION 025: CREAR USUARIO SUPER ADMIN
 -- Crea el usuario SuperAdmin si no existe y le asigna el rol SUPER_ADMIN
 -- NOTA: Esta migración requiere que el usuario se cree manualmente via la UI de Supabase
--- o usando la función admin_create_user después de la migración 027
+-- o usando la función admin_create_user después de la migración 025
 -- ============================================================
 
 DO $$

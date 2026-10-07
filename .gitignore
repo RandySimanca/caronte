@@ -1,8 +1,11 @@
 node_modules
 dist
 .env
-.env.local
+.env.*
+!.env.example
 *.local
 supabase/.temp
+supabase/.branches
 *.rar
 *.patch
+*.tsbuildinfo

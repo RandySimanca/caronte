@@ -1,5 +1,5 @@
 -- ============================================================
--- MIGRATION 014: PERMITIR A COBRADORES ACTUALIZAR CLIENTES
+-- MIGRATION 015: PERMITIR A COBRADORES ACTUALIZAR CLIENTES
 -- ============================================================
 
 -- Agregamos la política faltante para permitir que los cobradores

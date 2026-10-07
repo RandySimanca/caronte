@@ -1,5 +1,5 @@
 -- ============================================================
--- MIGRATION 024: COMPLETAR POLÍTICAS RLS PARA SUPER_ADMIN
+-- MIGRATION 026: COMPLETAR POLÍTICAS RLS PARA SUPER_ADMIN
 -- Asegura que el SUPER_ADMIN tenga acceso completo a todas las tablas
 -- ============================================================
 
