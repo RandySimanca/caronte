@@ -2,9 +2,25 @@
 -- MIGRATION 009: JUEGO DE BOLETAS (LOTERÍA)
 -- ============================================================
 
--- 1. Modificar tabla loans
-ALTER TABLE loans ADD COLUMN wants_raffle BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE loans ADD COLUMN raffle_number VARCHAR(3);
+-- 1. Modificar tabla loans (idempotente)
+DO $$
+BEGIN
+  -- Agregar wants_raffle si no existe
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'loans' AND column_name = 'wants_raffle'
+  ) THEN
+    ALTER TABLE loans ADD COLUMN wants_raffle BOOLEAN NOT NULL DEFAULT false;
+  END IF;
+
+  -- Agregar raffle_number si no existe
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'loans' AND column_name = 'raffle_number'
+  ) THEN
+    ALTER TABLE loans ADD COLUMN raffle_number VARCHAR(3);
+  END IF;
+END $$;
 
 COMMENT ON COLUMN loans.wants_raffle IS 'Indica si el cliente quiso participar en la boleta (relevante si el modo es OPCIONAL)';
 COMMENT ON COLUMN loans.raffle_number IS 'Número asignado para el sorteo de boletas (000 a 999)';
@@ -54,8 +70,8 @@ BEFORE INSERT ON loans
 FOR EACH ROW EXECUTE FUNCTION assign_raffle_number_trg();
 
 
--- 4. Tablas de Sorteos (Draws)
-CREATE TABLE lottery_draws (
+-- 4. Tablas de Sorteos (Draws) - idempotente
+CREATE TABLE IF NOT EXISTS lottery_draws (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   winning_number VARCHAR(3) NOT NULL,
   draw_date DATE NOT NULL,
@@ -65,7 +81,7 @@ CREATE TABLE lottery_draws (
 
 COMMENT ON TABLE lottery_draws IS 'Historial de sorteos realizados por el administrador';
 
-CREATE TABLE lottery_winners (
+CREATE TABLE IF NOT EXISTS lottery_winners (
   draw_id UUID REFERENCES lottery_draws(id) ON DELETE CASCADE,
   loan_id UUID REFERENCES loans(id),
   prize_amount NUMERIC(15,6) NOT NULL,
