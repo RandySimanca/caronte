@@ -94,8 +94,8 @@ export function SuperAdminDashboard() {
     }
 
     try {
-      const result = await SuperAdminService.deleteCompany(company.id);
-      toast.success(result);
+      await SuperAdminService.deleteCompany(company.id);
+      toast.success(`Empresa "${company.name}" desactivada exitosamente`);
       fetchData();
       setIsDetailOpen(false);
     } catch (error: any) {
@@ -109,8 +109,8 @@ export function SuperAdminDashboard() {
     }
 
     try {
-      const result = await SuperAdminService.deleteUser(userId);
-      toast.success(result);
+      await SuperAdminService.deleteUser(userId);
+      toast.success(`Usuario "${userName}" desactivado exitosamente`);
       // Refresh company details
       if (selectedCompany) {
         const details = await SuperAdminService.getCompanyDetails(selectedCompany.id);
