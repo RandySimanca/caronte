@@ -110,14 +110,6 @@ export class SyncService {
       // en 'syncing' para siempre. Aquí ya sabemos que no hay otro push corriendo: se reintentan.
       await db.syncQueue.where('status').equals('syncing').modify({ status: 'pending' });
 
-      // UPDATE_CLIENT_ORDERS fallidas no bloquean la app: el route_order en el servidor
-      // es cosmético y se corregirá en el próximo pull completo. Se eliminan para que el
-      // contador de "operaciones pendientes" no muestre false-positives al cobrador.
-      await db.syncQueue
-        .where('status').equals('failed')
-        .and(op => (op.operation_type as string) === 'UPDATE_CLIENT_ORDERS')
-        .delete();
-
       const pendingOps = await db.syncQueue
         .where('status')
         .anyOf(['pending', 'failed'])
@@ -342,25 +334,20 @@ export class SyncService {
             if (err) throw err;
           } else if ((op.operation_type as string) === 'UPDATE_CLIENT_ORDERS') {
             const updates = op.payload.updates as { id: string, route_order: number }[];
-            // Una sola llamada para toda la ruta (antes: un UPDATE por cliente, lento con rutas grandes).
-            // TOLERANTE A FALLOS: el route_order del servidor es cosmético; si falla solo se registra
-            // el error en consola y la op se marca como synced de todas formas. El próximo pull
-            // descargará el orden actualizado del servidor sin dejar ops atascadas.
+            // Una sola llamada RPC para toda la ruta con SECURITY DEFINER
             const { error: batchError } = await supabase.rpc('update_client_orders' as any, { p_updates: updates } as any);
             if (batchError) {
-              console.warn('update_client_orders RPC no disponible, intentando UPDATE por cliente:', batchError);
+              console.warn('update_client_orders RPC falló o no está disponible, intentando UPDATE por cliente:', batchError);
               let fallbackFailed = false;
               for (const update of updates) {
                 const { error } = await supabase.from('clients').update({ route_order: update.route_order } as any).eq('id', update.id);
                 if (error) {
-                  console.error('[UPDATE_CLIENT_ORDERS] fallback falló (no crítico, se marca synced):', update, error);
+                  console.error('[UPDATE_CLIENT_ORDERS] fallback falló para cliente:', update.id, error);
                   fallbackFailed = true;
                 }
               }
               if (fallbackFailed) {
-                // No lanzamos: el orden en el servidor no es crítico para el cobro.
-                // La op se marcará como synced y el contador de pendientes bajará.
-                console.warn('[UPDATE_CLIENT_ORDERS] algunos route_order no se aplicaron en el servidor; se corregirán en el próximo pull.');
+                throw new Error('No se pudieron guardar los órdenes de ruta en el servidor');
               }
             }
           } else if (op.operation_type === 'PAYMENT' || (op.operation_type as string) === 'PAYMENT_BUNDLE') {
@@ -702,15 +689,34 @@ export class SyncService {
         await db.routes.clear();
         if (routes && routes.length > 0) await db.routes.bulkAdd(routes as any[]);
 
-        // Clients: upsert server records, then remove stale non-protected ones
+        // Clients: upsert server records, preserving local custom order if server data has default/0 order
         if (clients && clients.length > 0) {
-          // El orden de ruta local gana sobre el del servidor mientras haya cambios de orden sin enviar
-          const localOrderById = new Map((await db.clients.toArray()).map(c => [c.id, c.route_order]));
-          const merged = (clients as any[]).map(c =>
-            pendingOrderClientIds.has(c.id) && localOrderById.has(c.id)
-              ? { ...c, route_order: localOrderById.get(c.id) }
-              : c
-          );
+          const localClients = await db.clients.toArray();
+          const localOrderById = new Map(localClients.map(c => [c.id, c.route_order]));
+          const serverHasCustomOrders = (clients as any[]).some(c => typeof c.route_order === 'number' && c.route_order > 0);
+
+          const merged = (clients as any[]).map(c => {
+            const hasPendingOrder = pendingOrderClientIds.has(c.id);
+            const localOrder = localOrderById.get(c.id);
+
+            // 1. Si hay un cambio de orden local pendiente/fallido sin enviar, SIEMPRE manda el local
+            if (hasPendingOrder && typeof localOrder === 'number') {
+              return { ...c, route_order: localOrder };
+            }
+
+            // 2. Si el servidor no tiene orden personalizado (todo 0 o null) pero localmente sí tenemos un orden guardado
+            if (!serverHasCustomOrders && typeof localOrder === 'number' && localOrder > 0) {
+              return { ...c, route_order: localOrder };
+            }
+
+            // 3. Si el servidor envió null/undefined pero localmente tenemos un número
+            if ((c.route_order === null || c.route_order === undefined) && typeof localOrder === 'number') {
+              return { ...c, route_order: localOrder };
+            }
+
+            return c;
+          });
+
           await db.clients.bulkPut(merged);
         }
         const allLocalClients = await db.clients.toArray();
