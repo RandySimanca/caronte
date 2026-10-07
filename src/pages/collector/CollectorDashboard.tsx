@@ -96,13 +96,18 @@ export function CollectorDashboard() {
     const draw = parseLotteryLastDraw(lotterySetting?.value);
 
     const serverPayments = allSettings.find(s => s.key === paymentsTodaySettingKey(today))?.value as any[] | undefined;
-    const mergedPayments = mergeTodayPayments(serverPayments, syncQueue, today);
+    // Filtrar serverPayments para asegurar que solo incluyan pagos de hoy (por collected_at)
+    const serverPaymentsToday = serverPayments?.filter((p: any) => {
+      const collectedAt = p.collected_at || p.collectedAt;
+      return collectedAt && colombiaDateFromIso(collectedAt) === today;
+    });
+    const mergedPayments = mergeTodayPayments(serverPaymentsToday, syncQueue, today);
 
     // Build paidTodayEntries FIRST so we can derive paidTodayByLoan from it
     // (TodayPayment doesn't carry loan_id, so we use the enriched server payload)
     const paidTodayEntries: PaidTodayEntry[] = [];
-    if (serverPayments) {
-      for (const sp of serverPayments as any[]) {
+    if (serverPaymentsToday) {
+      for (const sp of serverPaymentsToday as any[]) {
         if (!sp.operation_id) continue;
         const loanId = sp.loan_id || '';
         const clientName = clients.find(c => {

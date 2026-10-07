@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { ArrowLeft, CheckCircle, HandCoins, TrendingDown, TrendingUp, Smartphone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
-import { mergeTodayPayments, paymentsTodaySettingKey, sumTodayPayments } from '@/lib/dailyCollection';
+import { mergeTodayPayments, paymentsTodaySettingKey, sumTodayPayments, colombiaDateFromIso } from '@/lib/dailyCollection';
 import { motion } from 'framer-motion';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
@@ -89,7 +89,12 @@ export function DailyClosingPage() {
     const newLoansCount = todayLoans.length;
 
     const serverPayments = allSettings.find(s => s.key === paymentsTodaySettingKey(today))?.value as any[] | undefined;
-    const merged = mergeTodayPayments(serverPayments, syncQueue, today);
+    // Filtrar serverPayments para asegurar que solo incluyan pagos de hoy (por collected_at)
+    const serverPaymentsToday = serverPayments?.filter((p: any) => {
+      const collectedAt = p.collected_at || p.collectedAt;
+      return collectedAt && colombiaDateFromIso(collectedAt) === today;
+    });
+    const merged = mergeTodayPayments(serverPaymentsToday, syncQueue, today);
     const sums = sumTodayPayments(merged);
 
     return {
