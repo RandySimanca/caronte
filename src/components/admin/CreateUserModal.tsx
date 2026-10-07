@@ -44,18 +44,23 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
       return;
     }
 
+    if (!password || password.length < 8) {
+      toast.error('La contraseña debe tener mínimo 8 caracteres.');
+      return;
+    }
+
     setIsLoading(true);
     try {
       await AdminService.createUser({
         full_name: fullName,
         email,
         phone,
-        password: password || undefined, // Send undefined if empty so default is used
+        password,
         role_id: roleId,
       });
       toast.success('Usuario creado exitosamente');
       onSuccess();
-      
+
       // Reset form
       setFullName('');
       setEmail('');
@@ -128,13 +133,13 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Contraseña</label>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">Contraseña *</label>
               <input
                 type="text"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all text-slate-800"
-                placeholder="Def. 123456"
+                placeholder="Mínimo 8 caracteres"
               />
             </div>
           </div>
