@@ -13,9 +13,28 @@ export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict
 export type PaymentFrequency = 'DIARIO' | 'SEMANAL' | 'QUINCENAL'
 export type ClientStatus = 'ACTIVO' | 'INACTIVO' | 'BLOQUEADO'
 export type ExpenseStatus = 'PENDIENTE' | 'REVISADO' | 'RECHAZADO'
-export type UserRole = 'ADMINISTRADOR' | 'COBRADOR' | 'SUPERVISOR'
+export type UserRole = 'SUPER_ADMIN' | 'ADMINISTRADOR' | 'COBRADOR' | 'SUPERVISOR'
+export type CompanyStatus = 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'INACTIVE'
+export type CompanyPlan = 'BASIC' | 'PRO' | 'ENTERPRISE'
 
 // ─── ENTIDADES DE BASE DE DATOS ───────────────────────────
+
+export interface Company {
+  id: string
+  name: string
+  slug: string | null
+  owner_name: string | null
+  phone: string | null
+  email: string | null
+  status: CompanyStatus
+  plan: CompanyPlan
+  max_collectors: number
+  max_routes: number
+  subscription_expires_at: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
 
 export interface Role {
   id: string
@@ -31,11 +50,13 @@ export interface User {
   full_name: string
   phone: string | null
   role_id: string
+  company_id?: string | null
   active: boolean
   created_at: string
   updated_at: string
   // Relations
   role?: Role
+  company?: Company
 }
 
 export interface Route {
@@ -43,9 +64,11 @@ export interface Route {
   name: string
   description: string | null
   zones: string[]
+  company_id?: string | null
   active: boolean
   created_by: string | null
   created_at: string
+  company?: Company
 }
 
 export interface RouteAssignment {

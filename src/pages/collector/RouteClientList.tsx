@@ -14,6 +14,7 @@ import { applyLotteryDrawLocally, isLotteryWinnerLoan, parseLotteryLastDraw } fr
 import { v4 as uuidv4 } from 'uuid';
 import { useSyncStore } from '@/stores/syncStore';
 import { SyncService } from '@/services/SyncService';
+import { sortByRouteOrder } from '@/lib/routeOrder';
 
 // Posición del scroll de la lista: se guarda por día para volver "por donde vas" después de cobrar
 const SCROLL_KEY = 'route_list_scroll';
@@ -136,15 +137,19 @@ export function RouteClientList() {
         avatarUrl: client.photo_face_url
       };
     })
-    .sort((a, b) => (a.route_order ?? 999999) - (b.route_order ?? 999999) || a.full_name.localeCompare(b.full_name))
     .filter(c => c.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [clients, loans, installments, searchTerm, today, lotteryDraw]);
 
+  // Aplicar ordenamiento después del filtro (usar sortByRouteOrder para lógica consistente)
+  const sortedClients = useMemo(() => {
+    return sortByRouteOrder(enrichedClients);
+  }, [enrichedClients]);
+
   useEffect(() => {
     if (!isReordering) {
-      setOrderedClients(enrichedClients);
+      setOrderedClients(sortedClients);
     }
-  }, [enrichedClients, isReordering]);
+  }, [sortedClients, isReordering]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -198,11 +203,11 @@ export function RouteClientList() {
     }
   }
 
-  const totalClients = enrichedClients.length;
-  const visitedCount = enrichedClients.filter(c => c.status === 'VISITADO').length;
-  const arrearsCount = enrichedClients.filter(c => c.status === 'ATRASADO').length;
-  const newCount = enrichedClients.filter(c => c.status === 'NUEVO').length;
-  const winnerCount = enrichedClients.filter(c => c.status === 'GANADOR').length;
+  const totalClients = sortedClients.length;
+  const visitedCount = sortedClients.filter(c => c.status === 'VISITADO').length;
+  const arrearsCount = sortedClients.filter(c => c.status === 'ATRASADO').length;
+  const newCount = sortedClients.filter(c => c.status === 'NUEVO').length;
+  const winnerCount = sortedClients.filter(c => c.status === 'GANADOR').length;
   const pendingCount = totalClients - visitedCount - newCount - winnerCount;
 
   return (

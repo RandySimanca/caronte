@@ -6,6 +6,7 @@ interface AuthState {
   session: Session | null;
   user: User | null;
   role: string | null;
+  companyId: string | null;
   isLoading: boolean;
   signIn: (session: Session) => void;
   signOut: () => Promise<void>;
@@ -16,6 +17,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   session: null,
   user: null,
   role: null,
+  companyId: null,
   isLoading: true,
 
   signIn: async (session) => {
@@ -23,24 +25,24 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('role_id, roles!role_id(name)')
+        .select('role_id, company_id, roles!role_id(name)')
         .eq('id', session.user.id)
         .maybeSingle();
 
       if (!error && data && (data as any).roles) {
         // @ts-ignore
-        set({ role: (data as any).roles.name });
+        set({ role: (data as any).roles.name, companyId: data.company_id || null });
       } else {
-        set({ role: 'COBRADOR' });
+        set({ role: 'COBRADOR', companyId: null });
       }
     } catch {
-      set({ role: 'COBRADOR' });
+      set({ role: 'COBRADOR', companyId: null });
     }
   },
 
   signOut: async () => {
     await supabase.auth.signOut();
-    set({ session: null, user: null, role: null });
+    set({ session: null, user: null, role: null, companyId: null });
   },
 
   checkSession: async () => {
@@ -53,19 +55,19 @@ export const useAuthStore = create<AuthState>((set) => ({
           // Use explicit FK hint: roles!role_id(name)
           const { data, error } = await supabase
             .from('users')
-            .select('role_id, roles!role_id(name)')
+            .select('role_id, company_id, roles!role_id(name)')
             .eq('id', session.user.id)
             .maybeSingle(); // maybeSingle() returns null instead of error when no row found
 
           if (!error && data && (data as any).roles) {
             // @ts-ignore - PostgREST embedded response typing
-            set({ role: data.roles.name });
+            set({ role: data.roles.name, companyId: data.company_id || null });
           } else {
             // User row may not exist in custom users table yet; default to COBRADOR
-            set({ role: 'COBRADOR' });
+            set({ role: 'COBRADOR', companyId: null });
           }
         } catch {
-          set({ role: 'COBRADOR' });
+          set({ role: 'COBRADOR', companyId: null });
         }
       }
     } catch (error) {

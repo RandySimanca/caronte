@@ -23,3 +23,12 @@ export function loanFinancials(amountRequested: number, interestRate: number, te
     current_balance,
   };
 }
+
+export function formatMoney(amount: number): string {
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount || 0);
+}

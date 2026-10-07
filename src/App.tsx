@@ -24,6 +24,8 @@ import { UsersPage } from '@/pages/admin/UsersPage';
 import { RoutesPage } from '@/pages/admin/RoutesPage';
 import { SettingsPage } from '@/pages/admin/SettingsPage';
 import { ReportsPage } from '@/pages/admin/ReportsPage';
+import { SuperAdminLayout } from '@/components/layout/SuperAdminLayout';
+import { SuperAdminDashboard } from '@/pages/superadmin/SuperAdminDashboard';
 
 // Protected route wrapper
 function RequireAuth({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
@@ -36,6 +38,7 @@ function RequireAuth({ children, allowedRoles }: { children: React.ReactNode, al
 
   // Check roles
   if (allowedRoles && !allowedRoles.includes(role)) {
+    if (role === 'SUPER_ADMIN') return <Navigate to="/superadmin/dashboard" replace />;
     if (role === 'ADMINISTRADOR') return <Navigate to="/admin/dashboard" replace />;
     return <Navigate to="/" replace />;
   }
@@ -79,7 +82,7 @@ const router = createBrowserRouter([
   // RUTAS DEL ADMINISTRADOR
   {
     path: '/admin',
-    element: <RequireAuth allowedRoles={['ADMINISTRADOR']}><AdminLayout /></RequireAuth>,
+    element: <RequireAuth allowedRoles={['ADMINISTRADOR', 'SUPER_ADMIN']}><AdminLayout /></RequireAuth>,
     children: [
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: 'dashboard', element: <AdminDashboard /> },
@@ -89,6 +92,17 @@ const router = createBrowserRouter([
       { path: 'routes', element: <RoutesPage /> },
       { path: 'reports', element: <ReportsPage /> },
       { path: 'settings', element: <SettingsPage /> },
+    ]
+  },
+
+  // RUTAS DEL SUPER ADMINISTRADOR (SaaS)
+  {
+    path: '/superadmin',
+    element: <RequireAuth allowedRoles={['SUPER_ADMIN']}><SuperAdminLayout /></RequireAuth>,
+    children: [
+      { index: true, element: <Navigate to="dashboard" replace /> },
+      { path: 'dashboard', element: <SuperAdminDashboard /> },
+      { path: 'companies', element: <SuperAdminDashboard /> },
     ]
   }
 ]);
