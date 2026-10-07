@@ -140,7 +140,11 @@ export class SuperAdminService {
    * Crea una nueva empresa / prestamista y provisiona su usuario Administrador inicial
    */
   static async createCompany(input: CreateCompanyInput): Promise<Company> {
-    const slug = input.slug || input.name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+    const randomSuffix = Math.random().toString(36).substring(2, 6); // ej. "a3f9"
+    const baseSlug = input.slug
+      ? input.slug.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+      : input.name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    const slug = `${baseSlug}-${randomSuffix}`;
 
     // 1. Insertar la empresa
     const { data: company, error: compError } = await supabase
