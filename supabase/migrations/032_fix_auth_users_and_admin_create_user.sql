@@ -1,10 +1,16 @@
 -- ============================================================
 -- MIGRATION 032: CORREGIR AUTH.USERS Y ADMIN_CREATE_USER
 -- Soluciona el error 500 "Database error querying schema" al iniciar
--- sesión con cuentas creadas desde el panel SaaS.
+-- sesión con cuentas creadas mediante SQL directo / admin_create_user
+-- y corrige el error "function gen_salt(unknown) does not exist".
 -- ============================================================
 
--- 1. Actualizar registros incompletos en auth.users
+-- 0. Asegurar la extensión pgcrypto en el esquema extensions
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+
+-- 1. Reparar registros existentes en auth.users
+-- El servidor de Auth de Supabase (GoTrue) falla con "Database error querying schema"
+-- cuando encuentra valores NULL en columnas de texto como confirmation_token, recovery_token, etc.
 UPDATE auth.users
 SET 
   instance_id = COALESCE(instance_id, '00000000-0000-0000-0000-000000000000'::uuid),
@@ -15,10 +21,17 @@ SET
     THEN '{"provider": "email", "providers": ["email"]}'::jsonb 
     ELSE raw_app_meta_data 
   END,
-  is_super_admin = COALESCE(is_super_admin, false)
-WHERE aud IS NULL OR aud = '' OR role IS NULL OR role = '' OR raw_app_meta_data IS NULL OR raw_app_meta_data = '{}'::jsonb OR instance_id IS NULL;
+  is_super_admin = COALESCE(is_super_admin, false),
+  confirmation_token = COALESCE(confirmation_token, ''),
+  recovery_token = COALESCE(recovery_token, ''),
+  email_change_token_new = COALESCE(email_change_token_new, ''),
+  email_change = COALESCE(email_change, ''),
+  phone_change = COALESCE(phone_change, ''),
+  phone_change_token = COALESCE(phone_change_token, ''),
+  email_change_token_current = COALESCE(email_change_token_current, ''),
+  reauthentication_token = COALESCE(reauthentication_token, '');
 
--- 2. Crear las identidades faltantes en auth.identities requeridas por Supabase GoTrue Auth
+-- 2. Crear las identidades faltantes en auth.identities requeridas por GoTrue Auth
 INSERT INTO auth.identities (
   id,
   user_id,
@@ -43,7 +56,7 @@ WHERE NOT EXISTS (
   SELECT 1 FROM auth.identities i WHERE i.user_id = u.id AND i.provider = 'email'
 );
 
--- 3. Actualizar la función admin_create_user para incluir todos los campos obligatorios de auth.users y auth.identities
+-- 3. Actualizar la función admin_create_user con el search_path correcto y extensions.gen_salt
 CREATE OR REPLACE FUNCTION admin_create_user(
   p_email VARCHAR(150),
   p_full_name VARCHAR(150),
@@ -54,7 +67,7 @@ CREATE OR REPLACE FUNCTION admin_create_user(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   v_user_id UUID;
@@ -83,6 +96,14 @@ BEGIN
       email,
       encrypted_password,
       email_confirmed_at,
+      confirmation_token,
+      recovery_token,
+      email_change_token_new,
+      email_change,
+      phone_change,
+      phone_change_token,
+      email_change_token_current,
+      reauthentication_token,
       raw_app_meta_data,
       raw_user_meta_data,
       is_super_admin,
@@ -95,8 +116,16 @@ BEGIN
       'authenticated',
       'authenticated',
       p_email,
-      crypt(p_password, gen_salt('bf')),
+      extensions.crypt(p_password, extensions.gen_salt('bf')),
       NOW(),
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
       '{"provider": "email", "providers": ["email"]}'::jsonb,
       jsonb_build_object('full_name', p_full_name, 'phone', p_phone),
       false,

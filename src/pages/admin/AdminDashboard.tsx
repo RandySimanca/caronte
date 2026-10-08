@@ -213,6 +213,12 @@ export function AdminDashboard() {
     ? 'Seleccione una ruta'
     : isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas';
 
+  // Clientes únicos que han pagado hoy (un mismo cliente puede tener varios pagos)
+  const clientesPagaronHoy = new Set((stats?.pagosHoy ?? []).map((p: any) => p.loanId)).size;
+  const pctPagaron = (stats?.clientes ?? 0) > 0
+    ? Math.min(100, Math.round((clientesPagaronHoy / (stats?.clientes ?? 1)) * 100))
+    : 0;
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
       {/* Top Header */}
@@ -284,23 +290,58 @@ export function AdminDashboard() {
 
       {/* Cards Row 1 — always filtered by selected route */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Clientes — clickable to open modal */}
-        <button
-          onClick={() => setClientsModal({ open: true, onlyToday: false })}
-          className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm text-left hover:shadow-md hover:border-brand-200 transition-all group"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-slate-500 font-bold">
-              <Users className="w-5 h-5 text-brand-500" />
+        {/* Clientes Activos + Clientes que pagaron hoy */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-4">
+          {/* Fila superior: clientes activos */}
+          <button
+            onClick={() => setClientsModal({ open: true, onlyToday: false })}
+            className="flex items-center justify-between group w-full text-left"
+          >
+            <div className="flex items-center gap-2 text-slate-500 font-bold text-sm">
+              <Users className="w-4 h-4 text-brand-500" />
               Clientes Activos
             </div>
-            <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors" />
-          </div>
-          <div className={`text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
-            {stats?.clientes ?? '—'}
-          </div>
-          <p className="text-xs text-slate-400">{routeSubtitle}</p>
-        </button>
+            <div className="flex items-center gap-1.5">
+              <span className={`text-2xl font-black text-slate-800 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+                {stats?.clientes ?? '—'}
+              </span>
+              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors" />
+            </div>
+          </button>
+
+          {/* Divisor */}
+          <div className="border-t border-slate-100" />
+
+          {/* Fila inferior: clientes que pagaron hoy */}
+          <button
+            onClick={() => setIsPaidTodayOpen(true)}
+            disabled={clientesPagaronHoy === 0}
+            className="flex flex-col gap-2 group text-left disabled:cursor-default"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-slate-500 font-bold text-sm">
+                <CheckCircle className="w-4 h-4 text-emerald-500" />
+                Pagaron hoy
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`text-2xl font-black text-emerald-600 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+                  {clientesPagaronHoy}
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 transition-colors" />
+              </div>
+            </div>
+            {/* Barra de progreso */}
+            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-all duration-700 ease-out"
+                style={{ width: isStatsLoading ? '0%' : `${pctPagaron}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-slate-400 font-medium">
+              {pctPagaron}% de clientes · {routeSubtitle}
+            </p>
+          </button>
+        </div>
 
         {/* Préstamos nuevos del día — suma desembolsada */}
         <button

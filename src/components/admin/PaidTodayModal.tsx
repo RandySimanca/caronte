@@ -40,6 +40,7 @@ export function PaidTodayModal({ isOpen, onClose, entries, routeLabel }: Props) 
   const totalRecaudado = entries.reduce((s, e) => s + e.amount, 0);
   const totalTransferencias = entries.filter(e => e.isTransfer).reduce((s, e) => s + e.amount, 0);
   const totalEfectivo = totalRecaudado - totalTransferencias;
+  const clientesUnicos = new Set(entries.map(e => e.loanId)).size;
 
   return (
     <>
@@ -86,6 +87,10 @@ export function PaidTodayModal({ isOpen, onClose, entries, routeLabel }: Props) 
 
               {/* Summary chips */}
               <div className="flex gap-2 flex-wrap mt-2">
+                <div className="bg-white/15 rounded-xl px-3 py-1.5">
+                  <p className="text-emerald-100 text-[10px] uppercase font-bold tracking-wider">Clientes</p>
+                  <p className="text-white text-xl font-black">{clientesUnicos}</p>
+                </div>
                 <div className="bg-white/15 rounded-xl px-3 py-1.5">
                   <p className="text-emerald-100 text-[10px] uppercase font-bold tracking-wider">Cobros</p>
                   <p className="text-white text-xl font-black">{entries.length}</p>
