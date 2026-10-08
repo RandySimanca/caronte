@@ -202,17 +202,25 @@ export class SuperAdminService {
           p_role_id: roleData.id,
         });
 
-        if (!userError && newUserId) {
+        if (userError) {
+          console.error('Error provisioning admin user:', userError);
+          // Hacer rollback: eliminar la empresa si falló el usuario
+          await supabase.from('companies').delete().eq('id', company.id);
+          throw new Error(`Fallo al crear usuario: ${userError.message || userError.details}`);
+        }
+
+        if (newUserId) {
           // 4. Asignar company_id al nuevo administrador
           await supabase
             .from('users')
             .update({ company_id: company.id })
             .eq('id', newUserId);
-        } else if (userError) {
-          console.error('Error provisioning admin user:', userError);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error provisioning initial admin user for company:', err);
+        // Hacer rollback de seguridad si ocurre un error inesperado
+        await supabase.from('companies').delete().eq('id', company.id);
+        throw new Error(err.message || 'Error inesperado creando el administrador');
       }
     }
 
