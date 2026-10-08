@@ -269,20 +269,16 @@ export class SuperAdminService {
   }
 
   /**
-   * Elimina / desactiva una empresa (solo SUPER_ADMIN).
-   * Cambia el estado a INACTIVE en lugar de borrar físicamente.
+   * Elimina una empresa físicamente junto con todos sus usuarios (solo SUPER_ADMIN).
    */
   static async deleteCompany(companyId: string): Promise<void> {
     if (!navigator.onLine) {
       throw new Error('No hay conexión a internet. La eliminación de empresas requiere conexión.');
     }
 
-    const { error } = await supabase
-      .from('companies')
-      .update({ status: 'INACTIVE', updated_at: new Date().toISOString() })
-      .eq('id', companyId);
+    const { error } = await supabase.rpc('superadmin_delete_company', { p_company_id: companyId });
 
-    if (error) throw new Error(error.message || 'Error al desactivar empresa');
+    if (error) throw new Error(error.message || 'Error al eliminar la empresa permanentemente');
   }
 
   /**
