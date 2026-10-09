@@ -77,11 +77,20 @@ export function DailyClosingPage() {
       );
       const todayInst = loanInsts.find(i => i.scheduled_date === today);
       const loanEnded = loan.end_date && loan.end_date < today;
-      const todayQuota = loan.start_date > today
-        ? 0
-        : (todayInst ? Number(todayInst.balance || 0) : (loanEnded ? 0 : Number(loan.daily_installment || 0)));
+      let todayTarget = 0;
+      if (loan.start_date > today || loanEnded) {
+        todayTarget = 0;
+      } else if (todayInst) {
+        if (todayInst.balance <= 0 && todayInst.paid_date && todayInst.paid_date < today) {
+          todayTarget = 0;
+        } else {
+          todayTarget = Number(todayInst.scheduled_amount || loan.daily_installment);
+        }
+      } else {
+        todayTarget = Number(loan.daily_installment || 0);
+      }
       const todayArrears = arrearsInsts.reduce((s, i) => s + Number(i.balance || 0), 0);
-      exp += todayQuota + todayArrears;
+      exp += todayTarget + todayArrears;
     }
 
     const todayLoans = allLoans.filter(l => l.disbursement_date === today);

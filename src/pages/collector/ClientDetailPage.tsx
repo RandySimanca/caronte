@@ -89,8 +89,13 @@ export function ClientDetailPage() {
     const arrearsInstallments = pending.filter(i => i.scheduled_date < today);
     const arrears = Math.round(arrearsInstallments.reduce((sum, i) => sum + Number(i.balance || 0), 0));
 
-    // todayQuota is 0 if already paid or if the loan hasn't started yet (starts tomorrow or later)
-    const todayQuota = Math.round((isPaidToday || loan.start_date > today) ? 0 : Number(loan.daily_installment || 0));
+    // todayQuota is 0 if already paid or if the loan hasn't started yet (starts tomorrow or later).
+    // If today is partially paid, use the remaining balance to complete today's quota.
+    const todayQuota = Math.round(
+      (isPaidToday || loan.start_date > today)
+        ? 0
+        : (todayInstallment ? Number(todayInstallment.balance || 0) : Number(loan.daily_installment || 0))
+    );
     const expectedTotal = todayQuota + arrears;
 
     // Count advance days (future installments already paid)

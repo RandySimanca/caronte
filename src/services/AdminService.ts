@@ -499,7 +499,7 @@ export class AdminService {
       arrearsTotal += loanArrears;
     }
 
-    const recaudoEsperado = todayInstsTotal + arrearsTotal;
+    const recaudoEsperado = targetTodayOnly + (arrearsTotal + recaudoAtrasos);
 
     // Adelantadas para hoy: cuotas de hoy ya pagadas en días anteriores
     const prepaidTodayData = (prepaidTodayRes.data || []).map((i: any) => ({
@@ -592,6 +592,8 @@ export class AdminService {
     const recaudoCuotasHoy = alertsData.reduce((s: number, p: any) => s + Number(p.day_installment_amount ?? 0), 0);
     const recaudoAtrasos   = alertsData.reduce((s: number, p: any) => s + Number(p.arrears_amount ?? 0), 0);
     const recaudoAdelantos = alertsData.reduce((s: number, p: any) => s + Number(p.advance_amount ?? 0), 0);
+
+    const recaudoEsperado = targetTodayOnly + (arrearsTotal + recaudoAtrasos);
 
     return {
       clientes: clientsRes.count || 0,
