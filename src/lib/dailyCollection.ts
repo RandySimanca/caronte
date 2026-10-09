@@ -9,6 +9,8 @@ export function dayRangeIso(dateStr: string): { start: string; end: string } {
 }
 
 export function colombiaDateFromIso(iso: string): string {
+  if (!iso) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   const col = new Date(d.getTime() - 5 * 60 * 60 * 1000);
@@ -27,6 +29,7 @@ export type TodayPayment = {
   advance_amount?: number;
   is_transfer?: boolean;
   device_id?: string | null;
+  collected_at?: string | null;
 };
 
 function paymentFromSyncOp(op: { operation_type?: string; payload?: any; local_timestamp?: string }): TodayPayment | null {
@@ -45,6 +48,7 @@ function paymentFromSyncOp(op: { operation_type?: string; payload?: any; local_t
     advance_amount: Number(p.advanceAmount ?? p.advance_amount ?? 0),
     is_transfer: !!(p.isTransfer ?? p.is_transfer),
     device_id: p.deviceId || p.device_id || null,
+    collected_at: p.collectedAt || p.collected_at || op.local_timestamp || null,
   };
 }
 
@@ -77,6 +81,7 @@ export function mergeTodayPayments(
       advance_amount: Number(p.advance_amount ?? 0),
       is_transfer: !!p.is_transfer,
       device_id: p.device_id || null,
+      collected_at: p.collected_at || (p as any).collectedAt || null,
     });
   }
   for (const op of syncOps) {

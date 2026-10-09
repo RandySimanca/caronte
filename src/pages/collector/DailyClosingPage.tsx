@@ -92,7 +92,8 @@ export function DailyClosingPage() {
     // Filtrar serverPayments para asegurar que solo incluyan pagos de hoy (por collected_at)
     const serverPaymentsToday = serverPayments?.filter((p: any) => {
       const collectedAt = p.collected_at || p.collectedAt;
-      return collectedAt && colombiaDateFromIso(collectedAt) === today;
+      if (!collectedAt) return true;
+      return colombiaDateFromIso(collectedAt) === today;
     });
     const merged = mergeTodayPayments(serverPaymentsToday, syncQueue, today);
     const sums = sumTodayPayments(merged);

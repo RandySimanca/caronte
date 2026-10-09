@@ -583,6 +583,7 @@ export class SyncService {
         advance_amount: Number(p.advance_amount ?? 0),
         is_transfer: !!p.is_transfer,
         device_id: p.device_id || null,
+        collected_at: p.collected_at || null,
       }));
       localSettings.push({ key: paymentsTodaySettingKey(today), value: paymentsToday });
 
