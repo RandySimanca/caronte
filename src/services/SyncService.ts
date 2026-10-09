@@ -14,7 +14,8 @@ import { dayRangeIso, paymentsTodaySettingKey } from '@/lib/dailyCollection';
 /** Usuario de la sesión local (no hace request de red, funciona con conexión inestable). */
 async function getCurrentUser() {
   const { data: { session } } = await supabase.auth.getSession();
-  return session?.user ?? null;
+  // getSession() devuelve null si el token venció y aún no se pudo renovar: usar el usuario del store
+  return session?.user ?? useAuthStore.getState().user ?? null;
 }
 
 const CHUNK_SIZE = 100;   // ids por request (evita URLs gigantes en .in())

@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useSyncStore } from '@/stores/syncStore';
 import { SyncService } from '@/services/SyncService';
 import { db } from '@/db/schema';
+import { ensureFreshSession } from '@/lib/offlineSession';
 
 import { CollectorLayout } from '@/components/layout/CollectorLayout';
 import { CollectorDashboard } from '@/pages/collector/CollectorDashboard';
@@ -119,13 +120,9 @@ export function App() {
     checkSession();
 
     // 2. Listen for auth changes (token refresh, logout from another tab)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      if (newSession) {
-        useAuthStore.getState().signIn(newSession);
-      } else {
-        // Limpiar también companyId al cerrar sesión
-        useAuthStore.setState({ session: null, user: null, role: null, companyId: null });
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      // La lógica vive en el store: solo cierra la sesión en un SIGNED_OUT real (nunca por mala señal)
+      useAuthStore.getState().handleAuthEvent(event, newSession);
     });
 
     // 3. Monitor network connectivity
@@ -138,6 +135,8 @@ export function App() {
         // El evento 'online' suele dispararse antes de que la red sea estable: si algo queda
         // pendiente se reintenta a los 10 s, 20 s y 40 s en vez de esperar al ciclo de 5 minutos.
         for (let attempt = 0; attempt < 4; attempt++) {
+          // Si el token venció mientras estaba offline, renovarlo antes de sincronizar
+          await ensureFreshSession();
           const userId = useAuthStore.getState().user?.id;
           const role = useAuthStore.getState().role;
           if (userId && role === 'COBRADOR') {
@@ -171,6 +170,7 @@ export function App() {
       if (navigator.onLine && !_syncInProgress) {
         _syncInProgress = true;
         try {
+          await ensureFreshSession();
           const userId = useAuthStore.getState().user?.id;
           const role = useAuthStore.getState().role;
           if (userId && role === 'COBRADOR') {
