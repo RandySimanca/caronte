@@ -499,8 +499,6 @@ export class AdminService {
       arrearsTotal += loanArrears;
     }
 
-    const recaudoEsperado = targetTodayOnly + (arrearsTotal + recaudoAtrasos);
-
     // Adelantadas para hoy: cuotas de hoy ya pagadas en días anteriores
     const prepaidTodayData = (prepaidTodayRes.data || []).map((i: any) => ({
       loanId: i.loan_id,
