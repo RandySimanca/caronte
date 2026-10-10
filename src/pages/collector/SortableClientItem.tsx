@@ -24,23 +24,23 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
   const Content = (
     <div className={cn("flex items-center p-4", isReordering ? "bg-white border shadow-sm rounded-lg my-1 mx-2" : "active:bg-slate-100", isDragging && "shadow-md ring-2 ring-brand-500 opacity-90")}>
       {isReordering && (
-        <div 
-          {...attributes} 
+        <div
+          {...attributes}
           {...listeners}
           className="mr-3 text-slate-400 touch-none flex items-center justify-center p-2 -ml-2"
         >
           <GripVertical className="w-6 h-6" />
         </div>
       )}
-      
+
       {/* Avatar */}
       <div className="relative flex-shrink-0 mr-4">
         <div className={cn(
           "w-12 h-12 rounded-full overflow-hidden border-2",
           client.status === 'GANADOR' ? 'border-amber-400' :
-          client.status === 'VISITADO' ? (client.isAbono ? 'border-emerald-500 opacity-90' : 'border-emerald-500 opacity-50') : 
-          client.status === 'ATRASADO' ? 'border-rose-400' : 
-          client.status === 'NUEVO' ? 'border-blue-400' : 'border-transparent'
+            client.status === 'VISITADO' ? (client.isAbono ? 'border-emerald-500 opacity-90' : 'border-emerald-500 opacity-50') :
+              client.status === 'ATRASADO' ? 'border-rose-400' :
+                client.status === 'NUEVO' ? 'border-blue-400' : 'border-transparent'
         )}>
           {client.avatarUrl ? (
             <img src={client.avatarUrl} alt={client.full_name} className="w-full h-full object-cover" />
@@ -76,7 +76,7 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
         <p className={cn(
           "text-sm font-semibold truncate",
           client.status === 'VISITADO' && !client.isAbono ? "text-slate-400" :
-          client.status === 'GANADOR' ? "text-amber-800" : "text-slate-800"
+            client.status === 'GANADOR' ? "text-amber-800" : "text-slate-800"
         )}>
           {client.full_name}
         </p>
@@ -88,46 +88,46 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
 
       {/* Money */}
       {!isReordering && (
-      <div className="text-right ml-3">
-        {client.status === 'GANADOR' ? (
-          <>
-            <p className="text-xs font-bold text-amber-700">¡Ganó la lotería!</p>
-            <p className="text-[10px] text-amber-600 font-semibold mt-0.5">Infórmale al cliente</p>
-            {client.raffleNumber && (
-              <p className="text-[10px] text-amber-700 font-semibold mt-0.5 bg-amber-50 inline-block px-1.5 py-0.5 rounded">
-                No. {client.raffleNumber}
+        <div className="text-right ml-3">
+          {client.status === 'GANADOR' ? (
+            <>
+              <p className="text-xs font-bold text-amber-700">¡Ganó la lotería!</p>
+              <p className="text-[10px] text-amber-600 font-semibold mt-0.5">Infórmale al cliente</p>
+              {client.raffleNumber && (
+                <p className="text-[10px] text-amber-700 font-semibold mt-0.5 bg-amber-50 inline-block px-1.5 py-0.5 rounded">
+                  No. {client.raffleNumber}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className={cn(
+                "text-xs font-medium",
+                client.isTodayPaid ? "text-slate-400 line-through" : "text-slate-600"
+              )}>
+                Hoy: <span className="font-semibold">{formatCurrency(client.todayQuota)}</span>
               </p>
-            )}
-          </>
-        ) : (
-          <>
-        <p className={cn(
-          "text-xs font-medium",
-          client.isTodayPaid ? "text-slate-400 line-through" : "text-slate-600"
-        )}>
-          Hoy: <span className="font-semibold">{formatCurrency(client.todayQuota)}</span>
-        </p>
-        <div className="flex flex-col items-end gap-1 mt-0.5">
-          {client.isAbono ? (
-            <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-bold leading-none">
-              Abonó hoy: {formatCurrency(client.todayPaidAmount)}
-            </span>
-          ) : client.isTodayPaid ? (
-            <p className="text-[10px] text-emerald-500 font-semibold leading-none">Pagado hoy</p>
-          ) : null}
-          {client.arrears > 0 ? (
-            <p className="text-[10px] text-rose-500 font-semibold bg-rose-50 px-1.5 py-0.5 rounded leading-none">
-              Atraso: {formatCurrency(client.arrears)}
-            </p>
-          ) : client.status === 'NUEVO' ? (
-            <p className="text-[10px] text-blue-500 font-semibold bg-blue-50 px-1.5 py-0.5 rounded leading-none">Nuevo</p>
-          ) : !client.isTodayPaid && !client.isAbono ? (
-            <p className="text-[10px] text-slate-400 leading-none mt-0.5">Al día</p>
-          ) : null}
+              <div className="flex flex-col items-end gap-1 mt-0.5">
+                {client.isAbono ? (
+                  <span className="text-orange-400 font-bold text-lg leading-none">
+                    Abonó hoy: {formatCurrency(client.todayPaidAmount)}
+                  </span>
+                ) : client.isTodayPaid ? (
+                  <p className="text-[10px] text-emerald-500 font-semibold leading-none">Pagado hoy</p>
+                ) : null}
+                {client.arrears > 0 ? (
+                  <p className="text-[10px] text-rose-500 font-semibold bg-rose-50 px-1.5 py-0.5 rounded leading-none">
+                    Atraso: {formatCurrency(client.arrears)}
+                  </p>
+                ) : client.status === 'NUEVO' ? (
+                  <p className="text-[10px] text-blue-500 font-semibold bg-blue-50 px-1.5 py-0.5 rounded leading-none">Nuevo</p>
+                ) : !client.isTodayPaid && !client.isAbono ? (
+                  <p className="text-[10px] text-slate-400 leading-none mt-0.5">Al día</p>
+                ) : null}
+              </div>
+            </>
+          )}
         </div>
-          </>
-        )}
-      </div>
       )}
     </div>
   );
