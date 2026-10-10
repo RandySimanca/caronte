@@ -213,10 +213,20 @@ export function AdminDashboard() {
     ? 'Seleccione una ruta'
     : isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas';
 
-  // Clientes únicos que han pagado hoy (un mismo cliente puede tener varios pagos)
-  const clientesPagaronHoy = new Set((stats?.pagosHoy ?? []).map((p: any) => p.loanId)).size;
-  const pctPagaron = (stats?.clientes ?? 0) > 0
-    ? Math.min(100, Math.round((clientesPagaronHoy / (stats?.clientes ?? 1)) * 100))
+  // Clientes que pagaron hoy y clientes con cuota adelantada (prepagados antes de hoy)
+  const paidLoanIds = new Set((stats?.pagosHoy ?? []).map((p: any) => p.loanId));
+  const clientesPagaronHoy = paidLoanIds.size;
+  const prepaidLoanIds = new Set((stats?.prepaidToday?.clients ?? []).map((c: any) => c.loanId));
+  const clientesAdelantados = stats?.prepaidToday?.count ?? prepaidLoanIds.size;
+
+  // Total cubiertos/visitados hoy: pagados hoy + adelantados (sin duplicar)
+  const allCoveredLoanIds = new Set([
+    ...Array.from(paidLoanIds),
+    ...Array.from(prepaidLoanIds),
+  ]);
+  const totalVisitados = allCoveredLoanIds.size;
+  const pctVisitados = (stats?.clientes ?? 0) > 0
+    ? Math.min(100, Math.round((totalVisitados / (stats?.clientes ?? 1)) * 100))
     : 0;
 
   return (
@@ -290,9 +300,9 @@ export function AdminDashboard() {
 
       {/* Cards Row 1 — always filtered by selected route */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Clientes Activos + Clientes que pagaron hoy */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-4">
-          {/* Fila superior: clientes activos */}
+        {/* Clientes Activos + Clientes que pagaron hoy + clientes que han pagado adelantado */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between gap-3.5">
+          {/* Fila 1: clientes activos */}
           <button
             onClick={() => setClientsModal({ open: true, onlyToday: false })}
             className="flex items-center justify-between group w-full text-left"
@@ -312,35 +322,57 @@ export function AdminDashboard() {
           {/* Divisor */}
           <div className="border-t border-slate-100" />
 
-          {/* Fila inferior: clientes que pagaron hoy */}
+          {/* Fila 2: clientes que pagaron hoy */}
           <button
             onClick={() => setIsPaidTodayOpen(true)}
             disabled={clientesPagaronHoy === 0}
-            className="flex flex-col gap-2 group text-left disabled:cursor-default"
+            className="flex items-center justify-between group w-full text-left disabled:cursor-default"
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-500 font-bold text-sm">
-                <CheckCircle className="w-4 h-4 text-emerald-500" />
-                Pagaron hoy
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className={`text-2xl font-black text-emerald-600 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
-                  {clientesPagaronHoy}
-                </span>
-                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 transition-colors" />
-              </div>
+            <div className="flex items-center gap-2 text-slate-500 font-bold text-sm">
+              <CheckCircle className="w-4 h-4 text-emerald-500" />
+              Pagaron hoy
             </div>
-            {/* Barra de progreso */}
+            <div className="flex items-center gap-1.5">
+              <span className={`text-2xl font-black text-emerald-600 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+                {clientesPagaronHoy}
+              </span>
+              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 transition-colors" />
+            </div>
+          </button>
+
+          {/* Divisor */}
+          <div className="border-t border-slate-100" />
+
+          {/* Fila 3: clientes que han pagado adelantado */}
+          <button
+            onClick={() => setIsPrepaidModalOpen(true)}
+            disabled={clientesAdelantados === 0}
+            className="flex items-center justify-between group w-full text-left disabled:cursor-default"
+          >
+            <div className="flex items-center gap-2 text-slate-500 font-bold text-sm">
+              <CalendarCheck className="w-4 h-4 text-indigo-500" />
+              Pagaron adelantado
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className={`text-2xl font-black text-indigo-600 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+                {clientesAdelantados}
+              </span>
+              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 transition-colors" />
+            </div>
+          </button>
+
+          {/* Barra de progreso y resumen */}
+          <div className="pt-2 border-t border-slate-100 flex flex-col gap-1.5">
             <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full bg-emerald-500 transition-all duration-700 ease-out"
-                style={{ width: isStatsLoading ? '0%' : `${pctPagaron}%` }}
+                style={{ width: isStatsLoading ? '0%' : `${pctVisitados}%` }}
               />
             </div>
             <p className="text-[11px] text-slate-400 font-medium">
-              {pctPagaron}% de clientes · {routeSubtitle}
+              {totalVisitados} cubiertos ({pctVisitados}%) · {routeSubtitle}
             </p>
-          </button>
+          </div>
         </div>
 
         {/* Préstamos nuevos del día — suma desembolsada */}
@@ -480,35 +512,9 @@ export function AdminDashboard() {
       )}
 
       {/* ─── ACTION MODULES GRID ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
 
-        {/* 1. Cuotas adelantadas para hoy */}
-        {(stats?.prepaidToday?.count ?? 0) > 0 && (
-          <button
-            onClick={() => setIsPrepaidModalOpen(true)}
-            className="bg-white rounded-3xl border border-indigo-100 shadow-sm p-6 hover:shadow-md hover:border-indigo-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
-          >
-            <div className="flex items-start justify-between w-full mb-6">
-              <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center relative shadow-inner">
-                <CalendarCheck className="w-7 h-7 text-indigo-600" />
-                <span className="absolute -top-2 -right-2 w-7 h-7 bg-indigo-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md">
-                  {stats!.prepaidToday!.count}
-                </span>
-              </div>
-              <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-indigo-50 transition-colors">
-                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all" />
-              </div>
-            </div>
-            <div>
-              <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Cuotas Adelantadas</h3>
-              <p className="text-sm text-slate-500 leading-relaxed">
-                <strong className="text-indigo-600">{stats!.prepaidToday!.count}</strong> cliente{stats!.prepaidToday!.count !== 1 ? 's' : ''} ya {stats!.prepaidToday!.count !== 1 ? 'pagaron' : 'pagó'} la cuota de hoy en días anteriores.
-              </p>
-            </div>
-          </button>
-        )}
-
-        {/* 1b. Adelantos de hoy (cuotas futuras cobradas hoy) */}
+        {/* 1. Adelantos de hoy (cuotas futuras cobradas hoy) */}
         <button
           onClick={() => setIsAdelantosOpen(true)}
           className="bg-white rounded-3xl border border-emerald-100 shadow-sm p-6 hover:shadow-md hover:border-emerald-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"

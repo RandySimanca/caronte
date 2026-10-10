@@ -118,11 +118,16 @@ export function RouteClientList() {
       let isTodayPaid = false;
       let todayPaidAmount = 0;
       let isAbono = false;
+      let advances = 0;
+      let isPrepaidToday = false;
+      let isAdelantado = false;
+      let hasPaymentToday = false;
 
       if (winnerLoan && !activeLoan) {
         status = 'GANADOR';
       } else if (loan) {
         todayPaidAmount = todayPaidByLoan.get(loan.id) || 0;
+        hasPaymentToday = todayPaidAmount > 0;
 
         const loanInstallments = installments.filter(i => i.loan_id === loan.id);
 
@@ -132,6 +137,11 @@ export function RouteClientList() {
         );
         arrears = arrearsInstallments.reduce((sum, i) => sum + Number(i.balance || 0), 0);
 
+        // Cuotas futuras ya pagadas (días adelantados)
+        advances = loanInstallments.filter(
+          i => i.scheduled_date > today && (Number(i.balance || 0) <= 0 || ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(i.status))
+        ).length;
+
         const todayInstallment = loanInstallments.find(i => i.scheduled_date === today);
         const loanEnded = loan.end_date && loan.end_date < today;
         // Usar el balance real de la cuota; si no hay cuota y el préstamo ya terminó, mostrar 0.
@@ -139,16 +149,26 @@ export function RouteClientList() {
           ? 0
           : (todayInstallment ? Number(todayInstallment.balance || 0) : (loanEnded ? 0 : Number(loan.daily_installment || 0)));
         
-        isTodayPaid = !!(todayInstallment && (todayInstallment.balance <= 0 || ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInstallment.status)));
+        isTodayPaid = !!(todayInstallment && (Number(todayInstallment.balance || 0) <= 0 || ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInstallment.status)));
         const isFutureStart = loan.start_date > today;
-        const hasPaymentToday = todayPaidAmount > 0;
+
+        // ¿La cuota de hoy fue pagada antes de hoy (anticipadamente)?
+        isPrepaidToday = !!(
+          isTodayPaid &&
+          (todayInstallment?.status === 'PAGADA_ANTICIPADAMENTE' || (todayInstallment?.paid_date && todayInstallment.paid_date < today))
+        );
 
         // Es abono si pagó hoy pero la cuota de hoy no quedó completamente saldada
         isAbono = hasPaymentToday && !isTodayPaid;
+        isAdelantado = advances > 0 || (isPrepaidToday && !hasPaymentToday);
         const isVisited = isTodayPaid || hasPaymentToday;
 
         if (isFutureStart && !hasPaymentToday) {
           status = 'NUEVO';
+        } else if (hasPaymentToday) {
+          status = 'VISITADO';
+        } else if (isAdelantado) {
+          status = 'ADELANTADO';
         } else if (isVisited) {
           status = 'VISITADO';
         } else if (arrears > 0) {
@@ -160,8 +180,12 @@ export function RouteClientList() {
         ...client,
         todayQuota,
         arrears,
+        advances,
+        isPrepaidToday,
+        isAdelantado,
         status,
         isTodayPaid,
+        hasPaymentToday,
         todayPaidAmount,
         isAbono,
         raffleNumber: winnerLoan?.raffle_number ?? loan?.raffle_number,
@@ -235,7 +259,7 @@ export function RouteClientList() {
   }
 
   const totalClients = sortedClients.length;
-  const visitedCount = sortedClients.filter(c => c.status === 'VISITADO').length;
+  const visitedCount = sortedClients.filter(c => c.status === 'VISITADO' || c.status === 'ADELANTADO').length;
   const arrearsCount = sortedClients.filter(c => c.status === 'ATRASADO').length;
   const newCount = sortedClients.filter(c => c.status === 'NUEVO').length;
   const winnerCount = sortedClients.filter(c => c.status === 'GANADOR').length;

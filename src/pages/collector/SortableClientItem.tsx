@@ -1,7 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { NavLink } from 'react-router-dom';
-import { User, MapPin, Trophy, GripVertical } from 'lucide-react';
+import { User, MapPin, Trophy, GripVertical, CalendarCheck } from 'lucide-react';
 import { formatCurrency, cn } from '@/lib/utils';
 
 export function SortableClientItem({ client, isReordering }: { client: any, isReordering: boolean }) {
@@ -38,9 +38,10 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
         <div className={cn(
           "w-12 h-12 rounded-full overflow-hidden border-2",
           client.status === 'GANADOR' ? 'border-amber-400' :
-            client.status === 'VISITADO' ? (client.isAbono ? 'border-emerald-500 opacity-90' : 'border-emerald-500 opacity-50') :
-              client.status === 'ATRASADO' ? 'border-rose-400' :
-                client.status === 'NUEVO' ? 'border-blue-400' : 'border-transparent'
+            client.status === 'ADELANTADO' ? 'border-indigo-400 opacity-70' :
+              client.status === 'VISITADO' ? (client.isAbono ? 'border-emerald-500 opacity-90' : 'border-emerald-500 opacity-50') :
+                client.status === 'ATRASADO' ? 'border-rose-400' :
+                  client.status === 'NUEVO' ? 'border-blue-400' : 'border-transparent'
         )}>
           {client.avatarUrl ? (
             <img src={client.avatarUrl} alt={client.full_name} className="w-full h-full object-cover" />
@@ -53,6 +54,11 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
         {client.status === 'GANADOR' && (
           <div className="absolute -bottom-1 -right-1 bg-amber-400 text-white rounded-full p-0.5 border-2 border-white">
             <Trophy className="w-3 h-3" />
+          </div>
+        )}
+        {client.status === 'ADELANTADO' && (
+          <div className="absolute -bottom-1 -right-1 bg-indigo-600 text-white rounded-full p-0.5 border-2 border-white">
+            <CalendarCheck className="w-3 h-3" />
           </div>
         )}
         {client.status === 'VISITADO' && (
@@ -76,7 +82,8 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
         <p className={cn(
           "text-sm font-semibold truncate",
           client.status === 'VISITADO' && !client.isAbono ? "text-slate-400" :
-            client.status === 'GANADOR' ? "text-amber-800" : "text-slate-800"
+            client.status === 'ADELANTADO' ? "text-slate-500" :
+              client.status === 'GANADOR' ? "text-amber-800" : "text-slate-800"
         )}>
           {client.full_name}
         </p>
@@ -103,17 +110,26 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
             <>
               <p className={cn(
                 "text-xs font-medium",
-                client.isTodayPaid ? "text-slate-400 line-through" : "text-slate-600"
+                (client.isTodayPaid || client.status === 'ADELANTADO') ? "text-slate-400 line-through" : "text-slate-600"
               )}>
                 Hoy: <span className="font-semibold">{formatCurrency(client.todayQuota)}</span>
               </p>
               <div className="flex flex-col items-end gap-1 mt-0.5">
                 {client.isAbono ? (
-                  <span className="text-[10px] text-orange-700 bg-orange-100 border border-orange-200  px-1.5 py-0.5 rounded font-bold leading-none">
+                  <span className="text-[10px] text-orange-700 bg-orange-100 border border-orange-200 px-1.5 py-0.5 rounded font-bold leading-none">
                     Abonó hoy: {formatCurrency(client.todayPaidAmount)}
                   </span>
-                ) : client.isTodayPaid ? (
+                ) : client.hasPaymentToday && client.isTodayPaid ? (
                   <p className="text-[10px] text-emerald-500 font-semibold leading-none">Pagado hoy</p>
+                ) : null}
+                {client.advances > 0 ? (
+                  <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded font-bold leading-none">
+                    {client.advances} {client.advances === 1 ? 'día adelantado' : 'días adelantados'}
+                  </span>
+                ) : client.status === 'ADELANTADO' ? (
+                  <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded font-bold leading-none">
+                    Adelantado
+                  </span>
                 ) : null}
                 {client.arrears > 0 ? (
                   <p className="text-[10px] text-rose-500 font-semibold bg-rose-50 px-1.5 py-0.5 rounded leading-none">
@@ -121,7 +137,7 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
                   </p>
                 ) : client.status === 'NUEVO' ? (
                   <p className="text-[10px] text-blue-500 font-semibold bg-blue-50 px-1.5 py-0.5 rounded leading-none">Nuevo</p>
-                ) : !client.isTodayPaid && !client.isAbono ? (
+                ) : !client.isTodayPaid && !client.isAbono && client.status !== 'ADELANTADO' ? (
                   <p className="text-[10px] text-slate-400 leading-none mt-0.5">Al día</p>
                 ) : null}
               </div>
