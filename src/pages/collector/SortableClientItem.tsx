@@ -109,7 +109,7 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
               </p>
               <div className="flex flex-col items-end gap-1 mt-0.5">
                 {client.isAbono ? (
-                  <span className="text-[10px] text-orange-700 bg-orange-50 border border-emerald-200 px-1.5 py-0.5 rounded font-bold leading-none">
+                  <span className="text-[10px] text-orange-700 bg-orange-100 border border-orange-200  px-1.5 py-0.5 rounded font-bold leading-none">
                     Abonó hoy: {formatCurrency(client.todayPaidAmount)}
                   </span>
                 ) : client.isTodayPaid ? (
