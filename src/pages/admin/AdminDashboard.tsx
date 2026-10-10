@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck, Plus, Building2, Smartphone, PencilLine, FileSpreadsheet, FastForward } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { ClientsModal } from '@/components/admin/ClientsModal';
 import { LotteryModule } from '@/components/admin/LotteryModule';
 import { ObservationsModal } from '@/components/admin/ObservationsModal';
@@ -148,39 +149,53 @@ export function AdminDashboard() {
     loadRoutes();
   }, []);
 
+  // Carga de estadísticas. `silent` = recarga en segundo plano (tiempo real): sin spinner ni parpadeo.
+  // El contador evita que una respuesta vieja pise a una más reciente (p. ej. al cambiar de ruta).
+  const statsRequestRef = useRef(0);
+  const loadStats = useCallback(async (silent = false) => {
+    if (!selectedRoute) {
+      setStats({
+        clientes: 0,
+        nuevos: 0,
+        recaudo: 0,
+        recaudoOficina: 0,
+        recaudoTransferencias: 0,
+        esperado: 0,
+        prepaidToday: { count: 0, clients: [] },
+        adelantosHoy: { count: 0, total: 0, clientes: [] },
+        nuevosHoy: { count: 0, total: 0, clients: [] },
+        alerts: [],
+        cobradores: 0,
+        rutas: 0
+      });
+      return;
+    }
+
+    const requestId = ++statsRequestRef.current;
+    if (!silent) setIsStatsLoading(true);
+    try {
+      const dashboardStats = await AdminService.getDashboardStats(selectedRoute);
+      if (requestId === statsRequestRef.current) setStats(dashboardStats);
+    } catch (error) {
+      if (!silent) toast.error('Error cargando estadísticas');
+    } finally {
+      if (requestId === statsRequestRef.current) setIsStatsLoading(false);
+    }
+  }, [selectedRoute]);
+
   // Reload stats whenever the selected route changes
   useEffect(() => {
-    const fetchStats = async () => {
-      if (!selectedRoute) {
-        setStats({
-          clientes: 0,
-          nuevos: 0,
-          recaudo: 0,
-          recaudoOficina: 0,
-          recaudoTransferencias: 0,
-          esperado: 0,
-          prepaidToday: { count: 0, clients: [] },
-          adelantosHoy: { count: 0, total: 0, clientes: [] },
-          nuevosHoy: { count: 0, total: 0, clients: [] },
-          alerts: [],
-          cobradores: 0,
-          rutas: 0
-        });
-        return;
-      }
+    loadStats();
+  }, [loadStats]);
 
-      setIsStatsLoading(true);
-      try {
-        const dashboardStats = await AdminService.getDashboardStats(selectedRoute);
-        setStats(dashboardStats);
-      } catch (error) {
-        toast.error('Error cargando estadísticas');
-      } finally {
-        setIsStatsLoading(false);
-      }
-    };
-    fetchStats();
-  }, [selectedRoute]);
+  // Tiempo real: cuando un celular sube cobros/préstamos/gastos/cierres, el PC se actualiza solo.
+  const isLive = useRealtimeRefresh(
+    () => {
+      loadStats(true);
+      AdminService.getRouteStates().then(setRouteStates).catch(() => {});
+    },
+    { tables: ['payments', 'loans', 'loan_installments', 'clients', 'expenses', 'daily_closings'] },
+  );
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-CO', {
@@ -237,6 +252,13 @@ export function AdminDashboard() {
           <Activity className="w-6 h-6 text-brand-600" />
           Dashboard
           {isStatsLoading && <div className="w-4 h-4 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin ml-2" />}
+          <span
+            title={isLive ? 'Se actualiza solo cuando los cobradores sincronizan' : 'Sin conexión en tiempo real: se actualiza cada 90 s'}
+            className={`ml-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase ${isLive ? 'text-emerald-600' : 'text-slate-400'}`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+            {isLive ? 'En vivo' : 'Sin tiempo real'}
+          </span>
         </h1>
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
           <label>Ruta:</label>

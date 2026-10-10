@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Wallet, CheckCircle, Clock } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { LiquidationDetailModal } from '@/components/admin/LiquidationDetailModal';
 import toast from 'react-hot-toast';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 
 export function LiquidationsPage() {
   const [routes, setRoutes] = useState<any[]>([]);
@@ -17,21 +18,29 @@ export function LiquidationsPage() {
   const [selectedRoute, setSelectedRoute] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const fetchLiquidations = async () => {
-    setIsLoading(true);
+  // `silent` = recarga en segundo plano (tiempo real) sin spinner; el contador descarta respuestas viejas.
+  const liquidationsRequestRef = useRef(0);
+  const fetchLiquidations = async (silent = false) => {
+    const requestId = ++liquidationsRequestRef.current;
+    if (!silent) setIsLoading(true);
     try {
       const data = await AdminService.getRouteLiquidations(selectedDate);
-      setRoutes(data);
+      if (requestId === liquidationsRequestRef.current) setRoutes(data);
     } catch (error: any) {
-      toast.error('Error al cargar liquidaciones: ' + error.message);
+      if (!silent) toast.error('Error al cargar liquidaciones: ' + error.message);
     } finally {
-      setIsLoading(false);
+      if (requestId === liquidationsRequestRef.current) setIsLoading(false);
     }
   };
 
   useEffect(() => {
     fetchLiquidations();
   }, [selectedDate]);
+
+  // Tiempo real: cobros, gastos y cierres que suben los celulares actualizan las liquidaciones solas.
+  useRealtimeRefresh(() => fetchLiquidations(true), {
+    tables: ['payments', 'expenses', 'daily_closings', 'loans'],
+  });
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-CO', {
@@ -144,7 +153,7 @@ export function LiquidationsPage() {
       <LiquidationDetailModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSuccess={fetchLiquidations}
+        onSuccess={() => fetchLiquidations()}
         route={selectedRoute}
         dateStr={selectedDate}
       />
