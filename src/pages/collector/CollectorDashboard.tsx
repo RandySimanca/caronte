@@ -45,6 +45,12 @@ export function CollectorDashboard() {
 
   const routeName = routes.length > 0 ? routes[0].name : 'Cargando ruta...';
 
+  // Nombre del cobrador para el saludo (viene de la sesión guardada, funciona sin conexión).
+  const displayName =
+    (user?.user_metadata?.full_name as string | undefined)?.trim() ||
+    user?.email?.split('@')[0] ||
+    '';
+
   const [isPrepaidModalOpen, setIsPrepaidModalOpen] = useState(false);
   const [isNewLoansModalOpen, setIsNewLoansModalOpen] = useState(false);
   const [isPaidTodayOpen, setIsPaidTodayOpen] = useState(false);
@@ -294,8 +300,10 @@ export function CollectorDashboard() {
     <div className="p-4 space-y-4">
       {/* Header */}
       <header className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Buenos días!</h1>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-slate-900 truncate">
+            {displayName ? `Hola, ${displayName}` : 'Hola'}
+          </h1>
           <p className="text-sm text-slate-500 capitalize">{capitalizedDate}</p>
           <div className="mt-1.5 flex items-center">
             <span className="inline-flex items-center rounded-md bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700 ring-1 ring-inset ring-brand-700/20">
