@@ -14,6 +14,8 @@ import { NewLoansTodayModal } from '@/components/admin/NewLoansTodayModal';
 import { PaidTodayModal, type PaidTodayEntry } from '@/components/admin/PaidTodayModal';
 import { applyLotteryDrawLocally, isLotteryWinnerLoan, parseLotteryLastDraw } from '@/lib/lottery';
 import { NavLink } from 'react-router-dom';
+import { SyncIssuesPanel } from '@/components/sync/SyncIssuesPanel';
+import { downloadUnsyncedBackup, summarizeUnsynced } from '@/lib/syncBackup';
 
 export function CollectorDashboard() {
   const dateStr = format(new Date(), "EEEE, dd MMM yyyy", { locale: es });
@@ -484,6 +486,8 @@ export function CollectorDashboard() {
         </button>
       )}
 
+      <SyncIssuesPanel collectorId={user?.id} />
+
       {/* Sync Panel */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
         <div className="flex justify-between items-center mb-4">
@@ -492,7 +496,14 @@ export function CollectorDashboard() {
 
             <button
               onClick={async () => {
-                if (window.confirm('¿Forzar limpieza y resincronizar? ADVERTENCIA: Perderás cobros offline no enviados (soluciona problemas de datos atascados).')) {
+                const unsynced = await summarizeUnsynced();
+                const warning = unsynced.total === 0
+                  ? '¿Forzar limpieza y resincronizar? No hay operaciones sin enviar.'
+                  : `¿Forzar limpieza y resincronizar?\n\nHay ${unsynced.total} operación(es) sin enviar` +
+                    (unsynced.paymentsCount > 0 ? `, entre ellas ${unsynced.paymentsCount} cobro(s) por ${formatCurrency(unsynced.paymentsAmount)}` : '') +
+                    '.\nSe descargará un respaldo antes de borrarlas, pero esos datos NO llegarán al servidor. Intenta primero "Reintentar".';
+                if (window.confirm(warning)) {
+                  if (unsynced.total > 0) await downloadUnsyncedBackup();
                   await db.syncQueue.clear();
                   useSyncStore.getState().setPendingCount(0);
                   if (user?.id) {

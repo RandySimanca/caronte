@@ -20,6 +20,11 @@ export function colombiaDateFromIso(iso: string): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Fecha de hoy (YYYY-MM-DD) en hora de Colombia. No usar new Date().toISOString() para "hoy": desde las 7 pm ya devuelve mañana (UTC). */
+export function colombiaToday(): string {
+  return colombiaDateFromIso(new Date().toISOString());
+}
+
 export type TodayPayment = {
   operation_id: string;
   loan_id?: string | null;

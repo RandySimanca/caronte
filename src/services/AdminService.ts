@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { User, Role } from '@/lib/database.types';
-import { dayRangeIso, colombiaDateFromIso } from '@/lib/dailyCollection';
+import { dayRangeIso, colombiaDateFromIso, colombiaToday } from '@/lib/dailyCollection';
 import { parseLotteryLastDraw, isLotteryWinnerLoan } from '@/lib/lottery';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -974,7 +974,7 @@ export class AdminService {
     if (instErr || !installments) return;
 
     let remainingToAllocate = totalPaid;
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = colombiaToday();
 
     for (const inst of installments) {
       if (inst.is_prepaid) {
@@ -1292,7 +1292,7 @@ export class AdminService {
     }
 
     const loanIds = loans.map((l: any) => l.id);
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = colombiaToday();
     
     // Split into chunks of 100 if there are many loans to avoid URL too long issues in Supabase/PostgREST
     const chunkSize = 100;
@@ -1827,7 +1827,7 @@ export class AdminService {
     const allocations = [];
     const updatedInsts = [];
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = colombiaToday();
 
     for (const inst of (pendingInsts || [])) {
       if (remainingToDistribute <= 0) break;
@@ -2112,7 +2112,7 @@ export class AdminService {
 
         const revertedPaid    = Math.max(0, Number(inst.paid_amount) - Number(alloc.allocated_amount));
         const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
-        const today = new Date().toISOString().split('T')[0];
+        const today = colombiaToday();
 
         let newStatus = 'PENDIENTE';
         if (revertedPaid >= Number(inst.scheduled_amount)) {
@@ -2146,7 +2146,7 @@ export class AdminService {
 
         const revertedPaid = currentPaid - revertAmount;
         const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
-        const today = new Date().toISOString().split('T')[0];
+        const today = colombiaToday();
 
         let newStatus = 'PENDIENTE';
         if (revertedPaid >= Number(inst.scheduled_amount)) {
@@ -2177,7 +2177,7 @@ export class AdminService {
 
     let remaining = newAmount;
     const newAllocations: any[] = [];
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = colombiaToday();
 
     let dayInstallmentAmount = 0;
     let arrearsAmount = 0;

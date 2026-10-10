@@ -387,7 +387,13 @@ export class SyncService {
               created_by: user?.id || null
             };
 
-            const { error } = await supabase.from('payments').upsert(paymentDb as any);
+            // onConflict + ignoreDuplicates: si el cobro ya llegó al servidor en un intento anterior
+            // (y falló un paso posterior), el reintento NO falla por operation_id duplicado: sigue con
+            // las cuotas y el saldo. Sin esto la operación quedaba en 'failed' para siempre y bloqueaba
+            // la descarga de ese préstamo en el celular.
+            const { error } = await supabase
+              .from('payments')
+              .upsert(paymentDb as any, { onConflict: 'operation_id', ignoreDuplicates: true });
             if (error) throw error;
 
             // Handle bundle updates (installments and loan balance)
