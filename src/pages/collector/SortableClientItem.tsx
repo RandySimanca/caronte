@@ -38,7 +38,7 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
         <div className={cn(
           "w-12 h-12 rounded-full overflow-hidden border-2",
           client.status === 'GANADOR' ? 'border-amber-400' :
-          client.status === 'VISITADO' ? 'border-emerald-500 opacity-50' : 
+          client.status === 'VISITADO' ? (client.isAbono ? 'border-emerald-500 opacity-90' : 'border-emerald-500 opacity-50') : 
           client.status === 'ATRASADO' ? 'border-rose-400' : 
           client.status === 'NUEVO' ? 'border-blue-400' : 'border-transparent'
         )}>
@@ -75,7 +75,7 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
       <div className="flex-1 min-w-0">
         <p className={cn(
           "text-sm font-semibold truncate",
-          client.status === 'VISITADO' ? "text-slate-400" :
+          client.status === 'VISITADO' && !client.isAbono ? "text-slate-400" :
           client.status === 'GANADOR' ? "text-amber-800" : "text-slate-800"
         )}>
           {client.full_name}
@@ -108,18 +108,22 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
           Hoy: <span className="font-semibold">{formatCurrency(client.todayQuota)}</span>
         </p>
         <div className="flex flex-col items-end gap-1 mt-0.5">
-          {client.isTodayPaid && (
+          {client.isAbono ? (
+            <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-bold leading-none">
+              Abonó hoy: {formatCurrency(client.todayPaidAmount)}
+            </span>
+          ) : client.isTodayPaid ? (
             <p className="text-[10px] text-emerald-500 font-semibold leading-none">Pagado hoy</p>
-          )}
+          ) : null}
           {client.arrears > 0 ? (
             <p className="text-[10px] text-rose-500 font-semibold bg-rose-50 px-1.5 py-0.5 rounded leading-none">
               Atraso: {formatCurrency(client.arrears)}
             </p>
           ) : client.status === 'NUEVO' ? (
             <p className="text-[10px] text-blue-500 font-semibold bg-blue-50 px-1.5 py-0.5 rounded leading-none">Nuevo</p>
-          ) : !client.isTodayPaid && (
+          ) : !client.isTodayPaid && !client.isAbono ? (
             <p className="text-[10px] text-slate-400 leading-none mt-0.5">Al día</p>
-          )}
+          ) : null}
         </div>
           </>
         )}

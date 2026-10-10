@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useSyncStore } from '@/stores/syncStore';
 import { SyncService } from '@/services/SyncService';
 import { sortByRouteOrder } from '@/lib/routeOrder';
+import { colombiaDateFromIso, mergeTodayPayments, paymentsTodaySettingKey } from '@/lib/dailyCollection';
 
 // Posición del scroll de la lista: se guarda por día para volver "por donde vas" después de cobrar
 const SCROLL_KEY = 'route_list_scroll';
@@ -41,9 +42,28 @@ export function RouteClientList() {
   const loans = useLiveQuery(() => db.loans.toArray()) || [];
   const installments = useLiveQuery(() => db.installments.toArray()) || [];
   const lotterySetting = useLiveQuery(() => db.settings.get('lottery_last_draw'));
+  const syncQueue = useLiveQuery(() => db.syncQueue.toArray(), []) || [];
+  const allSettings = useLiveQuery(() => db.settings.toArray(), []) || [];
 
   const today = format(new Date(), 'yyyy-MM-dd');
   const lotteryDraw = parseLotteryLastDraw(lotterySetting?.value);
+
+  const todayPaidByLoan = useMemo(() => {
+    const serverPayments = allSettings.find(s => s.key === paymentsTodaySettingKey(today))?.value as any[] | undefined;
+    const serverPaymentsToday = serverPayments?.filter((p: any) => {
+      const collectedAt = p.collected_at || p.collectedAt;
+      if (!collectedAt) return true;
+      return colombiaDateFromIso(collectedAt) === today;
+    });
+    const mergedPayments = mergeTodayPayments(serverPaymentsToday, syncQueue, today);
+    const map = new Map<string, number>();
+    for (const p of mergedPayments) {
+      if (p.loan_id) {
+        map.set(p.loan_id, (map.get(p.loan_id) || 0) + Number(p.total_amount || 0));
+      }
+    }
+    return map;
+  }, [allSettings, syncQueue, today]);
 
   const listRef = useRef<HTMLUListElement | null>(null);
   const scrollRestoredRef = useRef(false);
@@ -96,10 +116,14 @@ export function RouteClientList() {
       let arrears = 0;
       let status = 'AL_DIA';
       let isTodayPaid = false;
+      let todayPaidAmount = 0;
+      let isAbono = false;
 
       if (winnerLoan && !activeLoan) {
         status = 'GANADOR';
       } else if (loan) {
+        todayPaidAmount = todayPaidByLoan.get(loan.id) || 0;
+
         const loanInstallments = installments.filter(i => i.loan_id === loan.id);
 
         const arrearsInstallments = loanInstallments.filter(i =>
@@ -115,12 +139,17 @@ export function RouteClientList() {
           ? 0
           : (todayInstallment ? Number(todayInstallment.balance || 0) : (loanEnded ? 0 : Number(loan.daily_installment || 0)));
         
-        isTodayPaid = !!(todayInstallment && ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInstallment.status));
+        isTodayPaid = !!(todayInstallment && (todayInstallment.balance <= 0 || ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInstallment.status)));
         const isFutureStart = loan.start_date > today;
+        const hasPaymentToday = todayPaidAmount > 0;
 
-        if (isFutureStart) {
+        // Es abono si pagó hoy pero la cuota de hoy no quedó completamente saldada
+        isAbono = hasPaymentToday && !isTodayPaid;
+        const isVisited = isTodayPaid || hasPaymentToday;
+
+        if (isFutureStart && !hasPaymentToday) {
           status = 'NUEVO';
-        } else if (isTodayPaid) {
+        } else if (isVisited) {
           status = 'VISITADO';
         } else if (arrears > 0) {
           status = 'ATRASADO';
@@ -133,12 +162,14 @@ export function RouteClientList() {
         arrears,
         status,
         isTodayPaid,
+        todayPaidAmount,
+        isAbono,
         raffleNumber: winnerLoan?.raffle_number ?? loan?.raffle_number,
         avatarUrl: client.photo_face_url
       };
     })
     .filter(c => c.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [clients, loans, installments, searchTerm, today, lotteryDraw]);
+  }, [clients, loans, installments, searchTerm, today, lotteryDraw, todayPaidByLoan]);
 
   // Aplicar ordenamiento después del filtro (usar sortByRouteOrder para lógica consistente)
   const sortedClients = useMemo(() => {

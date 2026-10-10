@@ -153,6 +153,11 @@ export function CollectorDashboard() {
         paidTodayByLoan.set(entry.loanId, (paidTodayByLoan.get(entry.loanId) || 0) + entry.amount);
       }
     }
+    for (const p of mergedPayments) {
+      if (p.loan_id && !paidTodayByLoan.has(p.loan_id)) {
+        paidTodayByLoan.set(p.loan_id, Number(p.total_amount || 0));
+      }
+    }
 
     for (const loan of loans) {
       if (isLotteryWinnerLoan(loan, draw)) continue;
@@ -211,12 +216,13 @@ export function CollectorDashboard() {
 
       if (loanCurrentArrears > 0) arrearsClients++;
 
-      const isTodayPaid = todayInst && todayInst.balance <= 0;
+      const isTodayPaid = !!(todayInst && (todayInst.balance <= 0 || ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInst.status)));
       const isFutureStart = loan.start_date > today;
+      const loanPaidToday = (paidTodayByLoan.get(loan.id) || 0) > 0;
 
-      if (isFutureStart) {
+      if (isFutureStart && !loanPaidToday) {
         newCount++;
-      } else if (isTodayPaid && loanCurrentArrears === 0) {
+      } else if (isTodayPaid || loanPaidToday) {
         visitedCount++;
       }
     } // end for loan of loans
