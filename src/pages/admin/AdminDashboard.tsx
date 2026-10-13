@@ -228,13 +228,16 @@ export function AdminDashboard() {
     ? 'Seleccione una ruta'
     : isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas';
 
-  // Clientes que pagaron hoy y clientes con cuota adelantada (prepagados antes de hoy)
+  // Clientes que pagaron hoy
   const paidLoanIds = new Set((stats?.pagosHoy ?? []).map((p: any) => p.loanId));
   const clientesPagaronHoy = paidLoanIds.size;
-  const prepaidLoanIds = new Set((stats?.prepaidToday?.clients ?? []).map((c: any) => c.loanId));
-  const clientesAdelantados = stats?.prepaidToday?.count ?? prepaidLoanIds.size;
 
-  // Total cubiertos/visitados hoy: pagados hoy + adelantados (sin duplicar)
+  // "Pagaron adelantado" = clientes que hoy pagaron cuotas FUTURAS (adelantosHoy).
+  // Esto es consistente con "De adelantos" en el recaudo, que proviene del mismo campo advance_amount.
+  const clientesAdelantados = stats?.adelantosHoy?.count ?? 0;
+
+  // Para la barra de progreso: cubiertos = pagaron hoy + cuota de hoy pre-pagada antes de hoy
+  const prepaidLoanIds = new Set((stats?.prepaidToday?.clients ?? []).map((c: any) => c.loanId));
   const allCoveredLoanIds = new Set([
     ...Array.from(paidLoanIds),
     ...Array.from(prepaidLoanIds),
@@ -365,9 +368,9 @@ export function AdminDashboard() {
           {/* Divisor */}
           <div className="border-t border-slate-100" />
 
-          {/* Fila 3: clientes que han pagado adelantado */}
+          {/* Fila 3: clientes que pagaron cuotas futuras hoy (adelantosHoy) */}
           <button
-            onClick={() => setIsPrepaidModalOpen(true)}
+            onClick={() => setIsAdelantosOpen(true)}
             disabled={clientesAdelantados === 0}
             className="flex items-center justify-between group w-full text-left disabled:cursor-default"
           >
