@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import { confirmDanger } from '@/lib/swal';
 
 interface PaymentCardModalProps {
   isOpen: boolean;
@@ -51,7 +52,12 @@ export function PaymentCardModal({ isOpen, onClose, loanId }: PaymentCardModalPr
   }, [isOpen, loanId]);
 
   const handleDelete = async (paymentId: string) => {
-    if (!window.confirm('¿Estás seguro de que deseas eliminar este cobro por completo? El saldo del préstamo y las cuotas volverán a su estado anterior. Esta acción NO se puede deshacer.')) return;
+    const confirmed = await confirmDanger({
+      title: '¿Eliminar este cobro?',
+      text: 'El saldo del préstamo y las cuotas volverán a su estado anterior. Esta acción NO se puede deshacer.',
+      confirmText: 'Sí, eliminar cobro',
+    });
+    if (!confirmed) return;
     
     setIsSubmitting(true);
     try {

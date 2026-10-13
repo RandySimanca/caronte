@@ -7,6 +7,7 @@ import {
 import { NewCompanyModal } from '@/components/superadmin/NewCompanyModal';
 import { formatMoney } from '@/lib/money';
 import type { CompanyStatus } from '@/lib/database.types';
+import { confirmDanger } from '@/lib/swal';
 import {
   Building2,
   Users,
@@ -89,9 +90,19 @@ export function SuperAdminDashboard() {
   };
 
   const handleDeleteCompany = async (company: CompanyWithStats) => {
-    if (!confirm(`¿Estás seguro de eliminar la empresa "${company.name}"?\n\nEsta acción eliminará permanentemente:\n- Todos los usuarios de la empresa\n- Todas las rutas\n- Todos los clientes\n- Todos los préstamos y pagos\n- Todos los datos históricos\n\nEsta acción NO se puede deshacer.`)) {
-      return;
-    }
+    const confirmed = await confirmDanger({
+      title: `¿Eliminar empresa "${company.name}"?`,
+      html:
+        `<p class="text-sm text-slate-600 mb-2">Esta acción eliminará permanentemente:</p>` +
+        `<ul class="text-sm text-left text-red-700 space-y-1 list-disc list-inside">` +
+        `<li>Todos los usuarios de la empresa</li>` +
+        `<li>Todas las rutas, clientes y préstamos</li>` +
+        `<li>Todos los pagos y datos históricos</li>` +
+        `</ul>` +
+        `<p class="mt-3 font-semibold text-red-600">Esta acción NO se puede deshacer.</p>`,
+      confirmText: 'Sí, eliminar empresa',
+    });
+    if (!confirmed) return;
 
     try {
       await SuperAdminService.deleteCompany(company.id);
@@ -104,9 +115,19 @@ export function SuperAdminDashboard() {
   };
 
   const handleDeleteUser = async (userId: string, userName: string) => {
-    if (!confirm(`¿Estás seguro de eliminar al usuario "${userName}"?\n\nEsta acción eliminará permanentemente:\n- El usuario y su perfil\n- Todos sus datos asignados\n- Su cuenta de autenticación\n\nEsta acción NO se puede deshacer.`)) {
-      return;
-    }
+    const confirmed = await confirmDanger({
+      title: `¿Eliminar usuario "${userName}"?`,
+      html:
+        `<p class="text-sm text-slate-600 mb-2">Esta acción eliminará permanentemente:</p>` +
+        `<ul class="text-sm text-left text-red-700 space-y-1 list-disc list-inside">` +
+        `<li>El usuario y su perfil</li>` +
+        `<li>Todos sus datos asignados</li>` +
+        `<li>Su cuenta de autenticación</li>` +
+        `</ul>` +
+        `<p class="mt-3 font-semibold text-red-600">Esta acción NO se puede deshacer.</p>`,
+      confirmText: 'Sí, eliminar usuario',
+    });
+    if (!confirmed) return;
 
     try {
       await SuperAdminService.deleteUser(userId);

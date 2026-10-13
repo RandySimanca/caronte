@@ -3,6 +3,7 @@ import { X, Search, Users, Calendar, Filter, CheckCircle, Camera, FileText, Doll
 import { AdminService } from '@/services/AdminService';
 import { colombiaDateFromIso } from '@/lib/dailyCollection';
 import toast from 'react-hot-toast';
+import { confirmDanger } from '@/lib/swal';
 import { PaymentCardModal } from './PaymentCardModal';
 import { EditClientModal } from './EditClientModal';
 import { AdminCreateLoanModal } from './AdminCreateLoanModal';
@@ -178,9 +179,12 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
 
   const handleDeleteClient = async (clientId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm('¿Está seguro de que desea eliminar a este cliente? Esta acción no se puede deshacer.')) {
-      return;
-    }
+    const confirmed = await confirmDanger({
+      title: '¿Eliminar cliente?',
+      text: 'Esta acción no se puede deshacer.',
+      confirmText: 'Sí, eliminar',
+    });
+    if (!confirmed) return;
     
     try {
       await AdminService.deleteClient(clientId);

@@ -8,6 +8,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
+import { confirmDanger } from '@/lib/swal';
 
 export function DailyClosingPage() {
   const navigate = useNavigate();
@@ -131,7 +132,12 @@ export function DailyClosingPage() {
       return;
     }
 
-    if (window.confirm('¿Estás seguro de que deseas cerrar el día? Esta acción no se puede deshacer y no podrás realizar más operaciones de cobro hoy.')) {
+    const confirmed = await confirmDanger({
+      title: '¿Cerrar el día?',
+      text: 'Esta acción no se puede deshacer y no podrás realizar más operaciones de cobro hoy.',
+      confirmText: 'Sí, cerrar el día',
+    });
+    if (confirmed) {
       try {
         await db.settings.put({ key: `day_closed_${today}`, value: true });
         toast.success('Día cerrado correctamente.');

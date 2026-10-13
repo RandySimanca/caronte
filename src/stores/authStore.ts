@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { db } from '@/db/schema';
+import { confirmWarning } from '@/lib/swal';
 import { readStoredSession } from '@/lib/offlineSession';
 
 interface AuthState {
@@ -174,10 +175,14 @@ export const useAuthStore = create<AuthState>((set, get) => {
           .count();
 
         if (pendingCount > 0) {
-          const shouldProceed = confirm(
-            `Hay ${pendingCount} operaciones sin sincronizar (cobros pendientes). ` +
-            'Si sales ahora, estos datos se perderán. ¿Deseas continuar?'
-          );
+          const shouldProceed = await confirmWarning({
+            title: 'Operaciones sin sincronizar',
+            html:
+              `<p>Hay <strong>${pendingCount}</strong> operaciones sin enviar al servidor (cobros pendientes).</p>` +
+              `<p class="mt-2 text-sm text-amber-700">Si sales ahora, estos datos se perderán.</p>`,
+            confirmText: 'Sí, cerrar sesión',
+            cancelText: 'Quedarme',
+          });
 
           if (!shouldProceed) {
             return; // Usuario canceló el cierre de sesión

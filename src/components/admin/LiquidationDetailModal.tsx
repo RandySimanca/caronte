@@ -4,6 +4,7 @@ import { AdminService } from '@/services/AdminService';
 import { useAuthStore } from '@/stores/authStore';
 import { formatNumberInput, parseNumberInput } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { confirmDanger } from '@/lib/swal';
 import { pdf } from '@react-pdf/renderer';
 import { DailyLiquidationPdf } from '../reports/pdf/templates/DailyLiquidationPdf';
 import { downloadExcel } from '../reports/excel/ExcelExporter';
@@ -73,7 +74,12 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
 
   const handleReopen = async () => {
     if (!route || !dateStr) return;
-    if (!window.confirm('¿Estás seguro de que deseas reabrir este día?')) return;
+    const confirmed = await confirmDanger({
+      title: '¿Reabrir este día?',
+      text: 'El día volverá a estado abierto y el cobrador podrá continuar operando.',
+      confirmText: 'Sí, reabrir',
+    });
+    if (!confirmed) return;
     
     try {
       await AdminService.reopenLiquidation(route.id, dateStr);

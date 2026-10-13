@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Search, Trophy, Gift, Calendar, CheckCircle, Eye } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import toast from 'react-hot-toast';
+import { confirmDanger } from '@/lib/swal';
 
 import { supabase } from '@/lib/supabase';
 
@@ -63,9 +64,12 @@ export function LotteryModule({ isOpen, onClose }: LotteryModalProps) {
       return;
     }
 
-    if (!confirm(`¿Estás seguro de procesar el sorteo con el número ganador ${winningNumber}? Esto perdonará la deuda de los ganadores y no se puede deshacer.`)) {
-      return;
-    }
+    const confirmed = await confirmDanger({
+      title: '¿Procesar sorteo?',
+      text: `Número ganador: ${winningNumber}. Esto perdonará la deuda de los ganadores y no se puede deshacer.`,
+      confirmText: 'Sí, procesar sorteo',
+    });
+    if (!confirmed) return;
 
     setIsProcessing(true);
     try {

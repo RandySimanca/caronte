@@ -9,6 +9,7 @@ import { useSyncStore } from '@/stores/syncStore';
 import { SyncService } from '@/services/SyncService';
 import { useMemo, useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import { confirmWarning } from '@/lib/swal';
 import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
 import { NewLoansTodayModal } from '@/components/admin/NewLoansTodayModal';
 import { PaidTodayModal, type PaidTodayEntry } from '@/components/admin/PaidTodayModal';
@@ -507,10 +508,16 @@ export function CollectorDashboard() {
                 const unsynced = await summarizeUnsynced();
                 const warning = unsynced.total === 0
                   ? '¿Forzar limpieza y resincronizar? No hay operaciones sin enviar.'
-                  : `¿Forzar limpieza y resincronizar?\n\nHay ${unsynced.total} operación(es) sin enviar` +
+                  : `Hay ${unsynced.total} operación(es) sin enviar` +
                     (unsynced.paymentsCount > 0 ? `, entre ellas ${unsynced.paymentsCount} cobro(s) por ${formatCurrency(unsynced.paymentsAmount)}` : '') +
-                    '.\nSe descargará un respaldo antes de borrarlas, pero esos datos NO llegarán al servidor. Intenta primero "Reintentar".';
-                if (window.confirm(warning)) {
+                    '. Se descargará un respaldo antes de borrarlas, pero esos datos NO llegarán al servidor.';
+                const confirmed = await confirmWarning({
+                  title: 'Forzar limpieza y resincronizar',
+                  text: warning,
+                  confirmText: 'Sí, limpiar',
+                  cancelText: 'Cancelar',
+                });
+                if (confirmed) {
                   if (unsynced.total > 0) await downloadUnsyncedBackup();
                   await db.syncQueue.clear();
                   useSyncStore.getState().setPendingCount(0);
