@@ -4,6 +4,7 @@ import { AdminService } from '@/services/AdminService';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { confirmAction } from '@/lib/swal';
 
 interface EditClientModalProps {
   isOpen: boolean;
@@ -41,6 +42,13 @@ export function EditClientModal({ isOpen, onClose, client, onUpdated }: EditClie
       toast.error('El nombre y la cédula son obligatorios');
       return;
     }
+
+    const confirmed = await confirmAction({
+      title: '¿Guardar cambios del cliente?',
+      html: `Se actualizarán los datos de <strong>${fullName}</strong>.`,
+      confirmText: 'Sí, guardar',
+    });
+    if (!confirmed) return;
 
     setIsSaving(true);
     try {

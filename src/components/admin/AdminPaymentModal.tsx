@@ -4,6 +4,7 @@ import { AdminService } from '@/services/AdminService';
 import { useAuthStore } from '@/stores/authStore';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { confirmAction } from '@/lib/swal';
 
 interface AdminPaymentModalProps {
   isOpen: boolean;
@@ -36,6 +37,13 @@ export function AdminPaymentModal({ isOpen, onClose, loan, onSuccess }: AdminPay
       toast.error('El monto no puede ser mayor a la deuda actual');
       return;
     }
+
+    const confirmed = await confirmAction({
+      title: '¿Confirmar cobro en oficina?',
+      html: `Se registrará un cobro de <strong>${formatCurrency(numericAmount)}</strong> para <strong>${loan.client_name || 'este cliente'}</strong>.<br/><span style="color:#64748b;font-size:0.85em">Este dinero NO se suma a la entrega del cobrador.</span>`,
+      confirmText: 'Sí, registrar',
+    });
+    if (!confirmed) return;
 
     setIsSubmitting(true);
     try {

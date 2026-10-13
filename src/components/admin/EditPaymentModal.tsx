@@ -3,7 +3,7 @@ import { X, Search, PencilLine, AlertTriangle, CheckCircle, ChevronLeft, Trash2 
 import { AdminService } from '@/services/AdminService';
 import { useAuthStore } from '@/stores/authStore';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
-import { confirmDanger } from '@/lib/swal';
+import { confirmDanger, confirmWarning } from '@/lib/swal';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
@@ -68,6 +68,13 @@ export function EditPaymentModal({ isOpen, onClose, onSuccess }: EditPaymentModa
     const numeric = Number(parseNumberInput(newAmount));
     if (numeric <= 0) { toast.error('El monto debe ser mayor a 0'); return; }
     if (!reason.trim()) { toast.error('Debes ingresar el motivo de la corrección'); return; }
+
+    const confirmed = await confirmWarning({
+      title: '¿Corregir este cobro?',
+      html: `El monto cambiará de <strong>${formatCurrency(oldAmount)}</strong> a <strong>${formatCurrency(numeric)}</strong>.<br/><span style="font-size:0.85em;color:#92400e">Esto recalculará cuotas y saldo del préstamo.</span>`,
+      confirmText: 'Sí, corregir',
+    });
+    if (!confirmed) return;
 
     setIsSubmitting(true);
     try {

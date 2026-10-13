@@ -4,7 +4,7 @@ import { AdminService } from '@/services/AdminService';
 import { useAuthStore } from '@/stores/authStore';
 import { formatNumberInput, parseNumberInput } from '@/lib/utils';
 import toast from 'react-hot-toast';
-import { confirmDanger } from '@/lib/swal';
+import { confirmDanger, confirmAction } from '@/lib/swal';
 import { pdf } from '@react-pdf/renderer';
 import { DailyLiquidationPdf } from '../reports/pdf/templates/DailyLiquidationPdf';
 import { downloadExcel } from '../reports/excel/ExcelExporter';
@@ -47,6 +47,16 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
 
   const handleApprove = async () => {
     if (!currentUser || !route || !detail) return;
+
+    const totalFinal = detail.totalEntregar + baseAmount;
+    const confirmed = await confirmAction({
+      title: '¿Aprobar y cerrar caja?',
+      html: `<strong>${route.cobrador}</strong> &mdash; Ruta <strong>${route.ruta}</strong><br/>
+             Total a entregar: <strong style="color:#059669">${formatCurrency(totalFinal)}</strong>`,
+      confirmText: 'Sí, aprobar',
+    });
+    if (!confirmed) return;
+
     setIsApproving(true);
     try {
       await AdminService.approveLiquidation({
@@ -56,7 +66,7 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
         totalCobrado: detail.totalCobrado,
         totalGastos: detail.totalGastos,
         viaticoDia: detail.viaticoDia,
-        totalEntregar: detail.totalEntregar + baseAmount,
+        totalEntregar: totalFinal,
         totalPrestado: detail.totalPrestado,
         totalTransferencias: detail.totalTransferencias || 0,
         baseAmount: baseAmount,

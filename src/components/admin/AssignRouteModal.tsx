@@ -4,6 +4,7 @@ import { AdminService } from '@/services/AdminService';
 import { useAuthStore } from '@/stores/authStore';
 import { formatNumberInput, parseNumberInput } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { confirmAction, confirmWarning } from '@/lib/swal';
 
 interface AssignRouteModalProps {
   isOpen: boolean;
@@ -45,6 +46,34 @@ export function AssignRouteModal({ isOpen, onClose, onSuccess, route }: AssignRo
       toast.error('Faltan datos para realizar la asignación.');
       return;
     }
+
+    // Confirmación con SweetAlert
+    const isChanging = !!route?.activeAssignment;
+    const collectorName = selectedCollectorId
+      ? collectors.find(c => c.id === selectedCollectorId)?.full_name ?? 'el cobrador seleccionado'
+      : null;
+
+    let confirmed: boolean;
+    if (selectedCollectorId === '') {
+      confirmed = await confirmWarning({
+        title: '¿Pausar ruta?',
+        text: `La ruta "${route.name}" quedará sin cobrador asignado y no será visitada.`,
+        confirmText: 'Sí, pausar',
+      });
+    } else if (isChanging) {
+      confirmed = await confirmWarning({
+        title: '¿Cambiar cobrador?',
+        html: `La ruta <strong>${route.name}</strong> dejará de estar asignada a <strong>${route.activeAssignment?.collector?.full_name}</strong> y pasará a <strong>${collectorName}</strong>.`,
+        confirmText: 'Sí, cambiar',
+      });
+    } else {
+      confirmed = await confirmAction({
+        title: '¿Asignar cobrador?',
+        html: `¿Confirmas asignar a <strong>${collectorName}</strong> en la ruta <strong>${route.name}</strong>?`,
+        confirmText: 'Sí, asignar',
+      });
+    }
+    if (!confirmed) return;
 
     const viaticum = viaticoOverride !== '' ? Number(parseNumberInput(viaticoOverride)) : null;
     const salary = salaryOverride !== '' ? Number(parseNumberInput(salaryOverride)) : null;

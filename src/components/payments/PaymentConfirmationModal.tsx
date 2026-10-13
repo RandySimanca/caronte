@@ -12,6 +12,7 @@ import { SyncService } from '@/services/SyncService';
 import { buildCreditStatusMessage, openWhatsAppWithMessage } from '@/lib/whatsapp';
 import { getLotteryLastDraw, isLotteryWinnerLoan, type LotteryLastDraw } from '@/lib/lottery';
 import { markLastCollected } from '@/lib/routeOrder';
+import { confirmAction } from '@/lib/swal';
 
 interface FinancialState {
   todayQuota: number;
@@ -148,13 +149,22 @@ export function PaymentConfirmationModal({
     }
   }, [isOpen, financialState.expectedTotal, loan]);
 
-  const handleSaveClick = () => {
+  const handleSaveClick = async () => {
     if (lotteryWinner) {
       toast.error('Este cliente ganó la boleta. No se puede registrar cobro.');
       return;
     }
     if (distribution.numAmount <= 0) return;
-    
+
+    // Confirmación con SweetAlert antes de guardar
+    const confirmed = await confirmAction({
+      title: '¿Registrar este cobro?',
+      html: `<strong>${clientName}</strong><br/>Monto: <strong>${formatCurrency(distribution.numAmount)}</strong>`,
+      confirmText: 'Sí, guardar',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) return;
+
     if (financialState.isPaidToday && !showDuplicateWarning) {
       setShowDuplicateWarning(true);
       return;
