@@ -62,7 +62,7 @@ export function PaymentConfirmationModal({
 
   const { isOnline } = useSyncStore();
 
-  // Payment distribution preview (Rules 2 & 3 applied locally)
+  // Payment distribution preview — FIFO: oldest arrears first, then today, then advances
   const distribution = useMemo(() => {
     const numAmount = Math.round(parseFloat(amount) || 0);
     let remaining = numAmount;
@@ -71,18 +71,10 @@ export function PaymentConfirmationModal({
     let arrearsAmount = 0;
     let advanceAmount = 0;
 
-    // 1. Cover today's quota
-    if (financialState.todayInstallment && remaining > 0) {
-      const needed = financialState.todayInstallment.balance;
-      const allocated = Math.min(remaining, needed);
-      dayInstallmentAmount = allocated;
-      remaining -= allocated;
-    }
-
-    // 2. Cover arrears (past due installments)
-    const arrearsInstallments = financialState.pendingInstallments.filter(
-      i => i.scheduled_date < format(new Date(), 'yyyy-MM-dd')
-    );
+    // 1. Cover arrears first (oldest → newest = FIFO, same order as admin reconcile)
+    const arrearsInstallments = financialState.pendingInstallments
+      .filter(i => i.scheduled_date < format(new Date(), 'yyyy-MM-dd'))
+      .sort((a, b) => a.installment_number - b.installment_number);
     for (const inst of arrearsInstallments) {
       if (remaining <= 0) break;
       const allocated = Math.min(remaining, inst.balance);
@@ -90,10 +82,18 @@ export function PaymentConfirmationModal({
       remaining -= allocated;
     }
 
+    // 2. Cover today's quota
+    if (financialState.todayInstallment && remaining > 0) {
+      const needed = financialState.todayInstallment.balance;
+      const allocated = Math.min(remaining, needed);
+      dayInstallmentAmount = allocated;
+      remaining -= allocated;
+    }
+
     // 3. Cover future installments (advance)
-    const futureInstallments = financialState.pendingInstallments.filter(
-      i => i.scheduled_date > format(new Date(), 'yyyy-MM-dd')
-    );
+    const futureInstallments = financialState.pendingInstallments
+      .filter(i => i.scheduled_date > format(new Date(), 'yyyy-MM-dd'))
+      .sort((a, b) => a.installment_number - b.installment_number);
     for (const inst of futureInstallments) {
       if (remaining <= 0) break;
       const allocated = Math.min(remaining, inst.balance);
@@ -102,8 +102,9 @@ export function PaymentConfirmationModal({
     }
 
     const isSurplus = numAmount > financialState.expectedTotal;
-    const coverToday = Math.min(numAmount, financialState.todayQuota);
-    const coverArrears = Math.min(Math.max(numAmount - financialState.todayQuota, 0), financialState.arrears);
+    // coverToday / coverArrears ahora reflejan el orden FIFO real
+    const coverToday = dayInstallmentAmount;
+    const coverArrears = arrearsAmount;
 
     return {
       numAmount,
@@ -203,24 +204,7 @@ export function PaymentConfirmationModal({
         let remaining = distribution.numAmount;
         const updatedInstallments: any[] = [];
 
-        // Apply to today's installment first
-        if (financialState.todayInstallment && remaining > 0) {
-          const inst = financialState.todayInstallment;
-          const allocated = Math.min(remaining, inst.balance);
-          const newBalance = inst.balance - allocated;
-          const newPaidAmount = inst.paid_amount + allocated;
-          const updateData = {
-            paid_amount: newPaidAmount,
-            balance: newBalance,
-            status: newBalance <= 0 ? 'PAGADA' : 'PARCIAL',
-            paid_date: newBalance <= 0 ? today : null,
-          };
-          await db.installments.update(inst.id, updateData as any);
-          updatedInstallments.push({ id: inst.id, ...updateData });
-          remaining -= allocated;
-        }
-
-        // Apply to arrears
+        // 1. Apply to arrears first (FIFO: oldest → newest) — igual que admin reconcile
         const arrearsInsts = financialState.pendingInstallments
           .filter(i => i.scheduled_date < today)
           .sort((a, b) => a.installment_number - b.installment_number);
@@ -239,7 +223,24 @@ export function PaymentConfirmationModal({
           remaining -= allocated;
         }
 
-        // Apply to future installments (advance)
+        // 2. Apply to today's installment
+        if (financialState.todayInstallment && remaining > 0) {
+          const inst = financialState.todayInstallment;
+          const allocated = Math.min(remaining, inst.balance);
+          const newBalance = inst.balance - allocated;
+          const newPaidAmount = inst.paid_amount + allocated;
+          const updateData = {
+            paid_amount: newPaidAmount,
+            balance: newBalance,
+            status: newBalance <= 0 ? 'PAGADA' : 'PARCIAL',
+            paid_date: newBalance <= 0 ? today : null,
+          };
+          await db.installments.update(inst.id, updateData as any);
+          updatedInstallments.push({ id: inst.id, ...updateData });
+          remaining -= allocated;
+        }
+
+        // 3. Apply to future installments (advance)
         const futureInsts = financialState.pendingInstallments
           .filter(i => i.scheduled_date > today)
           .sort((a, b) => a.installment_number - b.installment_number);
