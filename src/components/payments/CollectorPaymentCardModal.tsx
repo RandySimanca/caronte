@@ -2,6 +2,7 @@ import { X, Calendar as CalendarIcon, CheckCircle, Clock } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { format } from 'date-fns';
+import { formatCurrency } from '@/lib/utils';
 
 interface CollectorPaymentCardModalProps {
   isOpen: boolean;
@@ -77,17 +78,37 @@ export function CollectorPaymentCardModal({ isOpen, onClose, loanId }: Collector
                   textColor = 'text-red-700';
                 }
 
+                const paidAmt = Number(inst.paid_amount || 0);
+
                 return (
                   <div 
                     key={inst.id} 
-                    className={`flex flex-col items-center justify-center p-2 rounded-lg border ${bgColor} ${borderColor} ${textColor} text-center shadow-sm`}
-                    title={`Día ${index + 1}: ${new Date(inst.scheduled_date + 'T00:00:00').toLocaleDateString('es-CO')} - Estado: ${inst.status}`}
+                    className={`flex flex-col items-center justify-center p-1.5 rounded-lg border ${bgColor} ${borderColor} ${textColor} text-center shadow-sm`}
+                    title={`Día ${index + 1}: ${new Date(inst.scheduled_date + 'T00:00:00').toLocaleDateString('es-CO')} - Estado: ${inst.status}${paidAmt > 0 ? ` - Pagado: ${formatCurrency(paidAmt)}` : ''}`}
                   >
-                    <span className="text-xs font-bold opacity-70 mb-1">#{index + 1}</span>
+                    <span className="text-[10px] font-bold opacity-70 leading-none mb-0.5">#{index + 1}</span>
                     {isPaid ? (
-                      <CheckCircle className="w-5 h-5" />
+                      <>
+                        <CheckCircle className="w-4 h-4 mb-0.5" />
+                        {paidAmt > 0 && (
+                          <span className="text-[9px] font-bold leading-none opacity-80">
+                            {formatCurrency(paidAmt)}
+                          </span>
+                        )}
+                      </>
+                    ) : isPartial ? (
+                      <>
+                        <span className="font-bold text-xs leading-none">
+                          {new Date(inst.scheduled_date + 'T00:00:00').getDate()}
+                        </span>
+                        {paidAmt > 0 && (
+                          <span className="text-[9px] font-bold leading-none mt-0.5 opacity-90">
+                            {formatCurrency(paidAmt)}
+                          </span>
+                        )}
+                      </>
                     ) : isLate ? (
-                      <Clock className="w-5 h-5 text-red-500" />
+                      <Clock className="w-4 h-4 text-red-500" />
                     ) : (
                       <span className="font-bold text-sm">
                          {new Date(inst.scheduled_date + 'T00:00:00').getDate()}
