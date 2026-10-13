@@ -137,10 +137,22 @@ export function RouteClientList() {
         );
         arrears = arrearsInstallments.reduce((sum, i) => sum + Number(i.balance || 0), 0);
 
-        // Cuotas futuras ya pagadas (días adelantados)
-        advances = loanInstallments.filter(
-          i => i.scheduled_date > today && (Number(i.balance || 0) <= 0 || ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(i.status))
-        ).length;
+        // Cuotas futuras ya pagadas (días adelantados).
+        // Regla: los domingos no tienen cobros, por eso:
+        //   - Si HOY es lunes–sábado: las cuotas de domingo NO cuentan como adelanto.
+        //   - Si HOY es domingo: las cuotas de domingo SÍ cuentan (el contexto es dominical).
+        const isTodaySunday = new Date(today + 'T12:00:00').getDay() === 0;
+        advances = loanInstallments.filter(i => {
+          if (i.scheduled_date <= today) return false;
+          const isPaid = Number(i.balance || 0) <= 0 || ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(i.status);
+          if (!isPaid) return false;
+          // Cuando hoy NO es domingo, excluir cuotas que caigan en domingo
+          if (!isTodaySunday) {
+            const dayOfWeek = new Date(i.scheduled_date + 'T12:00:00').getDay();
+            if (dayOfWeek === 0) return false; // 0 = domingo
+          }
+          return true;
+        }).length;
 
         const todayInstallment = loanInstallments.find(i => i.scheduled_date === today);
         const loanEnded = loan.end_date && loan.end_date < today;
@@ -153,6 +165,7 @@ export function RouteClientList() {
         const isFutureStart = loan.start_date > today;
 
         // ¿La cuota de hoy fue pagada antes de hoy (anticipadamente)?
+        // Aplica independientemente de si hoy es domingo o no.
         isPrepaidToday = !!(
           isTodayPaid &&
           (todayInstallment?.status === 'PAGADA_ANTICIPADAMENTE' || (todayInstallment?.paid_date && todayInstallment.paid_date < today))
