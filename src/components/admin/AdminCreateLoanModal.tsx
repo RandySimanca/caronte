@@ -4,6 +4,7 @@ import { AdminService } from '@/services/AdminService';
 import { useAuthStore } from '@/stores/authStore';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { confirmAction, confirmWarning } from '@/lib/swal';
 
 interface AdminCreateLoanModalProps {
   isOpen: boolean;
@@ -159,6 +160,20 @@ export function AdminCreateLoanModal({ isOpen, onClose, routeStates, onSuccess, 
     if (isHistorical && !disbursementDate) {
       return toast.error('Ingresa la fecha real de préstamo/desembolso');
     }
+
+    // Nombre del cliente para mostrar en SweetAlert
+    const clientLabel = selectedClientId === 'new'
+      ? fullName
+      : (clients.find(c => c.id === selectedClientId)?.full_name ?? 'el cliente seleccionado');
+    const routeLabel = routeStates.find(r => r.id === routeId)?.ruta ?? '';
+
+    const swalFn = isHistorical ? confirmWarning : confirmAction;
+    const swalConfirmed = await swalFn({
+      title: isHistorical ? '¿Migrar préstamo histórico?' : '¿Crear nuevo préstamo?',
+      html: `Cliente: <strong>${clientLabel}</strong>${routeLabel ? ` &mdash; Ruta <strong>${routeLabel}</strong>` : ''}<br/>Monto: <strong>${formatCurrency(numAmount)}</strong>`,
+      confirmText: isHistorical ? 'Sí, migrar' : 'Sí, crear',
+    });
+    if (!swalConfirmed) return;
 
     setIsSubmitting(true);
     try {

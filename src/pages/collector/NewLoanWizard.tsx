@@ -12,6 +12,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { loanFinancials } from '@/lib/money';
 import { SyncService } from '@/services/SyncService';
 import { getLastCollectedToday, insertAfterLastCollected, markLastCollected } from '@/lib/routeOrder';
+import { confirmAction } from '@/lib/swal';
 
 export function NewLoanWizard() {
   const navigate = useNavigate();
@@ -95,6 +96,14 @@ export function NewLoanWizard() {
 
   const handleCreate = async () => {
     if (!confirmed || numAmount <= 0) return;
+
+    const swalConfirmed = await confirmAction({
+      title: '¿Crear este préstamo?',
+      html: `Cliente: <strong>${clientName}</strong><br/>Monto: <strong>${formatCurrency(numAmount)}</strong>`,
+      confirmText: 'Sí, crear préstamo',
+    });
+    if (!swalConfirmed) return;
+
     setIsSaving(true);
 
     try {
