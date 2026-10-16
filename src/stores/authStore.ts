@@ -296,7 +296,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
         set({ session: null, user: null, role: null, companyId: null, isLoading: false });
         // Redirigir al login
         window.location.href = '/login';
-      } else {
+      } else if (event !== 'INITIAL_SESSION') {
+        // Solo mostrar warning para eventos que no sean INITIAL_SESSION (que es normal)
         console.warn('[Auth] Evento sin sesión ignorado:', event);
       }
     },
