@@ -197,6 +197,7 @@ BEGIN
       '',
       '',
       '',
+      '',
       '{"provider": "email", "providers": ["email"]}'::jsonb,
       jsonb_build_object('full_name', p_full_name, 'phone', p_phone),
       false,
