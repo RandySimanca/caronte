@@ -180,6 +180,18 @@ export class AdminService {
   }
 
   /**
+   * Elimina una ruta (desactiva en lugar de borrar para preservar historial)
+   */
+  static async deleteRoute(routeId: string) {
+    const { error } = await supabase
+      .from('routes')
+      .update({ active: false })
+      .eq('id', routeId);
+
+    if (error) throw error;
+  }
+
+  /**
    * Obtiene todos los cobradores activos para poder asignarles una ruta
    */
   static async getActiveCollectors() {

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Map, Plus, MapPin, UserCheck, AlertCircle } from 'lucide-react';
+import { Map, Plus, MapPin, UserCheck, AlertCircle, Trash2 } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { CreateRouteModal } from '@/components/admin/CreateRouteModal';
 import { AssignRouteModal } from '@/components/admin/AssignRouteModal';
 import toast from 'react-hot-toast';
+import { confirmDanger } from '@/lib/swal';
 
 export function RoutesPage() {
   const [routes, setRoutes] = useState<any[]>([]);
@@ -33,6 +34,24 @@ export function RoutesPage() {
   const openAssignModal = (route: any) => {
     setSelectedRoute(route);
     setIsAssignModalOpen(true);
+  };
+
+  const handleDeleteRoute = async (route: any) => {
+    const confirmed = await confirmDanger({
+      title: `¿Eliminar ruta "${route.name}"?`,
+      text: 'Esta acción desactivará la ruta. Los clientes asignados a esta ruta no serán visitados por el cobrador.',
+      confirmText: 'Sí, eliminar',
+    });
+
+    if (confirmed) {
+      try {
+        await AdminService.deleteRoute(route.id);
+        toast.success('Ruta eliminada exitosamente');
+        fetchRoutes();
+      } catch (error: any) {
+        toast.error(error.message || 'Error al eliminar ruta');
+      }
+    }
   };
 
   return (
@@ -92,8 +111,19 @@ export function RoutesPage() {
               <div className="p-6">
                 <div className="flex justify-between items-start mb-4">
                   <h3 className="text-xl font-bold text-slate-800">{route.name}</h3>
-                  <div className={`px-2.5 py-1 text-xs font-bold rounded-full ${route.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                    {route.active ? 'Activa' : 'Inactiva'}
+                  <div className="flex items-center gap-2">
+                    <div className={`px-2.5 py-1 text-xs font-bold rounded-full ${route.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                      {route.active ? 'Activa' : 'Inactiva'}
+                    </div>
+                    {route.active && (
+                      <button
+                        onClick={() => handleDeleteRoute(route)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Eliminar ruta"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 
