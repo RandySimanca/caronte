@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { RouterProvider, createBrowserRouter, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
@@ -7,6 +7,7 @@ import { useSyncStore } from '@/stores/syncStore';
 import { SyncService } from '@/services/SyncService';
 import { db } from '@/db/schema';
 import { ensureFreshSession } from '@/lib/offlineSession';
+import { showError } from '@/lib/swal';
 
 import { CollectorLayout } from '@/components/layout/CollectorLayout';
 import { CollectorDashboard } from '@/pages/collector/CollectorDashboard';
@@ -27,6 +28,48 @@ import { SettingsPage } from '@/pages/admin/SettingsPage';
 import { ReportsPage } from '@/pages/admin/ReportsPage';
 import { SuperAdminLayout } from '@/components/layout/SuperAdminLayout';
 import { SuperAdminDashboard } from '@/pages/superadmin/SuperAdminDashboard';
+
+// Wrapper para validar que el cobrador tenga ruta asignada
+function RequireCollectorRoute({ children }: { children: React.ReactNode }) {
+  const { session, role, user, isLoading } = useAuthStore();
+  const [isChecking, setIsChecking] = useState(false);
+
+  useEffect(() => {
+    const checkRouteAssignment = async () => {
+      if (role === 'COBRADOR' && user?.id && navigator.onLine && !isChecking) {
+        setIsChecking(true);
+        try {
+          const { data: assignment, error } = await supabase
+            .from('route_assignments')
+            .select('route_id')
+            .eq('collector_id', user.id)
+            .is('date_end', null)
+            .maybeSingle();
+
+          if (!error && !assignment) {
+            await showError({
+              title: 'Sin ruta asignada',
+              text: 'No tienes ninguna ruta asignada. Contacta al administrador para que te asigne una ruta antes de iniciar sesión.',
+            });
+            await supabase.auth.signOut();
+            window.location.href = '/login';
+          }
+        } catch (err) {
+          console.error('[Auth] Error verificando ruta asignada:', err);
+        } finally {
+          setIsChecking(false);
+        }
+      }
+    };
+
+    checkRouteAssignment();
+  }, [role, user?.id, isChecking]);
+
+  if (isLoading || isChecking) return <SplashScreen />;
+  if (!session) return <Navigate to="/login" replace />;
+
+  return <>{children}</>;
+}
 
 // Protected route wrapper
 function RequireAuth({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
@@ -70,7 +113,7 @@ const router = createBrowserRouter([
   // RUTAS DEL COBRADOR
   {
     path: '/',
-    element: <RequireAuth allowedRoles={['COBRADOR']}><CollectorLayout /></RequireAuth>,
+    element: <RequireAuth allowedRoles={['COBRADOR']}><RequireCollectorRoute><CollectorLayout /></RequireCollectorRoute></RequireAuth>,
     children: [
       { index: true, element: <CollectorDashboard /> },
       { path: 'route', element: <RouteClientList /> },

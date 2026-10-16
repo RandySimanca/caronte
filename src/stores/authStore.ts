@@ -145,26 +145,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
             }
           }
         }
-
-        // Validar que el cobrador tenga una ruta asignada (solo online)
-        if (roleName === 'COBRADOR' && navigator.onLine) {
-          const { data: assignment, error: assignmentError } = await supabase
-            .from('route_assignments')
-            .select('route_id')
-            .eq('collector_id', userId)
-            .is('date_end', null)
-            .maybeSingle();
-
-          if (!assignmentError && !assignment) {
-            console.warn('[Auth] Cobrador sin ruta asignada');
-            await showError({
-              title: 'Sin ruta asignada',
-              text: 'No tienes ninguna ruta asignada. Contacta al administrador para que te asigne una ruta antes de iniciar sesión.',
-            });
-            await forceSignOut();
-            return;
-          }
-        }
       } catch (err) {
         console.warn('[Auth] Error cargando perfil, se conserva el caché:', err);
       }
