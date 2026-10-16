@@ -293,6 +293,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
       if (event === 'SIGNED_OUT' && (userInitiatedSignOut || navigator.onLine)) {
         clearProfileFromLocalStorage();
         set({ session: null, user: null, role: null, companyId: null, isLoading: false });
+        // Redirigir al login
+        window.location.href = '/login';
       } else {
         console.warn('[Auth] Evento sin sesión ignorado:', event);
       }
