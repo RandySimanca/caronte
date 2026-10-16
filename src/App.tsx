@@ -32,14 +32,12 @@ import { SuperAdminDashboard } from '@/pages/superadmin/SuperAdminDashboard';
 // Wrapper para validar que el cobrador tenga ruta asignada
 function RequireCollectorRoute({ children }: { children: React.ReactNode }) {
   const { session, role, user, isLoading } = useAuthStore();
-  const [isChecking, setIsChecking] = useState(false);
-  const [hasRoute, setHasRoute] = useState<boolean | null>(null);
+  const [hasChecked, setHasChecked] = useState(false);
 
   useEffect(() => {
     const checkRouteAssignment = async () => {
-      // Solo verificar si es cobrador, tiene usuario ID, está online y aún no hemos verificado
-      if (role === 'COBRADOR' && user?.id && navigator.onLine && hasRoute === null && !isChecking) {
-        setIsChecking(true);
+      if (role === 'COBRADOR' && user?.id && navigator.onLine && !hasChecked) {
+        setHasChecked(true);
         try {
           const { data: assignment, error } = await supabase
             .from('route_assignments')
@@ -48,36 +46,26 @@ function RequireCollectorRoute({ children }: { children: React.ReactNode }) {
             .is('date_end', null)
             .maybeSingle();
 
-          if (!error) {
-            setHasRoute(!!assignment);
-            if (!assignment) {
-              await showError({
-                title: 'Sin ruta asignada',
-                text: 'No tienes ninguna ruta asignada. Contacta al administrador para que te asigne una ruta antes de iniciar sesión.',
-              });
-              await supabase.auth.signOut();
-              window.location.href = '/login';
-            }
+          if (!error && !assignment) {
+            await showError({
+              title: 'Sin ruta asignada',
+              text: 'No tienes ninguna ruta asignada. Contacta al administrador para que te asigne una ruta antes de iniciar sesión.',
+            });
+            await supabase.auth.signOut();
+            window.location.href = '/login';
           }
         } catch (err) {
           console.error('[Auth] Error verificando ruta asignada:', err);
           // En caso de error, permitir acceso (no bloquear por error de red)
-          setHasRoute(true);
-        } finally {
-          setIsChecking(false);
         }
-      } else if (role !== 'COBRADOR' || !navigator.onLine) {
-        // Si no es cobrador o está offline, permitir acceso sin verificar
-        setHasRoute(true);
       }
     };
 
     checkRouteAssignment();
-  }, [role, user?.id, hasRoute, isChecking]);
+  }, [role, user?.id, hasChecked]);
 
-  if (isLoading || isChecking) return <SplashScreen />;
+  if (isLoading) return <SplashScreen />;
   if (!session) return <Navigate to="/login" replace />;
-  if (hasRoute === false) return <SplashScreen />; // Esperando redirección por SweetAlert
 
   return <>{children}</>;
 }
