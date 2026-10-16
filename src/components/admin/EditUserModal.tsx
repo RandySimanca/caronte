@@ -13,7 +13,7 @@ interface EditUserModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  user: User;
+  user: User | null;
 }
 
 export function EditUserModal({ isOpen, onClose, onSuccess, user }: EditUserModalProps) {
@@ -23,13 +23,13 @@ export function EditUserModal({ isOpen, onClose, onSuccess, user }: EditUserModa
   const currentUserId = useAuthStore(state => state.user?.id);
 
   // Form State
-  const [fullName, setFullName] = useState(user.full_name || '');
-  const [phone, setPhone] = useState(user.phone || '');
-  const [roleId, setRoleId] = useState(user.role_id || '');
-  const [active, setActive] = useState(user.active ?? true);
+  const [fullName, setFullName] = useState(user?.full_name || '');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [roleId, setRoleId] = useState(user?.role_id || '');
+  const [active, setActive] = useState(user?.active ?? true);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && user) {
       setFullName(user.full_name || '');
       setPhone(user.phone || '');
       setRoleId(user.role_id || '');
@@ -84,7 +84,9 @@ export function EditUserModal({ isOpen, onClose, onSuccess, user }: EditUserModa
   if (!isOpen) return null;
 
   // Si es el propio usuario admin, no permitir desactivar
-  const isSelf = user.id === currentUserId;
+  const isSelf = user?.id === currentUserId;
+
+  if (!isOpen || !user) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-0">
