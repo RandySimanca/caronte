@@ -3,6 +3,7 @@ import { X, UserPlus } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import type { Database } from '@/lib/database.types';
 import toast from 'react-hot-toast';
+import { useAuthStore } from '@/stores/authStore';
 
 type Role = Database['public']['Tables']['roles']['Row'];
 
@@ -15,7 +16,8 @@ interface CreateUserModalProps {
 export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalProps) {
   const [roles, setRoles] = useState<Role[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  
+  const userRole = useAuthStore(state => state.role);
+
   // Form State
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -27,15 +29,24 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
     if (isOpen) {
       AdminService.getRoles()
         .then(data => {
-          setRoles(data);
-          if (data.length > 0) setRoleId(data.find(r => r.name === 'COBRADOR')?.id || data[0].id);
+          // Filtrar roles según el usuario actual
+          // ADMINISTRADOR solo puede crear COBRADORES
+          // SUPER_ADMIN puede crear cualquier rol
+          const filteredRoles = userRole === 'SUPER_ADMIN'
+            ? data
+            : data.filter(r => r.name === 'COBRADOR');
+
+          setRoles(filteredRoles);
+          if (filteredRoles.length > 0) {
+            setRoleId(filteredRoles.find(r => r.name === 'COBRADOR')?.id || filteredRoles[0].id);
+          }
         })
         .catch(err => {
           console.error(err);
           toast.error('Error cargando roles');
         });
     }
-  }, [isOpen]);
+  }, [isOpen, userRole]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

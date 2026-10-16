@@ -193,51 +193,20 @@ export class SuperAdminService {
 
     if (roleData) {
       try {
-        let newUserId: string | null = null;
+        // Crear el usuario administrador usando la función RPC admin_create_user
+        const { data: rpcUserId, error: userError } = await supabase.rpc('admin_create_user', {
+          p_email: input.admin_email,
+          p_password: input.admin_password || null,
+          p_full_name: input.admin_full_name,
+          p_phone: input.admin_phone || null,
+          p_role_id: roleData.id,
+          p_company_id: company.id,
+        });
 
-        // 3a. Intentar primero via Edge Function admin-create-user
-        if (input.admin_password) {
-          const { data: edgeData, error: edgeError } = await supabase.functions.invoke('admin-create-user', {
-            body: {
-              email: input.admin_email,
-              password: input.admin_password,
-              full_name: input.admin_full_name,
-              phone: input.admin_phone || null,
-              role_id: roleData.id,
-              company_id: company.id,
-            },
-          });
-
-          if (!edgeError && edgeData?.user?.id) {
-            newUserId = edgeData.user.id;
-          }
-        }
-
-        // 3b. Respaldar con la función RPC admin_create_user si la Edge Function no se usó o falló
-        if (!newUserId) {
-          const { data: rpcUserId, error: userError } = await supabase.rpc('admin_create_user', {
-            p_email: input.admin_email,
-            p_password: input.admin_password || null,
-            p_full_name: input.admin_full_name,
-            p_phone: input.admin_phone || null,
-            p_role_id: roleData.id,
-          });
-
-          if (userError) {
-            console.error('Error provisioning admin user via RPC:', userError);
-            await supabase.from('companies').delete().eq('id', company.id);
-            throw new Error(`Fallo al crear usuario: ${userError.message || userError.details}`);
-          }
-
-          newUserId = rpcUserId;
-
-          if (newUserId) {
-            // Asignar company_id al nuevo administrador
-            await supabase
-              .from('users')
-              .update({ company_id: company.id })
-              .eq('id', newUserId);
-          }
+        if (userError) {
+          console.error('Error provisioning admin user via RPC:', userError);
+          await supabase.from('companies').delete().eq('id', company.id);
+          throw new Error(`Fallo al crear usuario: ${userError.message || userError.details}`);
         }
       } catch (err: any) {
         console.error('Error provisioning initial admin user for company:', err);

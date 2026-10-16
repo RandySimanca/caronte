@@ -44,7 +44,7 @@ export class AdminService {
   }
 
   /**
-   * Llama a la edge function para crear un nuevo usuario
+   * Crea un nuevo usuario usando la función RPC admin_create_user
    * @param payload Datos del nuevo usuario
    */
   static async createUser(payload: {
@@ -59,8 +59,16 @@ export class AdminService {
       throw new Error('No hay conexión a internet. La creación de usuarios requiere conexión.');
     }
 
-    const { data, error } = await supabase.functions.invoke('admin-create-user', {
-      body: payload
+    // Obtener company_id del usuario actual
+    const companyId = useAuthStore.getState().companyId;
+
+    const { data, error } = await supabase.rpc('admin_create_user', {
+      p_email: payload.email,
+      p_password: payload.password,
+      p_full_name: payload.full_name,
+      p_phone: payload.phone || null,
+      p_role_id: payload.role_id,
+      p_company_id: companyId,
     });
 
     if (error) {
