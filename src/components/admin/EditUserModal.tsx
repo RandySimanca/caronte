@@ -60,6 +60,11 @@ export function EditUserModal({ isOpen, onClose, onSuccess, user }: EditUserModa
       return;
     }
 
+    if (!user) {
+      toast.error('No se seleccionó ningún usuario');
+      return;
+    }
+
     setIsLoading(true);
     try {
       await AdminService.updateUser(user.id, {
