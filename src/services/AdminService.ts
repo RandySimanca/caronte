@@ -78,6 +78,38 @@ export class AdminService {
     return data;
   }
 
+  /**
+   * Actualiza un usuario existente
+   */
+  static async updateUser(userId: string, updates: {
+    full_name: string;
+    phone?: string;
+    role_id: string;
+    active: boolean;
+  }) {
+    const { data, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  /**
+   * Elimina un usuario (desactiva en lugar de borrar para preservar auditoría)
+   */
+  static async deleteUser(userId: string) {
+    const { error } = await supabase
+      .from('users')
+      .update({ active: false })
+      .eq('id', userId);
+
+    if (error) throw error;
+  }
+
   // ─── GESTIÓN DE RUTAS ────────────────────────────────────────────────────────
 
   /**

@@ -1,18 +1,24 @@
 import { useState, useEffect } from 'react';
 import { AdminService, UserWithRole } from '@/services/AdminService';
 import { CreateUserModal } from '@/components/admin/CreateUserModal';
+import { EditUserModal } from '@/components/admin/EditUserModal';
 import { UserPayrollModal } from '@/components/admin/UserPayrollModal';
-import { UserPlus, Search, Calculator } from 'lucide-react';
+import { UserPlus, Search, Calculator, Edit2, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useAuthStore } from '@/stores/authStore';
+import { confirmDanger } from '@/lib/swal';
 
 export function UsersPage() {
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editModalUser, setEditModalUser] = useState<UserWithRole | null>(null);
   const [payrollModalUser, setPayrollModalUser] = useState<UserWithRole | null>(null);
+  const currentUserId = useAuthStore(state => state.user?.id);
+  const currentUserRole = useAuthStore(state => state.role);
 
   const fetchUsers = async () => {
     setIsLoading(true);
@@ -31,10 +37,44 @@ export function UsersPage() {
     fetchUsers();
   }, []);
 
-  const filteredUsers = users.filter(user => 
+  const filteredUsers = users.filter(user =>
     user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.roles?.name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleEditUser = (user: UserWithRole) => {
+    setEditModalUser(user);
+  };
+
+  const handleDeleteUser = async (user: UserWithRole) => {
+    // No permitir eliminar al propio usuario
+    if (user.id === currentUserId) {
+      toast.error('No puedes eliminar tu propio usuario');
+      return;
+    }
+
+    // No permitir eliminar administradores (solo SUPER_ADMIN puede hacerlo)
+    if (user.roles?.name === 'ADMINISTRADOR' && currentUserRole !== 'SUPER_ADMIN') {
+      toast.error('No puedes eliminar administradores');
+      return;
+    }
+
+    const confirmed = await confirmDanger({
+      title: `¿Eliminar usuario "${user.full_name}"?`,
+      text: 'Esta acción desactivará el usuario. No podrá acceder al sistema.',
+      confirmText: 'Sí, eliminar',
+    });
+
+    if (confirmed) {
+      try {
+        await AdminService.deleteUser(user.id);
+        toast.success('Usuario eliminado exitosamente');
+        fetchUsers();
+      } catch (error: any) {
+        toast.error(error.message || 'Error al eliminar usuario');
+      }
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -133,16 +173,38 @@ export function UsersPage() {
                       </p>
                     </td>
                     <td className="p-4 text-right">
-                      {user.roles?.name === 'COBRADOR' && (
+                      <div className="flex items-center justify-end gap-2">
+                        {user.roles?.name === 'COBRADOR' && (
+                          <button
+                            onClick={() => setPayrollModalUser(user)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-brand-700 hover:bg-brand-100 rounded-lg text-sm font-bold transition-colors"
+                            title="Calcular Nómina"
+                          >
+                            <Calculator className="w-4 h-4" />
+                            <span>Nómina</span>
+                          </button>
+                        )}
+
                         <button
-                          onClick={() => setPayrollModalUser(user)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-brand-700 hover:bg-brand-100 rounded-lg text-sm font-bold transition-colors"
-                          title="Calcular Nómina"
+                          onClick={() => handleEditUser(user)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg text-sm font-bold transition-colors"
+                          title="Editar usuario"
                         >
-                          <Calculator className="w-4 h-4" />
-                          <span>Nómina</span>
+                          <Edit2 className="w-4 h-4" />
                         </button>
-                      )}
+
+                        {/* No mostrar botón de eliminar para el propio usuario ni para administradores (salvo SUPER_ADMIN) */}
+                        {user.id !== currentUserId &&
+                          (currentUserRole === 'SUPER_ADMIN' || user.roles?.name !== 'ADMINISTRADOR') && (
+                          <button
+                            onClick={() => handleDeleteUser(user)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg text-sm font-bold transition-colors"
+                            title="Eliminar usuario"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -159,7 +221,16 @@ export function UsersPage() {
           fetchUsers();
         }}
       />
-      
+
+      <EditUserModal
+        isOpen={!!editModalUser}
+        onClose={() => setEditModalUser(null)}
+        onSuccess={() => {
+          fetchUsers();
+        }}
+        user={editModalUser!}
+      />
+
       <UserPayrollModal
         isOpen={!!payrollModalUser}
         onClose={() => setPayrollModalUser(null)}
