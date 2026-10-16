@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Lock, Phone, Eye, EyeOff, Wifi } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
+import { useNavigate } from 'react-router-dom';
 import { SyncService } from '@/services/SyncService';
 import toast from 'react-hot-toast';
 
@@ -11,6 +12,7 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { signIn } = useAuthStore();
+  const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,7 +50,7 @@ export function LoginPage() {
       signIn(data.session);
 
       // Pull initial data after login
-      toast.promise(
+      await toast.promise(
         SyncService.fullSync(data.session.user.id),
         {
           loading: 'Descargando datos de tu ruta...',
@@ -56,6 +58,9 @@ export function LoginPage() {
           error: 'Sin conexión. Puedes trabajar con datos guardados.',
         }
       );
+
+      // Redirigir al dashboard después del sync
+      navigate('/');
     } catch (error: any) {
       if (error.message === 'NO_ROUTE_ASSIGNED') {
         toast.error('No puedes iniciar sesión porque no tienes ninguna ruta asignada en este momento. Contacta al administrador.', { duration: 5000 });
