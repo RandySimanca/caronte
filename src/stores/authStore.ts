@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { db } from '@/db/schema';
-import { confirmWarning } from '@/lib/swal';
+import { confirmWarning, showError } from '@/lib/swal';
 import { readStoredSession } from '@/lib/offlineSession';
 
 interface AuthState {
@@ -141,7 +141,28 @@ export const useAuthStore = create<AuthState>((set, get) => {
               console.warn('[Auth] Empresa suspendida o vencida');
               toast.error('Tu empresa está suspendida o vencida. Contacta a soporte.');
               await forceSignOut();
+              return;
             }
+          }
+        }
+
+        // Validar que el cobrador tenga una ruta asignada (solo online)
+        if (roleName === 'COBRADOR' && navigator.onLine) {
+          const { data: assignment, error: assignmentError } = await supabase
+            .from('route_assignments')
+            .select('route_id')
+            .eq('collector_id', userId)
+            .is('date_end', null)
+            .maybeSingle();
+
+          if (!assignmentError && !assignment) {
+            console.warn('[Auth] Cobrador sin ruta asignada');
+            await showError({
+              title: 'Sin ruta asignada',
+              text: 'No tienes ninguna ruta asignada. Contacta al administrador para que te asigne una ruta antes de iniciar sesión.',
+            });
+            await forceSignOut();
+            return;
           }
         }
       } catch (err) {
