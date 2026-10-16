@@ -3,7 +3,7 @@ import { AdminService, UserWithRole } from '@/services/AdminService';
 import { CreateUserModal } from '@/components/admin/CreateUserModal';
 import { EditUserModal } from '@/components/admin/EditUserModal';
 import { UserPayrollModal } from '@/components/admin/UserPayrollModal';
-import { UserPlus, Search, Calculator, Edit2, Trash2 } from 'lucide-react';
+import { UserPlus, Search, Calculator, Edit2, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -14,6 +14,7 @@ export function UsersPage() {
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editModalUser, setEditModalUser] = useState<UserWithRole | null>(null);
   const [payrollModalUser, setPayrollModalUser] = useState<UserWithRole | null>(null);
@@ -23,7 +24,7 @@ export function UsersPage() {
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
-      const data = await AdminService.getUsers();
+      const data = await AdminService.getUsers(showInactive);
       setUsers(data);
     } catch (error) {
       console.error(error);
@@ -35,7 +36,7 @@ export function UsersPage() {
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [showInactive]);
 
   const filteredUsers = users.filter(user =>
     user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -83,14 +84,28 @@ export function UsersPage() {
           <h1 className="text-2xl font-black text-slate-800">Gestión de Usuarios</h1>
           <p className="text-sm text-slate-500">Administra cobradores, supervisores y otros roles</p>
         </div>
-        
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl shadow-lg shadow-brand-500/30 transition-all active:scale-95"
-        >
-          <UserPlus className="w-5 h-5 stroke-2" />
-          Nuevo Usuario
-        </button>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowInactive(!showInactive)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold transition-all ${
+              showInactive
+                ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                : 'bg-slate-100 text-slate-600 border border-slate-200'
+            }`}
+          >
+            {showInactive ? <ToggleLeft className="w-5 h-5" /> : <ToggleRight className="w-5 h-5" />}
+            {showInactive ? 'Solo Activos' : 'Mostrar Inactivos'}
+          </button>
+
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl shadow-lg shadow-brand-500/30 transition-all active:scale-95"
+          >
+            <UserPlus className="w-5 h-5 stroke-2" />
+            Nuevo Usuario
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">

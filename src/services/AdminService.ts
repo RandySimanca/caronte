@@ -13,17 +13,24 @@ export interface UserWithRole extends User {
 export class AdminService {
   /**
    * Obtiene todos los usuarios del sistema junto con su rol.
+   * Por defecto solo muestra usuarios activos.
    */
-  static async getUsers(): Promise<UserWithRole[]> {
-    const { data, error } = await supabase
+  static async getUsers(showInactive: boolean = false): Promise<UserWithRole[]> {
+    const query = supabase
       .from('users')
       .select(`
         *,
         roles (
           name
         )
-      `)
-      .order('created_at', { ascending: false });
+      `);
+
+    // Si no se piden inactivos, filtrar solo activos
+    if (!showInactive) {
+      query.eq('active', true);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) throw error;
     return (data as unknown) as UserWithRole[];
