@@ -174,6 +174,14 @@ BEGIN
   );
 
   -- 4. Eliminar asignaciones de rutas
+  -- Primero eliminar asignaciones donde assigned_by es un usuario de la empresa
+  DELETE FROM route_assignments ra
+  WHERE EXISTS (
+    SELECT 1 FROM users u
+    WHERE u.company_id = p_company_id AND u.id = ra.assigned_by
+  );
+
+  -- Luego eliminar asignaciones por ruta
   DELETE FROM route_assignments ra
   WHERE EXISTS (
     SELECT 1 FROM routes r
