@@ -36,6 +36,7 @@ DECLARE
   v_caller_company_id UUID;
   v_target_role_name TEXT;
   v_super_admin_count INT;
+  v_user_exists BOOLEAN;
 BEGIN
   -- Guardia: permitir creación del primer SUPER_ADMIN si no existe ninguno
   -- Esto se usa solo para la configuración inicial del sistema
@@ -93,6 +94,14 @@ BEGIN
 
   -- Verificar si el usuario ya existe en auth.users
   SELECT id INTO v_user_id FROM auth.users WHERE email = p_email LIMIT 1;
+
+  -- Si el usuario ya existe y es el mismo que está ejecutando la función, evitar conflicto
+  IF v_user_id IS NOT NULL AND v_user_id = auth.uid() THEN
+    RAISE EXCEPTION 'No puedes modificar tu propio usuario a través de esta función';
+  END IF;
+
+  -- Verificar si el usuario ya existe en la tabla users
+  SELECT true INTO v_user_exists FROM users WHERE id = v_user_id LIMIT 1;
 
   -- Si el usuario no existe y se proporcionó contraseña, crearlo con la estructura completa de Supabase Auth
   IF v_user_id IS NULL AND p_password IS NOT NULL THEN
@@ -167,33 +176,40 @@ BEGIN
   END IF;
 
   -- Crear o actualizar el registro en la tabla users
-  INSERT INTO users (
-    id,
-    full_name,
-    phone,
-    role_id,
-    company_id,
-    active,
-    created_at,
-    updated_at
-  )
-  VALUES (
-    v_user_id,
-    p_full_name,
-    p_phone,
-    p_role_id,
-    p_company_id,
-    true,
-    NOW(),
-    NOW()
-  )
-  ON CONFLICT (id) DO UPDATE SET
-    full_name = p_full_name,
-    phone = p_phone,
-    role_id = p_role_id,
-    company_id = COALESCE(p_company_id, users.company_id),
-    active = true,
-    updated_at = NOW();
+  -- Evitar ON CONFLICT para no activar el trigger guard_users_privileges
+  IF v_user_exists THEN
+    -- Usuario ya existe en users, actualizar directamente sin cambiar company_id
+    UPDATE users SET
+      full_name = p_full_name,
+      phone = p_phone,
+      role_id = p_role_id,
+      -- No actualizar company_id para evitar trigger: mantener el existente
+      active = true,
+      updated_at = NOW()
+    WHERE id = v_user_id;
+  ELSE
+    -- Usuario nuevo, insertar directamente
+    INSERT INTO users (
+      id,
+      full_name,
+      phone,
+      role_id,
+      company_id,
+      active,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      v_user_id,
+      p_full_name,
+      p_phone,
+      p_role_id,
+      p_company_id,
+      true,
+      NOW(),
+      NOW()
+    );
+  END IF;
 
   RETURN v_user_id;
 END;
