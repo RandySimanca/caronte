@@ -111,4 +111,27 @@ export async function confirmWarning(opts: {
   return result.isConfirmed;
 }
 
+/**
+ * Muestra un error con SweetAlert
+ */
+export async function showError(opts: {
+  title: string;
+  text?: string;
+  html?: string;
+}): Promise<void> {
+  await Swal.fire({
+    title: opts.title,
+    text: opts.text,
+    html: opts.html,
+    icon: 'error',
+    iconColor: DANGER,
+    confirmButtonText: 'Entendido',
+    confirmButtonColor: DANGER,
+    customClass: {
+      popup: 'swal-caronte-popup',
+      title: 'swal-caronte-title',
+    },
+  });
+}
+
 export { Swal };

@@ -4,6 +4,7 @@ import { AdminService } from '@/services/AdminService';
 import type { Database } from '@/lib/database.types';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
+import { showError } from '@/lib/swal';
 
 type Role = Database['public']['Tables']['roles']['Row'];
 
@@ -79,7 +80,11 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
       setPassword('');
       onClose();
     } catch (error: any) {
-      toast.error(error.message || 'Error al crear usuario');
+      // Usar SweetAlert para errores de la base de datos
+      await showError({
+        title: 'Error al crear usuario',
+        text: error.message || 'Ocurrió un error desconocido',
+      });
     } finally {
       setIsLoading(false);
     }
