@@ -125,8 +125,8 @@ BEGIN
   DELETE FROM expense_categories WHERE company_id = p_company_id;
   DELETE FROM holidays WHERE company_id = p_company_id;
 
-  -- 7. Eliminar usuarios (con sus registros en auth.users)
-  -- Primero eliminamos de tablas relacionadas
+  -- 7. Desactivar usuarios (no eliminar de auth.users desde RPC)
+  -- Primero eliminar registros relacionados
   DELETE FROM audit_logs al
   WHERE EXISTS (
     SELECT 1 FROM users u
@@ -145,29 +145,13 @@ BEGIN
     WHERE u.company_id = p_company_id AND u.id = d.user_id
   );
 
-  -- Obtener IDs de usuarios para eliminar de auth.users
-  DECLARE
-    user_ids UUID[];
-  BEGIN
-    SELECT ARRAY_AGG(id) INTO user_ids
-    FROM users
-    WHERE company_id = p_company_id;
-
-    -- Eliminar de public.users
-    DELETE FROM users WHERE company_id = p_company_id;
-
-    -- Eliminar de auth.users para cada usuario
-    IF user_ids IS NOT NULL THEN
-      FOR i IN 1..array_length(user_ids, 1) LOOP
-        PERFORM auth.admin.delete_user(user_ids[i]);
-      END LOOP;
-    END IF;
-  END;
+  -- Desactivar usuarios en public.users (no eliminar de auth.users)
+  UPDATE users SET active = false WHERE company_id = p_company_id;
 
   -- 8. Finalmente eliminar la empresa
   DELETE FROM companies WHERE id = p_company_id;
 
-  RETURN format('Empresa "%s" eliminada exitosamente. %s usuarios, %s préstamos eliminados.',
+  RETURN format('Empresa "%s" eliminada exitosamente. %s usuarios desactivados, %s préstamos eliminados.',
     v_company_name, v_user_count, v_loan_count);
 END;
 $$;
