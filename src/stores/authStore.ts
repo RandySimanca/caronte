@@ -75,6 +75,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
     }
     clearProfileFromLocalStorage();
     set({ session: null, user: null, role: null, companyId: null });
+    // Redirigir al login
+    window.location.href = '/login';
   };
 
   return {
@@ -223,12 +225,16 @@ export const useAuthStore = create<AuthState>((set, get) => {
         userInitiatedSignOut = true;
         await supabase.auth.signOut();
         set({ session: null, user: null, role: null, companyId: null });
+        // Redirigir al login
+        window.location.href = '/login';
       } catch (err) {
         console.error('[Auth] Error en signOut:', err);
         // En caso de error, al menos cerrar la sesión de Supabase
         userInitiatedSignOut = true;
         await supabase.auth.signOut();
         set({ session: null, user: null, role: null, companyId: null });
+        // Redirigir al login
+        window.location.href = '/login';
       } finally {
         userInitiatedSignOut = false;
       }

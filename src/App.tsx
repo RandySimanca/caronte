@@ -32,7 +32,7 @@ import { SuperAdminDashboard } from '@/pages/superadmin/SuperAdminDashboard';
 function RequireAuth({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
   const { session, role, isLoading } = useAuthStore();
   if (isLoading) return <SplashScreen />;
-  if (!session) return <LoginPage />;
+  if (!session) return <Navigate to="/login" replace />;
 
   // Wait for role to be loaded
   if (!role) return <SplashScreen />;
@@ -64,6 +64,9 @@ function SplashScreen() {
 }
 
 const router = createBrowserRouter([
+  // RUTA DE LOGIN
+  { path: '/login', element: <LoginPage /> },
+
   // RUTAS DEL COBRADOR
   {
     path: '/',
