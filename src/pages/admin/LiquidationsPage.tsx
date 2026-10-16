@@ -4,6 +4,7 @@ import { AdminService } from '@/services/AdminService';
 import { LiquidationDetailModal } from '@/components/admin/LiquidationDetailModal';
 import toast from 'react-hot-toast';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { showError } from '@/lib/swal';
 
 export function LiquidationsPage() {
   const [routes, setRoutes] = useState<any[]>([]);
@@ -50,12 +51,15 @@ export function LiquidationsPage() {
     }).format(amount);
   };
 
-  const openLiquidationDetail = (route: any) => {
+  const openLiquidationDetail = async (route: any) => {
     if (route.cobradorId) {
       setSelectedRoute(route);
       setIsModalOpen(true);
     } else {
-      toast.error('Esta ruta no tiene un cobrador asignado para liquidar.');
+      await showError({
+        title: 'Ruta sin cobrador asignado',
+        text: 'Esta ruta no tiene un cobrador asignado para liquidar. Por favor asigna un cobrador antes de continuar.',
+      });
     }
   };
 
