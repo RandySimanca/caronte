@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { 
-  SuperAdminService, 
-  CompanyWithStats, 
-  GlobalSaaSMetrics 
+import {
+  SuperAdminService,
+  CompanyWithStats,
+  GlobalSaaSMetrics
 } from '@/services/SuperAdminService';
 import { NewCompanyModal } from '@/components/superadmin/NewCompanyModal';
+import { EditCompanyModal } from '@/components/superadmin/EditCompanyModal';
 import { formatMoney } from '@/lib/money';
 import type { CompanyStatus } from '@/lib/database.types';
 import { confirmDanger } from '@/lib/swal';
@@ -42,6 +43,7 @@ export function SuperAdminDashboard() {
   
   // Modals
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState<CompanyWithStats | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [companyDetails, setCompanyDetails] = useState<any>(null);
@@ -140,6 +142,11 @@ export function SuperAdminDashboard() {
     } catch (error: any) {
       toast.error(error.message || 'Error al eliminar usuario');
     }
+  };
+
+  const handleEditCompany = (company: CompanyWithStats) => {
+    setSelectedCompany(company);
+    setIsEditModalOpen(true);
   };
 
   const filteredCompanies = companies.filter(company => {
@@ -386,6 +393,14 @@ export function SuperAdminDashboard() {
                   </button>
 
                   <button
+                    onClick={() => handleEditCompany(company)}
+                    className="flex items-center justify-center p-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 transition-all"
+                    title="Editar Empresa"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+
+                  <button
                     onClick={() => handleToggleStatus(company)}
                     className={`flex items-center justify-center p-2 rounded-xl border transition-all ${
                       company.status === 'ACTIVE'
@@ -511,6 +526,19 @@ export function SuperAdminDashboard() {
           </div>
         </div>
       )}
+
+      <NewCompanyModal
+        isOpen={isNewModalOpen}
+        onClose={() => setIsNewModalOpen(false)}
+        onSuccess={fetchData}
+      />
+
+      <EditCompanyModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        onSuccess={fetchData}
+        company={selectedCompany!}
+      />
     </div>
   );
 }

@@ -145,8 +145,8 @@ BEGIN
     WHERE u.company_id = p_company_id AND u.id = d.user_id
   );
 
-  -- Desactivar usuarios en public.users (no eliminar de auth.users)
-  UPDATE users SET active = false WHERE company_id = p_company_id;
+  -- Desactivar usuarios y remover company_id para evitar foreign key constraint
+  UPDATE users SET active = false, company_id = NULL WHERE company_id = p_company_id;
 
   -- 8. Finalmente eliminar la empresa
   DELETE FROM companies WHERE id = p_company_id;
