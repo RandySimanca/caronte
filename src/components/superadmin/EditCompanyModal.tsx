@@ -9,22 +9,22 @@ interface EditCompanyModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  company: Company;
+  company: Company | null;
 }
 
 export function EditCompanyModal({ isOpen, onClose, onSuccess, company }: EditCompanyModalProps) {
   const [isLoading, setIsLoading] = useState(false);
 
   // Form State
-  const [name, setName] = useState(company.name || '');
-  const [slug, setSlug] = useState(company.slug || '');
-  const [ownerName, setOwnerName] = useState(company.owner_name || '');
-  const [email, setEmail] = useState(company.email || '');
-  const [phone, setPhone] = useState(company.phone || '');
-  const [status, setStatus] = useState(company.status || 'ACTIVE');
-  const [maxCollectors, setMaxCollectors] = useState(company.max_collectors || 10);
-  const [maxRoutes, setMaxRoutes] = useState(company.max_routes || 20);
-  const [notes, setNotes] = useState(company.notes || '');
+  const [name, setName] = useState(company?.name || '');
+  const [slug, setSlug] = useState(company?.slug || '');
+  const [ownerName, setOwnerName] = useState(company?.owner_name || '');
+  const [email, setEmail] = useState(company?.email || '');
+  const [phone, setPhone] = useState(company?.phone || '');
+  const [status, setStatus] = useState(company?.status || 'ACTIVE');
+  const [maxCollectors, setMaxCollectors] = useState(company?.max_collectors || 10);
+  const [maxRoutes, setMaxRoutes] = useState(company?.max_routes || 20);
+  const [notes, setNotes] = useState(company?.notes || '');
 
   useEffect(() => {
     if (isOpen && company) {
@@ -44,6 +44,11 @@ export function EditCompanyModal({ isOpen, onClose, onSuccess, company }: EditCo
     e.preventDefault();
     if (!name || !slug) {
       toast.error('Por favor completa los campos requeridos.');
+      return;
+    }
+
+    if (!company) {
+      toast.error('No se seleccionó ninguna empresa');
       return;
     }
 
@@ -73,7 +78,7 @@ export function EditCompanyModal({ isOpen, onClose, onSuccess, company }: EditCo
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !company) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-0">
