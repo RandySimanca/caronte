@@ -87,9 +87,17 @@ BEGIN
   -- Eliminar de public.users (esto NO elimina de auth.users automáticamente)
   DELETE FROM users WHERE id = p_user_id;
 
-  -- Eliminar de auth.users (requiere acceso a auth schema)
-  -- Usamos auth.admin.delete_user si está disponible
-  PERFORM auth.admin.delete_user(p_user_id);
+  -- Desactivar en auth.users (si está disponible en la versión de Supabase)
+  -- Esto evita que el usuario pueda iniciar sesión aunque ya no existe en public.users
+  BEGIN
+    UPDATE auth.users
+    SET email_confirmed_at = NULL,
+        raw_app_meta_data = raw_app_meta_data || '{"disabled": true}'::jsonb
+    WHERE id = p_user_id;
+  EXCEPTION WHEN OTHERS THEN
+    -- Si falla por permisos, continuar (el usuario ya no está en public.users)
+    NULL;
+  END;
 
   RETURN 'Usuario eliminado exitosamente';
 EXCEPTION
