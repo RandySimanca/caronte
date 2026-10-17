@@ -137,6 +137,7 @@ export class AdminService {
           )
         )
       `)
+      .eq('active', true)
       .order('name');
 
     if (error) throw error;
@@ -188,6 +189,7 @@ export class AdminService {
 
   /**
    * Elimina una ruta (desactiva en lugar de borrar para preservar historial)
+   * Las rutas inactivas ya no se muestran en la lista
    */
   static async deleteRoute(routeId: string) {
     const { error } = await supabase

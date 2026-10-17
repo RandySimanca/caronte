@@ -39,7 +39,7 @@ export function RoutesPage() {
   const handleDeleteRoute = async (route: any) => {
     const confirmed = await confirmDanger({
       title: `¿Eliminar ruta "${route.name}"?`,
-      text: 'Esta acción desactivará la ruta. Los clientes asignados a esta ruta no serán visitados por el cobrador.',
+      text: 'Esta acción eliminará la ruta y ya no aparecerá en la lista. Los clientes asignados a esta ruta no serán visitados por el cobrador.',
       confirmText: 'Sí, eliminar',
     });
 
