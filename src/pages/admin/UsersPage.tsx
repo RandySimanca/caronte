@@ -62,7 +62,7 @@ export function UsersPage() {
 
     const confirmed = await confirmDanger({
       title: `¿Eliminar usuario "${user.full_name}"?`,
-      text: 'Esta acción desactivará el usuario. No podrá acceder al sistema.',
+      text: 'Esta acción eliminará permanentemente el usuario y todos sus datos. Esta acción NO se puede deshacer.',
       confirmText: 'Sí, eliminar',
     });
 

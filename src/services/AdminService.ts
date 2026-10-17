@@ -106,13 +106,10 @@ export class AdminService {
   }
 
   /**
-   * Elimina un usuario (desactiva en lugar de borrar para preservar auditoría)
+   * Elimina un usuario físicamente de la base de datos
    */
   static async deleteUser(userId: string) {
-    const { error } = await supabase
-      .from('users')
-      .update({ active: false })
-      .eq('id', userId);
+    const { error } = await supabase.rpc('admin_delete_user', { p_user_id: userId });
 
     if (error) throw error;
   }
