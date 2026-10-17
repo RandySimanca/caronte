@@ -693,7 +693,7 @@ export class AdminService {
     const { data, error } = await supabase
       .from('routes')
       .select(`
-        id, 
+        id,
         name,
         active,
         assignments:route_assignments (
@@ -706,6 +706,7 @@ export class AdminService {
         ),
         clients (id)
       `)
+      .eq('active', true)
       .order('name');
 
     if (error) throw error;
