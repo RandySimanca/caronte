@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { AdminService } from '@/services/AdminService';
 import { useAuthStore } from '@/stores/authStore';
 import { formatCurrency } from '@/lib/utils';
+import { colombiaToday } from '@/lib/dailyCollection';
 import toast from 'react-hot-toast';
 
 interface ExcelMigrationModalProps {
@@ -25,7 +26,8 @@ interface ParsedRow {
   sundaysCount: number;
   receiptFee: number;
   disbursementDate: string;
-  paidQuotasCount: number;
+  paidAmount: number;          // total abonado a la fecha (se reparte en las cuotas)
+  paidQuotasCount: number;     // cuotas equivalentes (informativo, para la vista previa)
   observation: string;
   isValid: boolean;
   errorMsg: string;
@@ -44,7 +46,7 @@ export function downloadExcelMigrationTemplate() {
       "domingos_descuento": 0,
       "valor_boleta": 0,
       "fecha_desembolso": "2026-08-01",
-      "cuotas_pagadas": 10,
+      "monto_pagado": 300000,
       "observacion": "Cliente migrado"
     },
     {
@@ -58,7 +60,7 @@ export function downloadExcelMigrationTemplate() {
       "domingos_descuento": 0,
       "valor_boleta": 0,
       "fecha_desembolso": "2026-08-10",
-      "cuotas_pagadas": 5,
+      "monto_pagado": 75000,
       "observacion": "Cliente migrado"
     }
   ];
@@ -103,9 +105,15 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
         }
 
         const parsedRows: ParsedRow[] = data.map((row, idx) => {
-          const getVal = (keys: string[]) => {
+          const getVal = (keys: string[], exclude: string[] = []) => {
             for (const key of Object.keys(row)) {
-              const cleanKey = key.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+              const cleanKey = key
+                .trim()
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z0-9_]/g, '');
+              if (exclude.some(x => cleanKey.includes(x))) continue;
               if (keys.some(k => cleanKey.includes(k))) {
                 return row[key];
               }
@@ -118,7 +126,7 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
           const phone = String(getVal(['telefono', 'celular', 'phone']) || "").trim();
           const address = String(getVal(['direccion', 'address']) || "").trim();
           
-          const rawAmount = getVal(['monto', 'valor', 'prestamo', 'amount']);
+          const rawAmount = getVal(['monto', 'valor', 'prestamo', 'amount'], ['pagad', 'abon']);
           const amountRequested = typeof rawAmount === 'number' ? rawAmount : parseFloat(String(rawAmount).replace(/\D/g, '')) || 0;
           
           const rawRate = getVal(['tasa', 'interes', 'rate']);
@@ -161,8 +169,19 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
             disbursementDate = new Date().toISOString().split('T')[0];
           }
 
+          // Monto total que el cliente ha pagado (diario, semanal o como sea).
+          // Si viene lleno, tiene prioridad sobre "cuotas_pagadas".
+          const rawPaidAmount = getVal(['montopagado', 'monto_pagado', 'totalpagado', 'total_pagado', 'abonado', 'abono']);
+          const paidAmountInput = typeof rawPaidAmount === 'number' ? rawPaidAmount : parseFloat(String(rawPaidAmount).replace(/\D/g, '')) || 0;
+
           const rawQuotas = getVal(['cuotas', 'pagadas', 'paid']);
-          const paidQuotasCount = typeof rawQuotas === 'number' ? rawQuotas : parseInt(String(rawQuotas).replace(/\D/g, '')) || 0;
+          const paidQuotasInput = typeof rawQuotas === 'number' ? rawQuotas : parseInt(String(rawQuotas).replace(/\D/g, '')) || 0;
+
+          const obligation = amountRequested * (1 + interestRate);
+          const quota = termDays > 0 ? obligation / termDays : 0;
+          const maxPayable = Math.max(0, obligation - quota * sundaysCount);
+          const paidAmount = paidAmountInput > 0 ? paidAmountInput : paidQuotasInput * quota;
+          const paidQuotasCount = quota > 0 ? Math.round((paidAmount / quota) * 100) / 100 : 0;
 
           const observation = String(getVal(['observacion', 'nota', 'obs']) || "Migración Excel").trim();
 
@@ -170,6 +189,7 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
           if (!fullName) errors.push("Nombre requerido");
           if (!documentId) errors.push("Cédula requerida");
           if (amountRequested <= 0) errors.push("Monto inválido");
+          if (paidAmount > maxPayable + 1) errors.push("Lo pagado supera el saldo del préstamo");
 
           return {
             rowNum: idx + 2,
@@ -183,6 +203,7 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
             sundaysCount,
             receiptFee,
             disbursementDate,
+            paidAmount,
             paidQuotasCount,
             observation,
             isValid: errors.length === 0,
@@ -221,35 +242,43 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
       setProgressIndex(i + 1);
 
       try {
-        // Generate historical payments array
-        const historicalPayments = [];
-        if (row.paidQuotasCount > 0) {
+        // Reparte el monto pagado en las cuotas del préstamo (misma agenda que genera
+        // createAdminLoan: una cuota por día, saltando los domingos prepagados).
+        // Cada abono queda fechado en la fecha de la cuota que cubre (nunca después de hoy),
+        // así no se infla el cobro del día de la migración.
+        const historicalPayments: { amount: number; paymentDate: string; observation?: string }[] = [];
+        if (row.paidAmount > 0 && row.termDays > 0) {
           const parts = row.disbursementDate.split('-').map(Number);
           const baseDate = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2]) : new Date();
           const obligation = row.amountRequested * (1 + row.interestRate);
-          const dailyQuota = Math.round(row.termDays > 0 ? obligation / row.termDays : 0);
+          const quota = obligation / row.termDays;
+          const today = colombiaToday();
 
-          let sundaysCount = 0;
-          let dayOffset = 1;
+          let remaining = row.paidAmount;
+          let sundaysUsed = 0;
+          let quotaNumber = 0;
 
-          while (historicalPayments.length < row.paidQuotasCount && dayOffset <= 365) {
-            const current = addDays(baseDate, dayOffset);
+          for (let i = 1; i <= row.termDays && remaining > 0.5; i++) {
+            const current = addDays(baseDate, i);
             const isSun = current.getDay() === 0;
-
-            if (isSun && sundaysCount < row.sundaysCount) {
-              sundaysCount++;
-              dayOffset++;
+            if (isSun && sundaysUsed < row.sundaysCount) {
+              sundaysUsed++; // domingo prepagado: ya viene saldado
               continue;
             }
 
+            quotaNumber++;
+            // Si falta menos de 1 peso para completar la cuota, se toma completa (evita residuos por decimales)
+            const pay = remaining >= quota - 0.5 ? quota : Math.round(remaining * 100) / 100;
+            remaining -= pay;
+
             const dateStr = current.toISOString().split('T')[0];
             historicalPayments.push({
-              amount: dailyQuota,
-              paymentDate: dateStr,
-              observation: `Cuota ${historicalPayments.length + 1} (Migración Excel)`
+              amount: pay,
+              paymentDate: dateStr > today ? today : dateStr,
+              observation: pay < quota
+                ? `Cuota ${quotaNumber} parcial (Migración Excel)`
+                : `Cuota ${quotaNumber} (Migración Excel)`
             });
-
-            dayOffset++;
           }
         }
 
@@ -338,6 +367,10 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
                 <p className="text-xs text-slate-600 mb-2">
                   Descarga la plantilla con el formato exacto para llenar en Excel:
                 </p>
+                <p className="text-[11px] text-slate-500 mb-2">
+                  En <b>monto_pagado</b> escribe el total de dinero que el cliente ha entregado hasta hoy: se reparte solo
+                  en las cuotas diarias del préstamo y lo que sobre queda como pago parcial de la siguiente cuota.
+                </p>
                 <button
                   type="button"
                   onClick={downloadExcelMigrationTemplate}
@@ -412,7 +445,7 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
                       <th className="p-3">Cédula</th>
                       <th className="p-3">Monto</th>
                       <th className="p-3">Desembolso</th>
-                      <th className="p-3">Cuotas Pagadas</th>
+                      <th className="p-3">Pagado</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -434,7 +467,10 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
                         <td className="p-3 text-slate-600 font-mono">{r.documentId || "—"}</td>
                         <td className="p-3 font-bold text-slate-900">{formatCurrency(r.amountRequested)}</td>
                         <td className="p-3 text-slate-600">{r.disbursementDate}</td>
-                        <td className="p-3 font-bold text-amber-700">{r.paidQuotasCount} cuotas</td>
+                        <td className="p-3 font-bold text-amber-700">
+                          {formatCurrency(r.paidAmount)}
+                          <span className="block text-[10px] font-semibold text-slate-500">≈ {r.paidQuotasCount} cuotas</span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
