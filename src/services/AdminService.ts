@@ -1535,6 +1535,19 @@ export class AdminService {
   /**
    * Permite al administrador crear un préstamo y asignarlo a cualquier ruta.
    */
+  /** Siguiente posición libre al final de la ruta (para que los clientes importados queden después de los existentes). */
+  static async getNextRouteOrder(routeId: string): Promise<number> {
+    const { data, error } = await supabase
+      .from('clients')
+      .select('route_order')
+      .eq('route_id', routeId)
+      .order('route_order', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    const max = (data as any[] | null)?.[0]?.route_order;
+    return typeof max === 'number' ? max + 1 : 0;
+  }
+
   static async createAdminLoan(payload: {
     clientId: string | null;
     clientData?: { full_name: string; document_id: string; phone: string; address: string };
@@ -1548,6 +1561,7 @@ export class AdminService {
     wantsRaffle: boolean;
     disbursementDate?: string;
     historicalPayments?: { amount: number; paymentDate: string; observation?: string }[];
+    routeOrder?: number; // posición del cliente nuevo en la ruta (migración masiva)
   }) {
     let clientId = payload.clientId;
 
@@ -1562,6 +1576,7 @@ export class AdminService {
           address: payload.clientData.address || null,
           status: 'ACTIVO',
           route_id: payload.routeId,
+          ...(typeof payload.routeOrder === 'number' ? { route_order: payload.routeOrder } : {}),
           created_by: payload.adminId
         }] as any)
         .select('id')

@@ -28,6 +28,7 @@ interface ParsedRow {
   disbursementDate: string;
   paidAmount: number;          // total abonado a la fecha (se reparte en las cuotas)
   paidQuotasCount: number;     // cuotas equivalentes (informativo, para la vista previa)
+  orderInput: number | null;   // columna opcional "orden": posición del cliente en la ruta
   observation: string;
   isValid: boolean;
   errorMsg: string;
@@ -47,6 +48,7 @@ export function downloadExcelMigrationTemplate() {
       "valor_boleta": 0,
       "fecha_desembolso": "2026-08-01",
       "monto_pagado": 300000,
+      "orden": 1,
       "observacion": "Cliente migrado"
     },
     {
@@ -61,6 +63,7 @@ export function downloadExcelMigrationTemplate() {
       "valor_boleta": 0,
       "fecha_desembolso": "2026-08-10",
       "monto_pagado": 75000,
+      "orden": 2,
       "observacion": "Cliente migrado"
     }
   ];
@@ -183,6 +186,11 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
           const paidAmount = paidAmountInput > 0 ? paidAmountInput : paidQuotasInput * quota;
           const paidQuotasCount = quota > 0 ? Math.round((paidAmount / quota) * 100) / 100 : 0;
 
+          // Orden en la ruta (opcional). Si la columna no existe o está vacía, se respeta el orden de las filas.
+          const rawOrder = getVal(['orden', 'posicion']);
+          const parsedOrder = typeof rawOrder === 'number' ? rawOrder : parseInt(String(rawOrder).replace(/\D/g, ''), 10);
+          const orderInput = Number.isFinite(parsedOrder) && parsedOrder > 0 ? parsedOrder : null;
+
           const observation = String(getVal(['observacion', 'nota', 'obs']) || "Migración Excel").trim();
 
           const errors: string[] = [];
@@ -205,6 +213,7 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
             disbursementDate,
             paidAmount,
             paidQuotasCount,
+            orderInput,
             observation,
             isValid: errors.length === 0,
             errorMsg: errors.join(", ")
@@ -237,8 +246,24 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
     let successCount = 0;
     let failCount = 0;
 
-    for (let i = 0; i < validRows.length; i++) {
-      const row = validRows[i];
+    // Orden de la ruta: primero las filas con "orden" (de menor a mayor); las que no lo traen
+    // siguen después en el orden del Excel. Los clientes quedan numerados al final de la ruta.
+    const orderedRows = [...validRows].sort((a, b) => {
+      const ao = a.orderInput ?? Infinity;
+      const bo = b.orderInput ?? Infinity;
+      if (ao === bo) return a.rowNum - b.rowNum;
+      return ao - bo;
+    });
+
+    let baseOrder = 0;
+    try {
+      baseOrder = await AdminService.getNextRouteOrder(routeId);
+    } catch (err) {
+      console.warn('No se pudo leer el orden actual de la ruta, se empieza desde 0:', err);
+    }
+
+    for (let i = 0; i < orderedRows.length; i++) {
+      const row = orderedRows[i];
       setProgressIndex(i + 1);
 
       try {
@@ -299,7 +324,8 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
           receiptFee: row.receiptFee,
           wantsRaffle: false,
           disbursementDate: row.disbursementDate,
-          historicalPayments
+          historicalPayments,
+          routeOrder: baseOrder + i
         });
 
         successCount++;
@@ -370,6 +396,10 @@ export function ExcelMigrationModal({ isOpen, onClose, routeStates, onSuccess }:
                 <p className="text-[11px] text-slate-500 mb-2">
                   En <b>monto_pagado</b> escribe el total de dinero que el cliente ha entregado hasta hoy: se reparte solo
                   en las cuotas diarias del préstamo y lo que sobre queda como pago parcial de la siguiente cuota.
+                </p>
+                <p className="text-[11px] text-slate-500 mb-2">
+                  La columna <b>orden</b> (opcional) es la posición del cliente en la ruta de cobro (1 = el primero que se cobra).
+                  Si no la pones, los clientes quedan en el mismo orden de las filas del Excel.
                 </p>
                 <button
                   type="button"

@@ -4,7 +4,7 @@ import { NavLink } from 'react-router-dom';
 import { User, MapPin, Trophy, GripVertical, CalendarCheck } from 'lucide-react';
 import { formatCurrency, cn } from '@/lib/utils';
 
-export function SortableClientItem({ client, isReordering }: { client: any, isReordering: boolean }) {
+export function SortableClientItem({ client, isReordering, position, onMoveTo }: { client: any, isReordering: boolean, position?: number, onMoveTo?: (clientId: string) => void }) {
   const {
     attributes,
     listeners,
@@ -31,6 +31,16 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
         >
           <GripVertical className="w-6 h-6" />
         </div>
+      )}
+      {isReordering && typeof position === 'number' && onMoveTo && (
+        <button
+          type="button"
+          onClick={() => onMoveTo(client.id)}
+          className="mr-3 min-w-[2.75rem] px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-sm font-bold active:bg-slate-200"
+          title="Mover a otra posición"
+        >
+          {position}
+        </button>
       )}
 
       {/* Avatar */}
@@ -149,7 +159,7 @@ export function SortableClientItem({ client, isReordering }: { client: any, isRe
   );
 
   return (
-    <li ref={setNodeRef} style={style} className={cn("bg-white transition-colors", !isReordering && "hover:bg-slate-50")}>
+    <li id={`route-client-${client.id}`} ref={setNodeRef} style={style} className={cn("bg-white transition-colors", !isReordering && "hover:bg-slate-50")}>
       {isReordering ? (
         Content
       ) : (

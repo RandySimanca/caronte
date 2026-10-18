@@ -237,6 +237,29 @@ export function RouteClientList() {
     }
   }
 
+  /** Mueve un cliente a la posición escrita (1 = primero) sin tener que arrastrarlo por toda la lista. */
+  async function moveClientTo(clientId: string) {
+    const current = orderedClients.findIndex(c => c.id === clientId);
+    if (current < 0) return;
+    const total = orderedClients.length;
+    const answer = window.prompt(
+      `${orderedClients[current].full_name}\nPosición actual: ${current + 1}\n¿A qué posición lo quieres mover? (1 a ${total})`,
+      String(current + 1)
+    );
+    if (answer === null) return;
+    const target = parseInt(answer.trim(), 10);
+    if (!Number.isFinite(target) || target < 1 || target > total) {
+      toast.error(`Escribe un número entre 1 y ${total}`);
+      return;
+    }
+    if (target - 1 === current) return;
+    setOrderedClients(items => arrayMove(items, current, target - 1));
+    // Deja el cliente movido a la vista en su nueva posición
+    setTimeout(() => {
+      document.getElementById(`route-client-${clientId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 50);
+  }
+
   async function saveOrder() {
     try {
       const updates = orderedClients
@@ -367,11 +390,13 @@ export function RouteClientList() {
                 items={orderedClients.map(c => c.id)} 
                 strategy={verticalListSortingStrategy}
               >
-                {orderedClients.map((client) => (
+                {orderedClients.map((client, index) => (
                   <SortableClientItem 
                     key={client.id} 
                     client={client} 
                     isReordering={isReordering} 
+                    position={index + 1}
+                    onMoveTo={moveClientTo}
                   />
                 ))}
               </SortableContext>
