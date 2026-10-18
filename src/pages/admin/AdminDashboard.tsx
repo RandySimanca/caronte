@@ -539,29 +539,29 @@ export function AdminDashboard() {
       {/* ─── ACTION MODULES GRID ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
 
-        {/* 1. Adelantos de hoy (cuotas futuras cobradas hoy) */}
+        {/* 1. Cuota de hoy ya pagada (adelantada en días anteriores). No suma al esperado del día */}
         <button
-          onClick={() => setIsAdelantosOpen(true)}
-          className="bg-white rounded-3xl border border-emerald-100 shadow-sm p-6 hover:shadow-md hover:border-emerald-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
+          onClick={() => setIsPrepaidModalOpen(true)}
+          className="bg-white rounded-3xl border border-indigo-100 shadow-sm p-6 hover:shadow-md hover:border-indigo-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
         >
           <div className="flex items-start justify-between w-full mb-6">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center relative shadow-inner">
-              <FastForward className="w-7 h-7 text-emerald-600" />
-              <span className="absolute -top-2 -right-2 w-7 h-7 bg-emerald-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md">
-                {stats!.adelantosHoy!.count}
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center relative shadow-inner">
+              <CalendarCheck className="w-7 h-7 text-indigo-600" />
+              <span className="absolute -top-2 -right-2 w-7 h-7 bg-indigo-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md">
+                {stats!.prepaidToday!.count}
               </span>
             </div>
-            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
-              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all" />
+            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-indigo-50 transition-colors">
+              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all" />
             </div>
           </div>
           <div>
-            <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Adelantos de Hoy</h3>
+            <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Cuota de Hoy Ya Pagada</h3>
             <p className="text-sm text-slate-500 leading-relaxed">
-              <strong className="text-emerald-600">{stats!.adelantosHoy!.count}</strong> cliente{stats!.adelantosHoy!.count !== 1 ? 's' : ''} adelantaron cuotas futuras hoy.
+              <strong className="text-indigo-600">{stats!.prepaidToday!.count}</strong> cliente{stats!.prepaidToday!.count !== 1 ? 's' : ''} ya pagaron la cuota de hoy en días anteriores. No se cuentan en lo esperado del día.
             </p>
-            <p className="text-sm font-black text-emerald-700 mt-1">
-              {formatCurrency(stats!.adelantosHoy!.total)}
+            <p className="text-sm font-black text-indigo-700 mt-1">
+              {formatCurrency((stats!.prepaidToday!.clients ?? []).reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0))}
             </p>
           </div>
         </button>
