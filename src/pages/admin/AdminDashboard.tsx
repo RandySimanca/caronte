@@ -509,35 +509,8 @@ export function AdminDashboard() {
         </div>
       </div>
 
-      {/* ─── EFECTIVIDAD DE RECAUDO ─── */}
-      {selectedRoute && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <EffectivenessCard
-            title="Efectividad · Cuotas de Hoy"
-            collected={stats?.recaudoCuotasHoy ?? 0}
-            expected={stats?.esperadoCuotasHoy ?? 0}
-            collectedLabel="Ya cobrado"
-            remainingLabel="Por recoger"
-            goalLabel="Meta del día (cuotas)"
-            isLoading={isStatsLoading}
-            formatCurrency={formatCurrency}
-          />
-
-          <EffectivenessCard
-            title="Efectividad · Atrasos"
-            collected={stats?.recaudoAtrasos ?? 0}
-            expected={stats?.esperadoAtrasos ?? 0}
-            collectedLabel="Atrasos recuperados"
-            remainingLabel="Atrasos pendientes"
-            goalLabel="Total de atrasos"
-            isLoading={isStatsLoading}
-            formatCurrency={formatCurrency}
-          />
-        </div>
-      )}
-
-      {/* ─── ACTION MODULES GRID ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
+      {/* ─── CUOTA YA PAGADA Y SORTEO (arriba de los medidores) ─── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
 
         {/* 1. Cuota de hoy ya pagada (adelantada en días anteriores). No suma al esperado del día */}
         <button
@@ -589,6 +562,38 @@ export function AdminDashboard() {
             </p>
           </div>
         </button>
+      </div>
+
+      {/* ─── EFECTIVIDAD DE RECAUDO ─── */}
+      {selectedRoute && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <EffectivenessCard
+            title="Efectividad · Cuotas de Hoy"
+            collected={stats?.recaudoCuotasHoy ?? 0}
+            expected={stats?.esperadoCuotasHoy ?? 0}
+            collectedLabel="Ya cobrado"
+            remainingLabel="Por recoger"
+            goalLabel="Meta del día (cuotas)"
+            isLoading={isStatsLoading}
+            formatCurrency={formatCurrency}
+          />
+
+          <EffectivenessCard
+            title="Efectividad · Atrasos"
+            collected={stats?.recaudoAtrasos ?? 0}
+            expected={stats?.esperadoAtrasos ?? 0}
+            collectedLabel="Atrasos recuperados"
+            remainingLabel="Atrasos pendientes"
+            goalLabel="Total de atrasos"
+            isLoading={isStatsLoading}
+            formatCurrency={formatCurrency}
+          />
+        </div>
+      )}
+
+      {/* ─── OBSERVACIONES Y ALERTAS ─── */}
+      {stats?.alerts && stats.alerts.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
 
         {/* 3. Observaciones y Adicionales */}
         {stats?.alerts && stats.alerts.length > 0 && (() => {
@@ -634,7 +639,8 @@ export function AdminDashboard() {
             </button>
           );
         })()}
-      </div>
+        </div>
+      )}
 
       {/* Cards Row 2 — changes meaning based on filter */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full md:w-2/3 mb-8">
