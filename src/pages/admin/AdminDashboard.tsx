@@ -7,6 +7,7 @@ import { LotteryModule } from '@/components/admin/LotteryModule';
 import { ObservationsModal } from '@/components/admin/ObservationsModal';
 import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
 import { PaidTodayModal } from '@/components/admin/PaidTodayModal';
+import { CompletedLoansModal } from '@/components/admin/CompletedLoansModal';
 import { AdminCreateLoanModal } from '@/components/admin/AdminCreateLoanModal';
 import { TransferVouchersModal } from '@/components/admin/TransferVouchersModal';
 import { EditPaymentModal } from '@/components/admin/EditPaymentModal';
@@ -132,6 +133,9 @@ export function AdminDashboard() {
   const [isAdelantosOpen, setIsAdelantosOpen] = useState(false);
   const [isNewLoansOpen, setIsNewLoansOpen] = useState(false);
   const [isPaidTodayOpen, setIsPaidTodayOpen] = useState(false);
+  const [completedLoansOpen, setCompletedLoansOpen] = useState(false);
+  const [completedLoans, setCompletedLoans] = useState<any[]>([]);
+  const [completedLoansLoading, setCompletedLoansLoading] = useState(false);
 
   // Load route list only once
   useEffect(() => {
@@ -188,10 +192,33 @@ export function AdminDashboard() {
     loadStats();
   }, [loadStats]);
 
+
+  const loadCompletedLoans = useCallback(async () => {
+    if (!selectedRoute) {
+      setCompletedLoans([]);
+      setCompletedLoansLoading(false);
+      return;
+    }
+    setCompletedLoansLoading(true);
+    try {
+      const rows = await AdminService.getCompletedLoans(selectedRoute);
+      setCompletedLoans(rows);
+    } catch (error) {
+      toast.error('No se pudo cargar el historial de préstamos terminados');
+    } finally {
+      setCompletedLoansLoading(false);
+    }
+  }, [selectedRoute]);
+
+  useEffect(() => {
+    loadCompletedLoans();
+  }, [loadCompletedLoans]);
+
   // Tiempo real: cuando un celular sube cobros/préstamos/gastos/cierres, el PC se actualiza solo.
   const isLive = useRealtimeRefresh(
     () => {
       loadStats(true);
+      loadCompletedLoans();
       AdminService.getRouteStates().then(setRouteStates).catch(() => {});
     },
     { tables: ['payments', 'loans', 'loan_installments', 'clients', 'expenses', 'daily_closings'] },
@@ -692,6 +719,29 @@ export function AdminDashboard() {
         )}
       </div>
 
+      {/* Préstamos terminados */}
+      <button
+        type="button"
+        onClick={() => setCompletedLoansOpen(true)}
+        className="w-full bg-white p-5 rounded-2xl border border-emerald-100 shadow-sm hover:shadow-md hover:border-emerald-300 transition-all text-left flex items-center justify-between gap-4"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+            <CheckCircle className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="font-extrabold text-slate-800">Préstamos terminados</p>
+            <p className="text-xs text-slate-500">Pagados o refinanciados · {routeSubtitle}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={`text-2xl font-black text-emerald-700 ${completedLoansLoading ? 'opacity-50' : ''}`}>
+            {completedLoansLoading ? '…' : completedLoans.length}
+          </span>
+          <ChevronRight className="w-5 h-5 text-slate-300" />
+        </div>
+      </button>
+
       {/* Table Section */}
       <div className="pt-4">
         <h3 className="text-lg font-bold text-slate-800 mb-4">
@@ -845,6 +895,14 @@ export function AdminDashboard() {
         onClose={() => setIsPaidTodayOpen(false)}
         entries={stats?.pagosHoy || []}
         routeLabel={isFiltered ? selectedRouteData?.ruta : undefined}
+      />
+
+      <CompletedLoansModal
+        isOpen={completedLoansOpen}
+        onClose={() => setCompletedLoansOpen(false)}
+        loans={completedLoans}
+        isLoading={completedLoansLoading}
+        formatCurrency={formatCurrency}
       />
     </div>
   );
