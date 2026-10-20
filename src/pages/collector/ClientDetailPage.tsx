@@ -228,6 +228,12 @@ export function ClientDetailPage() {
           <p className="font-semibold text-slate-800">{client.full_name}</p>
           <p className="text-sm mt-2">Este cliente no tiene un préstamo activo en el celular.</p>
           <p className="text-xs mt-1 text-slate-400">Si lo creaste sin conexión, espera a que termine la sincronización o pulsa Sincronizar en el inicio.</p>
+          <NavLink
+            to={`/loan/new?client=${client.id}`}
+            className="mt-6 px-5 py-3 bg-brand-600 text-white text-sm font-bold rounded-xl shadow-md shadow-brand-500/30 active:scale-95 transition-all"
+          >
+            Nuevo préstamo para este cliente
+          </NavLink>
         </div>
       </div>
     );

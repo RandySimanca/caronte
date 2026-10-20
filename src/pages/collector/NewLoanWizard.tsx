@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ArrowLeft, Camera, Image, CheckCircle2, X, UserCheck, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Camera, Image, CheckCircle2, X, UserCheck, AlertCircle, Search } from 'lucide-react';
 import type { LocalClient } from '@/db/schema';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { formatCurrency, cn, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '@/db/schema';
@@ -14,6 +14,7 @@ import { loanFinancials } from '@/lib/money';
 import { SyncService } from '@/services/SyncService';
 import { getLastCollectedToday, insertAfterLastCollected, markLastCollected } from '@/lib/routeOrder';
 import { confirmAction } from '@/lib/swal';
+import { supabase } from '@/lib/supabase';
 
 export function NewLoanWizard() {
   const navigate = useNavigate();
@@ -36,7 +37,18 @@ export function NewLoanWizard() {
   // true si el cliente encontrado ya tiene un préstamo ACTIVO (bloquea avance)
   const [existingClientHasActiveLoan, setExistingClientHasActiveLoan] = useState(false);
 
-  // Buscar cliente en Dexie cuando cambia el campo cédula
+  // Aplica un cliente existente al formulario (pre-llena datos y revisa si tiene préstamo activo)
+  const applyExistingClient = useCallback(async (found: LocalClient, hasActiveLoan: boolean) => {
+    setExistingClient(found);
+    setExistingClientHasActiveLoan(hasActiveLoan);
+    setDocument(found.document_id);
+    setClientName(found.full_name);
+    setPhone(found.phone || '');
+    setAddress(found.address || '');
+  }, []);
+
+  // Buscar cliente por cédula: primero en el celular (Dexie) y, si no está y hay internet,
+  // en el servidor (clientes inactivados que el celular ya borró). Así nunca se duplica la cédula.
   const lookupClientByDocument = useCallback(async (docValue: string) => {
     const trimmed = docValue.trim();
     if (!trimmed) {
@@ -49,27 +61,103 @@ export function NewLoanWizard() {
       .equals(trimmed)
       .first();
     if (found) {
-      // Verificar si ya tiene un préstamo ACTIVO
       const activeLoan = await db.loans
         .where('client_id')
         .equals(found.id)
         .filter(l => l.status === 'ACTIVO')
         .first();
-      setExistingClient(found);
-      setExistingClientHasActiveLoan(!!activeLoan);
-      // Pre-llenar datos del cliente encontrado
-      setClientName(found.full_name);
-      setPhone(found.phone || '');
-      setAddress(found.address || '');
-    } else {
-      setExistingClient(null);
-      setExistingClientHasActiveLoan(false);
+      await applyExistingClient(found, !!activeLoan);
+      return;
     }
-  }, []);
+
+    if (navigator.onLine) {
+      try {
+        const { data: remote } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('document_id', trimmed)
+          .maybeSingle();
+        if (remote) {
+          if ((remote as any).status === 'BLOQUEADO') {
+            toast.error('Este cliente está bloqueado. Consulta con el administrador.');
+            setExistingClient(null);
+            setExistingClientHasActiveLoan(false);
+            return;
+          }
+          const { data: remoteActive } = await supabase
+            .from('loans')
+            .select('id')
+            .eq('client_id', (remote as any).id)
+            .eq('status', 'ACTIVO')
+            .limit(1);
+          await applyExistingClient(
+            { ...(remote as any), sync_status: 'synced' } as LocalClient,
+            !!(remoteActive && remoteActive.length > 0),
+          );
+          return;
+        }
+      } catch (e) {
+        console.warn('[NewLoanWizard] Búsqueda de cliente en servidor falló:', e);
+      }
+    }
+
+    setExistingClient(null);
+    setExistingClientHasActiveLoan(false);
+  }, [applyExistingClient]);
+
+  // --- Selector de clientes anteriores (terminaron su préstamo y ya no salen en la ruta) ---
+  const [searchParams] = useSearchParams();
+  const [pastQuery, setPastQuery] = useState('');
+  const [pastClients, setPastClients] = useState<LocalClient[]>([]);
+
+  useEffect(() => {
+    const q = pastQuery.trim().toLowerCase();
+    if (q.length < 2) {
+      setPastClients([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const [allClients, activeLoans] = await Promise.all([
+        db.clients.toArray(),
+        db.loans.where('status').equals('ACTIVO').toArray(),
+      ]);
+      const withActive = new Set(activeLoans.map(l => l.client_id));
+      const matches = allClients
+        .filter(c => !withActive.has(c.id))
+        .filter(c => c.full_name.toLowerCase().includes(q) || (c.document_id || '').includes(q))
+        .slice(0, 8);
+      if (!cancelled) setPastClients(matches);
+    })();
+    return () => { cancelled = true; };
+  }, [pastQuery]);
+
+  const selectPastClient = async (c: LocalClient) => {
+    setPastQuery('');
+    setPastClients([]);
+    await lookupClientByDocument(c.document_id);
+  };
+
+  // Entrada directa: /loan/new?client=<id> (por ejemplo desde el detalle del cliente)
+  useEffect(() => {
+    const clientParam = searchParams.get('client');
+    if (!clientParam) return;
+    (async () => {
+      const c = await db.clients.get(clientParam);
+      if (c) await lookupClientByDocument(c.document_id);
+    })();
+  }, [searchParams, lookupClientByDocument]);
 
   const handleDocumentChange = (value: string) => {
     setDocument(value);
-    // Limpiar cliente encontrado si borra la cédula
+    // Si cambia la cédula del cliente ya seleccionado, se suelta ese cliente para no mezclar datos
+    if (existingClient && value.trim() !== existingClient.document_id) {
+      setExistingClient(null);
+      setExistingClientHasActiveLoan(false);
+      setClientName('');
+      setPhone('');
+      setAddress('');
+    }
     if (!value.trim()) {
       setExistingClient(null);
       setExistingClientHasActiveLoan(false);
@@ -303,12 +391,9 @@ export function NewLoanWizard() {
         }
 
         if (existingClient) {
-          // Cliente existente: solo actualizar status y posición en Dexie
-          await db.clients.update(clientId, {
-            status: 'ACTIVO',
-            route_order: newClientOrder,
-            updated_at: new Date().toISOString(),
-          } as any);
+          // Cliente existente: reactivar y reposicionar en Dexie. Si venía del servidor
+          // (el celular ya lo había borrado por inactivo) se vuelve a guardar completo.
+          await db.clients.put(clientData as any);
         } else {
           // Cliente nuevo: insertar por primera vez
           await db.clients.add(clientData as any);
@@ -411,6 +496,39 @@ export function NewLoanWizard() {
           {step === 1 && (
             <motion.div key="step1" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }} className="space-y-4">
               <h2 className="text-sm font-bold text-slate-800">Datos del cliente</h2>
+
+              {/* Selector de clientes anteriores (ya no aparecen en la ruta) */}
+              {!existingClient && (
+                <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">¿Cliente anterior? Búscalo por nombre o cédula</label>
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={pastQuery}
+                      onChange={e => setPastQuery(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                      placeholder="Buscar cliente que ya terminó de pagar"
+                    />
+                  </div>
+                  {pastClients.length > 0 && (
+                    <ul className="mt-2 divide-y divide-slate-100 border border-slate-100 rounded-xl overflow-hidden">
+                      {pastClients.map(c => (
+                        <li key={c.id}>
+                          <button
+                            type="button"
+                            onClick={() => selectPastClient(c)}
+                            className="w-full text-left px-3 py-2.5 active:bg-slate-100"
+                          >
+                            <p className="text-sm font-semibold text-slate-800">{c.full_name}</p>
+                            <p className="text-xs text-slate-500">C.C. {c.document_id}</p>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               {/* Banner: cliente con préstamo activo (bloquea avance) */}
               {existingClient && existingClientHasActiveLoan && (
