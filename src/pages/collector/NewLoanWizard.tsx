@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Camera, Image, CheckCircle2, X } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { ArrowLeft, Camera, Image, CheckCircle2, X, UserCheck, AlertCircle } from 'lucide-react';
+import type { LocalClient } from '@/db/schema';
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency, cn, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -29,6 +30,55 @@ export function NewLoanWizard() {
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+
+  // Cliente existente encontrado por cédula en Dexie
+  const [existingClient, setExistingClient] = useState<LocalClient | null>(null);
+  // true si el cliente encontrado ya tiene un préstamo ACTIVO (bloquea avance)
+  const [existingClientHasActiveLoan, setExistingClientHasActiveLoan] = useState(false);
+
+  // Buscar cliente en Dexie cuando cambia el campo cédula
+  const lookupClientByDocument = useCallback(async (docValue: string) => {
+    const trimmed = docValue.trim();
+    if (!trimmed) {
+      setExistingClient(null);
+      setExistingClientHasActiveLoan(false);
+      return;
+    }
+    const found = await db.clients
+      .where('document_id')
+      .equals(trimmed)
+      .first();
+    if (found) {
+      // Verificar si ya tiene un préstamo ACTIVO
+      const activeLoan = await db.loans
+        .where('client_id')
+        .equals(found.id)
+        .filter(l => l.status === 'ACTIVO')
+        .first();
+      setExistingClient(found);
+      setExistingClientHasActiveLoan(!!activeLoan);
+      // Pre-llenar datos del cliente encontrado
+      setClientName(found.full_name);
+      setPhone(found.phone || '');
+      setAddress(found.address || '');
+    } else {
+      setExistingClient(null);
+      setExistingClientHasActiveLoan(false);
+    }
+  }, []);
+
+  const handleDocumentChange = (value: string) => {
+    setDocument(value);
+    // Limpiar cliente encontrado si borra la cédula
+    if (!value.trim()) {
+      setExistingClient(null);
+      setExistingClientHasActiveLoan(false);
+    }
+  };
+
+  const handleDocumentBlur = () => {
+    lookupClientByDocument(document);
+  };
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -107,7 +157,9 @@ export function NewLoanWizard() {
     setIsSaving(true);
 
     try {
-      const clientId = uuidv4();
+      // Si el cliente ya existe en Dexie, reutilizar su ID para no crear un duplicado
+      // y no romper el historial de préstamos anteriores.
+      const clientId = existingClient ? existingClient.id : uuidv4();
       const loanId = uuidv4();
       const operationId = uuidv4();
       const today = format(new Date(), 'yyyy-MM-dd');
@@ -154,29 +206,44 @@ export function NewLoanWizard() {
       }
 
       await db.transaction('rw', db.clients, db.loans, db.installments, db.syncQueue, db.settings, async () => {
-        // Posición en la ruta: justo después del último cliente cobrado hoy; los siguientes se corren un puesto
+        // Posición en la ruta: justo después del último cliente cobrado hoy
         const routeClients = (await db.clients.toArray()).filter(c => c.route_id === routeId);
         const lastCollectedId = await getLastCollectedToday(today);
         const { newClientOrder, updates: orderUpdates } = insertAfterLastCollected(routeClients, lastCollectedId);
 
-        const clientData = {
-          id: clientId,
-          full_name: clientName,
-          document_id: document,
-          phone: phone || null,
-          address: address || null,
-          neighborhood: null,
-          municipality: null,
-          route_id: routeId,
-          photo_face_url: photoDataUrl || null,
-          photo_doc_url: null,
-          personal_references: null,
-          status: 'ACTIVO',
-          route_order: newClientOrder,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          sync_status: 'pending' as const,
-        };
+        // -----------------------------------------------------------------------
+        // Cliente: reutilizar el existente o crear uno nuevo
+        // Si el cliente ya existe en Dexie (terminó de pagar un préstamo anterior),
+        // NO se toca su registro — solo se reactiva su status y se le asigna el
+        // nuevo position en la ruta. Así se preserva todo el historial contable.
+        // -----------------------------------------------------------------------
+        const clientData = existingClient
+          ? {
+              ...existingClient,
+              // Reactivar y reposicionar en la ruta
+              status: 'ACTIVO' as const,
+              route_order: newClientOrder,
+              updated_at: new Date().toISOString(),
+              sync_status: 'synced' as const, // ya existe en el servidor
+            }
+          : {
+              id: clientId,
+              full_name: clientName,
+              document_id: document,
+              phone: phone || null,
+              address: address || null,
+              neighborhood: null,
+              municipality: null,
+              route_id: routeId,
+              photo_face_url: photoDataUrl || null,
+              photo_doc_url: null,
+              personal_references: null,
+              status: 'ACTIVO' as const,
+              route_order: newClientOrder,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              sync_status: 'pending' as const,
+            };
 
         // Asignar número de boleta localmente (offline-first)
         let generatedRaffleNumber: string | null = null;
@@ -235,31 +302,57 @@ export function NewLoanWizard() {
           });
         }
 
-        // Save client locally
-        await db.clients.add(clientData as any);
+        if (existingClient) {
+          // Cliente existente: solo actualizar status y posición en Dexie
+          await db.clients.update(clientId, {
+            status: 'ACTIVO',
+            route_order: newClientOrder,
+            updated_at: new Date().toISOString(),
+          } as any);
+        } else {
+          // Cliente nuevo: insertar por primera vez
+          await db.clients.add(clientData as any);
+        }
 
-        // El cliente nuevo pasa a ser "por donde va la ruta": el siguiente préstamo nuevo se inserta debajo de este
+        // El cliente pasa a ser "por donde va la ruta"
         await markLastCollected(clientId, today);
 
-        // Save loan locally
+        // Guardar préstamo e installments
         await db.loans.add(loanData as any);
-
-        // Save installments
         await db.installments.bulkAdd(installments as any);
 
-        // Queue for server sync
-        await db.syncQueue.add({
-          operation_id: operationId,
-          operation_type: 'NEW_LOAN_BUNDLE',
-          payload: {
-            client: clientData,
-            loan: loanData,
-            installments: installments,
-          },
-          status: 'pending',
-          local_timestamp: new Date().toISOString(),
-          retry_count: 0,
-        });
+        if (existingClient) {
+          // Cliente ya existe en el servidor: solo sincronizar el préstamo nuevo.
+          // Usamos NEW_LOAN_BUNDLE con los datos del cliente existente; la RPC
+          // sync_new_loan_bundle hace upsert del cliente (no crea duplicado) y
+          // crea el préstamo. El historial del cliente queda intacto en el servidor.
+          await db.syncQueue.add({
+            operation_id: operationId,
+            operation_type: 'NEW_LOAN_BUNDLE',
+            payload: {
+              client: clientData,
+              loan: loanData,
+              installments: installments,
+            },
+            status: 'pending',
+            local_timestamp: new Date().toISOString(),
+            retry_count: 0,
+          });
+        } else {
+          // Cliente nuevo: bundle completo (cliente + préstamo + cuotas)
+          await db.syncQueue.add({
+            operation_id: operationId,
+            operation_type: 'NEW_LOAN_BUNDLE',
+            payload: {
+              client: clientData,
+              loan: loanData,
+              installments: installments,
+            },
+            status: 'pending',
+            local_timestamp: new Date().toISOString(),
+            retry_count: 0,
+          });
+        }
       });
 
       // Clear draft upon successful creation
@@ -318,22 +411,67 @@ export function NewLoanWizard() {
           {step === 1 && (
             <motion.div key="step1" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }} className="space-y-4">
               <h2 className="text-sm font-bold text-slate-800">Datos del cliente</h2>
-              <div className="space-y-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Nombre completo *</label>
-                  <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none" placeholder="Juan Pérez" />
+
+              {/* Banner: cliente con préstamo activo (bloquea avance) */}
+              {existingClient && existingClientHasActiveLoan && (
+                <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 rounded-2xl p-3">
+                  <AlertCircle className="w-5 h-5 text-rose-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-bold text-rose-700">{existingClient.full_name}</p>
+                    <p className="text-xs text-rose-600 mt-0.5">Ya tiene un préstamo activo. Debe terminarlo antes de crear uno nuevo.</p>
+                  </div>
                 </div>
+              )}
+
+              {/* Banner: cliente existente sin préstamo activo (reutilizar) */}
+              {existingClient && !existingClientHasActiveLoan && (
+                <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-2xl p-3">
+                  <UserCheck className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-bold text-emerald-700">Cliente encontrado: {existingClient.full_name}</p>
+                    <p className="text-xs text-emerald-600 mt-0.5">Se reutilizará su registro. El historial anterior se conserva.</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                {/* Cédula va PRIMERO para que la búsqueda ocurra antes de llenar el nombre */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Cédula *</label>
-                  <input type="text" inputMode="numeric" value={document} onChange={e => setDocument(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none" placeholder="1.098.765.432" />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={document}
+                    onChange={e => handleDocumentChange(e.target.value)}
+                    onBlur={handleDocumentBlur}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    placeholder="1.098.765.432"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Nombre completo *</label>
+                  <input
+                    type="text"
+                    value={clientName}
+                    onChange={e => setClientName(e.target.value)}
+                    // Si el cliente ya existe, bloquear el nombre para no crear inconsistencias
+                    readOnly={!!existingClient && !existingClientHasActiveLoan}
+                    className={cn(
+                      "w-full border rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none",
+                      existingClient && !existingClientHasActiveLoan
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-800 cursor-not-allowed"
+                        : "bg-slate-50 border-slate-200"
+                    )}
+                    placeholder="Juan Pérez"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Teléfono</label>
-                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none" placeholder="300 987 6543" />
+                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} readOnly={!!existingClient && !existingClientHasActiveLoan} className={cn("w-full border rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none", existingClient && !existingClientHasActiveLoan ? "bg-emerald-50 border-emerald-200 text-emerald-800 cursor-not-allowed" : "bg-slate-50 border-slate-200")} placeholder="300 987 6543" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Dirección</label>
-                  <input type="text" value={address} onChange={e => setAddress(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none" placeholder="Calle 5 # 12-34" />
+                  <input type="text" value={address} onChange={e => setAddress(e.target.value)} readOnly={!!existingClient && !existingClientHasActiveLoan} className={cn("w-full border rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none", existingClient && !existingClientHasActiveLoan ? "bg-emerald-50 border-emerald-200 text-emerald-800 cursor-not-allowed" : "bg-slate-50 border-slate-200")} placeholder="Calle 5 # 12-34" />
                 </div>
 
                 {/* Photo capture */}
@@ -507,10 +645,14 @@ export function NewLoanWizard() {
         {step < 3 ? (
           <button
             onClick={handleNext}
-            disabled={step === 1 && (!clientName || !document)}
+            disabled={
+              (step === 1 && (!clientName || !document)) ||
+              // Bloquear avance si el cliente encontrado ya tiene préstamo activo
+              (step === 1 && existingClientHasActiveLoan)
+            }
             className={cn(
               "w-full font-bold py-3.5 rounded-xl shadow-md transition-all active:scale-[0.98]",
-              step === 1 && (!clientName || !document)
+              ((step === 1 && (!clientName || !document)) || (step === 1 && existingClientHasActiveLoan))
                 ? "bg-slate-100 text-slate-400 cursor-not-allowed"
                 : "bg-brand-600 hover:bg-brand-700 text-white shadow-brand-500/30"
             )}
