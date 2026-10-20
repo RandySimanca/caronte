@@ -630,6 +630,31 @@ export function AdminDashboard() {
             </button>
           );
         })()}
+
+        {/* 4. Préstamos terminados (debajo del Sorteo de Boletas) */}
+        <button
+          type="button"
+          onClick={() => setCompletedLoansOpen(true)}
+          className="bg-white rounded-3xl border border-emerald-100 shadow-sm p-6 hover:shadow-md hover:border-emerald-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
+        >
+          <div className="flex items-start justify-between w-full mb-6">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center relative shadow-inner">
+              <CheckCircle className="w-7 h-7 text-emerald-600" />
+              <span className={`absolute -top-2 -right-2 min-w-7 h-7 px-1.5 bg-emerald-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md ${completedLoansLoading ? 'opacity-50' : ''}`}>
+                {completedLoansLoading ? '…' : completedLoans.length}
+              </span>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
+              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Préstamos Terminados</h3>
+            <p className="text-sm text-slate-500 leading-relaxed">
+              Clientes que pagaron su deuda completa o refinanciaron · {selectedRoute === '' ? 'Todas las rutas' : routeSubtitle}
+            </p>
+          </div>
+        </button>
       </div>
 
       {/* ─── EFECTIVIDAD DE RECAUDO ─── */}
@@ -714,29 +739,6 @@ export function AdminDashboard() {
           </>
         )}
       </div>
-
-      {/* Préstamos terminados */}
-      <button
-        type="button"
-        onClick={() => setCompletedLoansOpen(true)}
-        className="w-full bg-white p-5 rounded-2xl border border-emerald-100 shadow-sm hover:shadow-md hover:border-emerald-300 transition-all text-left flex items-center justify-between gap-4"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <CheckCircle className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="font-extrabold text-slate-800">Préstamos terminados</p>
-            <p className="text-xs text-slate-500">Pagados o refinanciados · {selectedRoute === '' ? 'Todas las rutas' : routeSubtitle}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-2xl font-black text-emerald-700 ${completedLoansLoading ? 'opacity-50' : ''}`}>
-            {completedLoansLoading ? '…' : completedLoans.length}
-          </span>
-          <ChevronRight className="w-5 h-5 text-slate-300" />
-        </div>
-      </button>
 
       {/* Table Section */}
       <div className="pt-4">
