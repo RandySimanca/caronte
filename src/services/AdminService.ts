@@ -424,7 +424,7 @@ export class AdminService {
       .eq('scheduled_date', todayStr)
       .lte('balance', 0)
       .lt('paid_date', todayStr);
-    
+
     let alertsQuery = supabase.from('payments').select(`
       id,
       loan_id,
@@ -439,10 +439,10 @@ export class AdminService {
       collector:users!payments_collector_id_fkey(id, full_name, role_id),
       loan:loans!inner(route_id, daily_installment, client:clients(full_name))
     `)
-    .gte('collected_at', startOfDay)
-    .lte('collected_at', endOfDay)
-    .order('collected_at', { ascending: false });
-    
+      .gte('collected_at', startOfDay)
+      .lte('collected_at', endOfDay)
+      .order('collected_at', { ascending: false });
+
     // Apply route filter if provided
     if (routeId && routeId !== 'all') {
       clientsQuery = clientsQuery.eq('route_id', routeId);
@@ -503,7 +503,7 @@ export class AdminService {
 
       const loanEnded = loan.end_date && loan.end_date < todayStr;
       const todayInst = todayInsts.find((i: any) => i.loan_id === loan.id);
-      
+
       // Target today
       let loanTargetToday = 0;
       if (loan.start_date > todayStr || loanEnded) {
@@ -517,7 +517,7 @@ export class AdminService {
       } else {
         loanTargetToday = Number(loan.daily_installment || 0);
       }
-      
+
       // Current pending today (for expected balance calculation)
       let loanCurrentToday = 0;
       if (loan.start_date > todayStr || loanEnded) {
@@ -582,7 +582,7 @@ export class AdminService {
       amount: Number(l.amount_delivered || 0),
     }));
     const newLoansTodayAmount = newLoansTodayClients.reduce((s, c) => s + c.amount, 0);
-    
+
     // Calcular recaudo en oficina (Admin)
     const recaudoOficina = alertsData
       .filter((p: any) => p.collector?.role_id === adminRoleId)
@@ -624,7 +624,7 @@ export class AdminService {
     // Split collected amount into "today installments", "arrears", and "advances"
     // using the authoritative fields stored in each payment record
     const recaudoCuotasHoy = alertsData.reduce((s: number, p: any) => s + Number(p.day_installment_amount ?? 0), 0);
-    const recaudoAtrasos   = alertsData.reduce((s: number, p: any) => s + Number(p.arrears_amount ?? 0), 0);
+    const recaudoAtrasos = alertsData.reduce((s: number, p: any) => s + Number(p.arrears_amount ?? 0), 0);
     const recaudoAdelantos = alertsData.reduce((s: number, p: any) => s + Number(p.advance_amount ?? 0), 0);
 
     const recaudoEsperado = targetTodayOnly + (arrearsTotal + recaudoAtrasos);
@@ -692,10 +692,10 @@ export class AdminService {
     return data.map((route: any) => {
       const activeAssignment = route.assignments?.find((a: any) => !a.date_end) || null;
       const cobrador = activeAssignment?.collector?.full_name || 'Sin asignar';
-      
+
       // Simulando estado de conexión por ahora (en el futuro se puede validar última sync del dispositivo)
       let estado = route.active ? (activeAssignment ? 'Activo' : 'Sin asignar') : 'Inactiva';
-      
+
       return {
         id: route.id,
         ruta: route.name,
@@ -742,7 +742,7 @@ export class AdminService {
     return routes.map((route: any) => {
       const activeAssignment = route.assignments?.find((a: any) => !a.date_end);
       const closing = (closings as any[])?.find((c: any) => c.route_id === route.id);
-      
+
       return {
         id: route.id,
         ruta: route.name,
@@ -786,7 +786,7 @@ export class AdminService {
     const totalTransferencias = collectorPayments.filter(p => p.is_transfer).reduce((sum, p: any) => sum + Number(p.total_amount), 0);
 
     const totalGastos = expensesRes.data?.reduce((sum, e: any) => sum + Number(e.amount), 0) || 0;
-    
+
     // Solo contar préstamos entregados por el cobrador
     const collectorLoans = loansRes.data?.filter(l => !adminUserIds.has(l.collector_id)) || [];
     const prestamosNuevos = collectorLoans.length;
@@ -1300,7 +1300,7 @@ export class AdminService {
       route:routes(name),
       client:clients(full_name, phone)
     `).eq('status', 'ACTIVO');
-    
+
     const { data: activeAssignments } = await supabase
       .from('route_assignments')
       .select('route_id')
@@ -1320,21 +1320,21 @@ export class AdminService {
         query = query.eq('route_id', '00000000-0000-0000-0000-000000000000');
       }
     }
-    
+
     const { data: loans, error: loansError } = await query;
     if (loansError) throw loansError;
-    
+
     if (!loans || loans.length === 0) {
       return { loans: [], arrearsInstallments: [] };
     }
 
     const loanIds = loans.map((l: any) => l.id);
     const todayStr = colombiaToday();
-    
+
     // Split into chunks of 100 if there are many loans to avoid URL too long issues in Supabase/PostgREST
     const chunkSize = 100;
     let allInstallments: any[] = [];
-    
+
     for (let i = 0; i < loanIds.length; i += chunkSize) {
       const chunk = loanIds.slice(i, i + chunkSize);
       const { data: installments, error: instError } = await supabase
@@ -1343,13 +1343,13 @@ export class AdminService {
         .in('loan_id', chunk)
         .lt('scheduled_date', todayStr)
         .in('status', ['PENDIENTE', 'PARCIAL', 'ATRASADA']);
-        
+
       if (instError) throw instError;
       if (installments) {
         allInstallments = [...allInstallments, ...installments];
       }
     }
-    
+
     return { loans, arrearsInstallments: allInstallments };
   }
 
@@ -1393,13 +1393,13 @@ export class AdminService {
     }
 
     const [pRes, eRes, lRes] = await Promise.all([pQuery, eQuery, lQuery]);
-    
+
     if (pRes.error) throw pRes.error;
     if (eRes.error) throw eRes.error;
     if (lRes.error) throw lRes.error;
-    
+
     const transactions: any[] = [];
-    
+
     pRes.data?.forEach((p: any) => transactions.push({
       id: `p_${p.id}`,
       date: p.collected_at,
@@ -1408,7 +1408,7 @@ export class AdminService {
       amount: Number(p.total_amount),
       observation: p.collector_observation || ''
     }));
-    
+
     eRes.data?.forEach((e: any) => transactions.push({
       id: `e_${e.id}`,
       date: `${e.expense_date}T12:00:00.000Z`, // Approximation
@@ -1417,7 +1417,7 @@ export class AdminService {
       amount: -Number(e.amount),
       observation: ''
     }));
-    
+
     lRes.data?.forEach((l: any) => transactions.push({
       id: `l_${l.id}`,
       date: `${l.disbursement_date}T08:00:00.000Z`, // Approximation
@@ -1426,7 +1426,7 @@ export class AdminService {
       amount: -Number(l.amount_delivered),
       observation: ''
     }));
-    
+
     return transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }
 
@@ -1581,7 +1581,7 @@ export class AdminService {
         }] as any)
         .select('id')
         .single();
-      
+
       if (clientError) throw clientError;
       clientId = newClient.id;
     }
@@ -1595,7 +1595,7 @@ export class AdminService {
     const dailyQuota = payload.termDays > 0 ? obligation / payload.termDays : 0;
     const totalSundaysDiscount = dailyQuota * payload.sundaysPrepaidCount;
     const delivered = numAmount - totalSundaysDiscount - payload.receiptFee;
-    
+
     // Raffle number
     let raffleNumber = null;
     if (payload.wantsRaffle) {
@@ -1619,13 +1619,13 @@ export class AdminService {
     }
 
     const disbursementDateStr = payload.disbursementDate || baseDate.toISOString().split('T')[0];
-    
+
     const addDays = (date: Date, days: number) => {
       const result = new Date(date);
       result.setDate(result.getDate() + days);
       return result;
     };
-    
+
     const startDate = addDays(baseDate, 1).toISOString().split('T')[0];
     const endDate = addDays(baseDate, payload.termDays).toISOString().split('T')[0];
     const graceEndDate = addDays(baseDate, payload.termDays + 7).toISOString().split('T')[0];
@@ -1866,14 +1866,14 @@ export class AdminService {
 
     // 3. Process distributions
     let remainingToDistribute = payload.totalAmount;
-    
+
     const { data: pendingInsts, error: instsErr } = await supabase
       .from('loan_installments')
       .select('*')
       .eq('loan_id', payload.loanId)
       .gt('balance', 0)
       .order('scheduled_date', { ascending: true });
-    
+
     if (instsErr) throw instsErr;
 
     const allocations = [];
@@ -1951,7 +1951,7 @@ export class AdminService {
   static async getWorkerPayroll(userId: string, year: number, month: number) {
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0, 23, 59, 59, 999);
-    
+
     // Obtener asignaciones
     const { data: assignments, error } = await supabase
       .from('route_assignments')
@@ -1959,23 +1959,23 @@ export class AdminService {
       .eq('collector_id', userId)
       .lte('date_start', endDate.toISOString())
       .or(`date_end.is.null,date_end.gte.${startDate.toISOString()}`);
-      
+
     if (error) throw error;
-    
+
     // Obtener configuraciones globales de salario y viático
     const { viaticumRate, salaryMonthly } = await AdminService.getPersonnelCostSettings();
-    
+
     // Para simplificar, calculamos día por día en el mes
     // si el trabajador estuvo asignado a *alguna* ruta.
     const daysInMonth = endDate.getDate();
     let workedDays = 0;
-    
+
     const today = new Date();
     today.setHours(23, 59, 59, 999); // Permitir contar el día de hoy completo
-    
+
     for (let day = 1; day <= daysInMonth; day++) {
       const d = new Date(year, month - 1, day);
-      
+
       // No contar días en el futuro
       if (d > today) {
         continue;
@@ -1986,31 +1986,31 @@ export class AdminService {
       const mm = String(d.getMonth() + 1).padStart(2, '0');
       const dd = String(d.getDate()).padStart(2, '0');
       const dayStr = `${yyyy}-${mm}-${dd}`;
-      
+
       const wasAssigned = assignments?.some(a => {
         const start = a.date_start.split('T')[0];
         const end = a.date_end ? a.date_end.split('T')[0] : null;
         return dayStr >= start && (!end || dayStr <= end);
       });
-      
+
       if (wasAssigned) {
         workedDays++;
       }
     }
-    
+
     // ¿Cuál es el salario base de este trabajador?
     // Si la última asignación tiene un override, usar ese. Si no, global.
-    const sortedAssignments = (assignments || []).sort((a, b) => 
+    const sortedAssignments = (assignments || []).sort((a, b) =>
       new Date(b.date_start).getTime() - new Date(a.date_start).getTime()
     );
-    
+
     const latestAssignment = sortedAssignments[0];
     const workerSalary = latestAssignment?.salary ?? salaryMonthly;
     const workerViaticum = latestAssignment?.viaticum ?? viaticumRate;
-    
+
     const payrollAmount = (workerSalary / 30) * workedDays;
     const totalViaticum = workerViaticum * workedDays;
-    
+
     return {
       workedDays,
       workerSalary, // salario base mensual
@@ -2091,7 +2091,7 @@ export class AdminService {
       const term = clientSearch.toLowerCase();
       results = results.filter((p: any) => {
         const name = (p.loan?.client?.full_name || '').toLowerCase();
-        const doc  = (p.loan?.client?.document_id || '').toLowerCase();
+        const doc = (p.loan?.client?.document_id || '').toLowerCase();
         return name.includes(term) || doc.includes(term);
       });
     }
@@ -2100,7 +2100,7 @@ export class AdminService {
   }
 
   /**
-   * Obtiene todos los pagos (cobros) realizados a un préstamo específico.
+   * Obtiene todos los pagos (cobros) realizados a un préstamo específico
    */
   static async getLoanPayments(loanId: string) {
     const { data, error } = await supabase
@@ -2135,7 +2135,7 @@ export class AdminService {
     if (pErr) throw pErr;
 
     const oldAmount = Number(payment.total_amount);
-    const loanId    = payment.loan_id;
+    const loanId = payment.loan_id;
 
     // 2. Obtener el préstamo
     const { data: loan, error: lErr } = await supabase
@@ -2162,7 +2162,7 @@ export class AdminService {
           .single();
         if (!inst) continue;
 
-        const revertedPaid    = Math.max(0, Number(inst.paid_amount) - Number(alloc.allocated_amount));
+        const revertedPaid = Math.max(0, Number(inst.paid_amount) - Number(alloc.allocated_amount));
         const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
         const today = colombiaToday();
 
@@ -2237,11 +2237,11 @@ export class AdminService {
 
     for (const inst of (pendingInsts || [])) {
       if (remaining <= 0) break;
-      const balance   = Number(inst.balance);
+      const balance = Number(inst.balance);
       const payAmount = Math.min(balance, remaining);
       remaining -= payAmount;
 
-      const newPaid    = Number(inst.paid_amount) + payAmount;
+      const newPaid = Number(inst.paid_amount) + payAmount;
       const newBalance = balance - payAmount;
 
       let status = inst.status;
@@ -2251,15 +2251,15 @@ export class AdminService {
         status = 'PARCIAL';
       }
 
-        await supabase
-          .from('loan_installments')
-          .update({
-            paid_amount: newPaid,
-            balance: newBalance,
-            status,
-            paid_date: newBalance === 0 ? todayStr : inst.paid_date,
-          })
-          .eq('id', inst.id);
+      await supabase
+        .from('loan_installments')
+        .update({
+          paid_amount: newPaid,
+          balance: newBalance,
+          status,
+          paid_date: newBalance === 0 ? todayStr : inst.paid_date,
+        })
+        .eq('id', inst.id);
 
       let allocationType = 'DIA_ACTUAL';
       if (inst.scheduled_date < todayStr) {
@@ -2299,7 +2299,7 @@ export class AdminService {
     if (upErr) throw upErr;
 
     // 7. Recalcular saldo del préstamo
-    const balanceDelta   = oldAmount - newAmount; // si bajó el pago, saldo sube
+    const balanceDelta = oldAmount - newAmount; // si bajó el pago, saldo sube
     const newLoanBalance = Number(loan.current_balance) + balanceDelta;
     await supabase
       .from('loans')
