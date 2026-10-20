@@ -106,6 +106,15 @@ export function ClientDetailPage() {
     // Total collected from this loan (sum of paid_amount across all installments)
     const totalPaid = Math.round(installments.reduce((sum, i) => sum + Number(i.paid_amount || 0), 0));
 
+    // Saldo que aún debe el cliente: el saldo del préstamo (el mismo que ve el admin).
+    // Si no está disponible, se suma lo que falta de las cuotas pendientes.
+    const loanBalance = Number(loan.current_balance);
+    const remainingBalance = Math.max(0, Math.round(
+      Number.isFinite(loanBalance)
+        ? loanBalance
+        : pending.reduce((sum, i) => sum + Number(i.balance || 0), 0)
+    ));
+
     return {
       todayQuota,
       arrears,
@@ -116,6 +125,7 @@ export function ClientDetailPage() {
       todayInstallment: isPaidToday ? null : (todayInstallment ?? null),
       isPaidToday,
       totalPaid,
+      remainingBalance,
       todayIsPartial,
       todayPaidAmount,
       todayPartialBalance,
@@ -418,9 +428,21 @@ export function ClientDetailPage() {
             )}
 
             {/* Total collected from client */}
-            <div className="flex justify-between items-center py-2.5 px-3 rounded-xl bg-slate-50 border border-slate-100 mb-3">
+            <div className="flex justify-between items-center py-2.5 px-3 rounded-xl bg-slate-50 border border-slate-100 mb-2">
               <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Total pagado por el cliente</span>
               <span className="font-bold text-slate-800 text-sm">{formatCurrency(financialState.totalPaid)}</span>
+            </div>
+
+            {/* Saldo que debe el cliente */}
+            <div className={`flex justify-between items-center py-2.5 px-3 rounded-xl border mb-3 ${
+              financialState.remainingBalance > 0 ? 'bg-rose-50 border-rose-100' : 'bg-emerald-50 border-emerald-100'
+            }`}>
+              <span className={`text-xs font-semibold uppercase tracking-wide ${
+                financialState.remainingBalance > 0 ? 'text-rose-600' : 'text-emerald-600'
+              }`}>Saldo que debe el cliente</span>
+              <span className={`font-bold text-sm ${
+                financialState.remainingBalance > 0 ? 'text-rose-700' : 'text-emerald-700'
+              }`}>{formatCurrency(financialState.remainingBalance)}</span>
             </div>
 
             <button
