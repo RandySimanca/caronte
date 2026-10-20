@@ -39,7 +39,7 @@ export function CompletedLoansModal({ isOpen, onClose, loans, isLoading, formatC
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div className="bg-slate-50 rounded-xl p-3"><p className="text-xs text-slate-500">Valor solicitado</p><p className="font-black text-slate-800">{formatCurrency(Number(loan.amount_requested || 0))}</p></div>
-                <div className="bg-slate-50 rounded-xl p-3"><p className="text-xs text-slate-500">Saldo final</p><p className="font-black text-emerald-700">{formatCurrency(Number(loan.current_balance || 0))}</p></div>
+                <div className="bg-slate-50 rounded-xl p-3"><p className="text-xs text-slate-500">Total pagado</p><p className="font-black text-emerald-700">{formatCurrency(Number(loan.initial_obligation ?? loan.amount_requested ?? 0) - Number(loan.current_balance ?? 0))}</p></div>
                 <div className="bg-slate-50 rounded-xl p-3"><p className="text-xs text-slate-500">Fecha de cierre</p><p className="font-bold text-slate-800 flex items-center gap-1"><CalendarDays className="w-3.5 h-3.5" />{dateLabel(loan.end_date || loan.created_at)}</p></div>
               </div>
               {next && <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">

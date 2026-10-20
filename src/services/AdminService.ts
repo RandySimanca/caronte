@@ -2352,6 +2352,7 @@ export class AdminService {
         amount_requested,
         amount_delivered,
         current_balance,
+        initial_obligation,
         end_date,
         disbursement_date,
         created_at,

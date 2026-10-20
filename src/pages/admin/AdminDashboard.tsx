@@ -194,14 +194,10 @@ export function AdminDashboard() {
 
 
   const loadCompletedLoans = useCallback(async () => {
-    if (!selectedRoute) {
-      setCompletedLoans([]);
-      setCompletedLoansLoading(false);
-      return;
-    }
+    // Sin ruta elegida se muestran los de todas las rutas (la tarjeta nunca debe quedar en 0 por no filtrar).
     setCompletedLoansLoading(true);
     try {
-      const rows = await AdminService.getCompletedLoans(selectedRoute);
+      const rows = await AdminService.getCompletedLoans(selectedRoute || 'all');
       setCompletedLoans(rows);
     } catch (error) {
       toast.error('No se pudo cargar el historial de préstamos terminados');
@@ -731,7 +727,7 @@ export function AdminDashboard() {
           </div>
           <div>
             <p className="font-extrabold text-slate-800">Préstamos terminados</p>
-            <p className="text-xs text-slate-500">Pagados o refinanciados · {routeSubtitle}</p>
+            <p className="text-xs text-slate-500">Pagados o refinanciados · {selectedRoute === '' ? 'Todas las rutas' : routeSubtitle}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">

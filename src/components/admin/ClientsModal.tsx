@@ -53,6 +53,15 @@ function PhotoViewer({ url, label }: { url: string; label: string }) {
 // ---------- Expanded loan row ----------
 function LoanDetail({ loan, onOpenPaymentCard, onAdminPayment }: { loan: any, onOpenPaymentCard: (loanId: string) => void, onAdminPayment: (loan: any) => void }) {
   const fmt = (n: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(n);
+  // OJO: un saldo de 0 es válido (préstamo pagado). Nunca usar `||` aquí: 0 es "falsy"
+  // y haría que se muestre la obligación inicial como deuda.
+  const obligation = Number(loan.initial_obligation ?? 0);
+  const rawBalance = loan.current_balance;
+  const isPaidOff = loan.status === 'CANCELADO';
+  const balance = isPaidOff
+    ? 0
+    : Math.max(0, Number(rawBalance ?? obligation));
+  const totalPaid = Math.max(0, obligation - balance);
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-blue-50 border border-blue-100 rounded-xl text-sm">
       <div>
@@ -108,21 +117,21 @@ function LoanDetail({ loan, onOpenPaymentCard, onAdminPayment }: { loan: any, on
       <div>
         <p className="text-blue-500 font-bold text-xs uppercase mb-1">Total Pagado</p>
         <p className="font-black text-emerald-600">
-          {fmt((loan.initial_obligation || 0) - (loan.current_balance || loan.initial_obligation || 0))}
+          {fmt(totalPaid)}
         </p>
       </div>
       <div>
         <p className="text-blue-500 font-bold text-xs uppercase mb-1">Deuda Actual</p>
-        <p className="font-black text-red-600">{fmt(loan.current_balance || loan.initial_obligation || 0)}</p>
+        <p className={`font-black ${balance <= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{fmt(balance)}</p>
       </div>
       <div className="col-span-2 sm:col-span-4 mt-2 flex justify-end gap-2">
-        <button
+        {!isPaidOff && <button
           onClick={(e) => { e.stopPropagation(); onAdminPayment(loan); }}
           className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors"
         >
           <DollarSign className="w-4 h-4" />
           Registrar Cobro (Oficina)
-        </button>
+        </button>}
         <button
           onClick={(e) => { e.stopPropagation(); onOpenPaymentCard(loan.id); }}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors"
