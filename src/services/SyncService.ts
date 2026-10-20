@@ -176,11 +176,21 @@ export class SyncService {
             client.photo_face_url = await uploadPhotoOrThrow(client.photo_face_url, `faces/${client.id}.jpg`);
             client.photo_doc_url = await uploadPhotoOrThrow(client.photo_doc_url, `docs/${client.id}.jpg`);
 
-            const { data: rpcData, error: rpcError } = await supabase.rpc('sync_new_loan_bundle', {
-              p_client: withoutLocalSyncFlag(client),
-              p_loan: withoutLocalSyncFlag(loan),
-              p_installments: installments,
-            });
+            // Refinanciación: el servidor cierra el préstamo anterior, descuenta su saldo
+            // y registra la relación. Si no, es un préstamo nuevo normal.
+            const refinanceOriginalId: string | undefined = op.payload.refinance_original_loan_id;
+            const { data: rpcData, error: rpcError } = refinanceOriginalId
+              ? await supabase.rpc('sync_refinance_bundle', {
+                  p_client: withoutLocalSyncFlag(client),
+                  p_loan: withoutLocalSyncFlag(loan),
+                  p_installments: installments,
+                  p_original_loan_id: refinanceOriginalId,
+                })
+              : await supabase.rpc('sync_new_loan_bundle', {
+                  p_client: withoutLocalSyncFlag(client),
+                  p_loan: withoutLocalSyncFlag(loan),
+                  p_installments: installments,
+                });
             if (rpcError) throw rpcError;
             if (!rpcData || (rpcData as any).ok !== true) {
               throw new Error('El servidor no confirmó el préstamo completo');

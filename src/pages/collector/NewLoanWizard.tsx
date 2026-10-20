@@ -10,7 +10,7 @@ import { format, addDays, isSunday } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useSyncStore } from '@/stores/syncStore';
 import { useAuthStore } from '@/stores/authStore';
-import { loanFinancials } from '@/lib/money';
+import { loanFinancials, round6 } from '@/lib/money';
 import { SyncService } from '@/services/SyncService';
 import { getLastCollectedToday, insertAfterLastCollected, markLastCollected } from '@/lib/routeOrder';
 import { confirmAction } from '@/lib/swal';
@@ -36,6 +36,11 @@ export function NewLoanWizard() {
   const [existingClient, setExistingClient] = useState<LocalClient | null>(null);
   // true si el cliente encontrado ya tiene un préstamo ACTIVO (bloquea avance)
   const [existingClientHasActiveLoan, setExistingClientHasActiveLoan] = useState(false);
+  // Préstamo activo del cliente (solo local): permite refinanciar descontando su saldo
+  const [activeLoanInfo, setActiveLoanInfo] = useState<{
+    loanId: string; pendingBalance: number; pendingCount: number; arrears: number;
+  } | null>(null);
+  const [refinancing, setRefinancing] = useState(false);
 
   // Aplica un cliente existente al formulario (pre-llena datos y revisa si tiene préstamo activo)
   const applyExistingClient = useCallback(async (found: LocalClient, hasActiveLoan: boolean) => {
@@ -51,6 +56,8 @@ export function NewLoanWizard() {
   // en el servidor (clientes inactivados que el celular ya borró). Así nunca se duplica la cédula.
   const lookupClientByDocument = useCallback(async (docValue: string) => {
     const trimmed = docValue.trim();
+    setActiveLoanInfo(null);
+    setRefinancing(false);
     if (!trimmed) {
       setExistingClient(null);
       setExistingClientHasActiveLoan(false);
@@ -66,6 +73,24 @@ export function NewLoanWizard() {
         .equals(found.id)
         .filter(l => l.status === 'ACTIVO')
         .first();
+      let info: typeof activeLoanInfo = null;
+      if (activeLoan) {
+        const insts = await db.installments.where('loan_id').equals(activeLoan.id).toArray();
+        const pending = insts.filter(i => ['PENDIENTE', 'PARCIAL', 'ATRASADA'].includes(i.status));
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        const pendingSum = pending.reduce((sum, i) => sum + Number(i.balance || 0), 0);
+        info = {
+          loanId: activeLoan.id,
+          // Si no hay cuotas en el celular, se usa el saldo guardado del préstamo
+          pendingBalance: insts.length > 0 ? pendingSum : Number(activeLoan.current_balance || 0),
+          pendingCount: pending.length,
+          arrears: pending
+            .filter(i => i.scheduled_date <= todayStr && i.status !== 'PAGADA')
+            .reduce((sum, i) => sum + Number(i.balance || 0), 0),
+        };
+      }
+      setActiveLoanInfo(info);
+      setRefinancing(false);
       await applyExistingClient(found, !!activeLoan);
       return;
     }
@@ -154,6 +179,8 @@ export function NewLoanWizard() {
     if (existingClient && value.trim() !== existingClient.document_id) {
       setExistingClient(null);
       setExistingClientHasActiveLoan(false);
+      setActiveLoanInfo(null);
+      setRefinancing(false);
       setClientName('');
       setPhone('');
       setAddress('');
@@ -224,7 +251,12 @@ export function NewLoanWizard() {
   const obligation = numAmount * (1 + interestRate);
   const dailyQuota = term > 0 ? obligation / term : 0;
   const totalSundaysDiscount = dailyQuota * sundays;
-  const delivered = numAmount - totalSundaysDiscount - receiptFee;
+  // Refinanciación: del dinero a entregar se descuenta el saldo del préstamo anterior
+  const refinanceDiscount = refinancing && activeLoanInfo ? round6(activeLoanInfo.pendingBalance) : 0;
+  const delivered = numAmount - totalSundaysDiscount - receiptFee - refinanceDiscount;
+  const refinanceNotEnough = refinancing && numAmount > 0 && delivered < 0;
+  const blockedByActiveLoan = existingClientHasActiveLoan && !refinancing;
+  const lockClientFields = !!existingClient && (!existingClientHasActiveLoan || refinancing);
 
   const handleNext = () => { if (step < 3) setStep(step + 1); };
   const handleBack = () => {
@@ -233,11 +265,14 @@ export function NewLoanWizard() {
   };
 
   const handleCreate = async () => {
-    if (!confirmed || numAmount <= 0) return;
+    if (!confirmed || numAmount <= 0 || refinanceNotEnough) return;
 
     const swalConfirmed = await confirmAction({
       title: '¿Crear este préstamo?',
-      html: `Cliente: <strong>${clientName}</strong><br/>Monto: <strong>${formatCurrency(numAmount)}</strong>`,
+      html: `Cliente: <strong>${clientName}</strong><br/>Monto: <strong>${formatCurrency(numAmount)}</strong>` +
+        (refinancing && activeLoanInfo
+          ? `<br/>Saldo anterior descontado: <strong>${formatCurrency(refinanceDiscount)}</strong><br/>Dinero a entregar: <strong>${formatCurrency(delivered)}</strong>`
+          : ''),
       confirmText: 'Sí, crear préstamo',
     });
     if (!swalConfirmed) return;
@@ -264,6 +299,11 @@ export function NewLoanWizard() {
       }
 
       const money = loanFinancials(numAmount, interestRate, term, sundays, receiptFee);
+      const refinanceOriginalId = refinancing && activeLoanInfo ? activeLoanInfo.loanId : null;
+      if (refinancing && !refinanceOriginalId) {
+        toast.error('No se encontró el préstamo anterior para refinanciar.');
+        return;
+      }
 
       // Generate installment calendar locally
       // Cuota 0 = mañana (i+1 días desde hoy), para que el primer cobro sea el día siguiente al desembolso
@@ -361,14 +401,14 @@ export function NewLoanWizard() {
           sundays_prepaid_count: sundays,
           sundays_prepaid_amount: money.sundays_prepaid_amount,
           receipt_fee: receiptFee,
-          amount_delivered: money.amount_delivered,
+          amount_delivered: round6(money.amount_delivered - refinanceDiscount),
           current_balance: money.current_balance,
           disbursement_date: today,
           start_date: startDate,
           end_date: endDate,
           grace_end_date: graceEndDate,
           status: 'ACTIVO',
-          refinanced_from_loan_id: null,
+          refinanced_from_loan_id: refinanceOriginalId,
           wants_raffle: wantsRaffle,
           raffle_number: generatedRaffleNumber,
           created_at: new Date().toISOString(),
@@ -402,6 +442,11 @@ export function NewLoanWizard() {
         // El cliente pasa a ser "por donde va la ruta"
         await markLastCollected(clientId, today);
 
+        // Refinanciación: el préstamo anterior queda REFINANCIADO (su saldo se descontó del nuevo)
+        if (refinanceOriginalId) {
+          await db.loans.update(refinanceOriginalId, { status: 'REFINANCIADO' } as any);
+        }
+
         // Guardar préstamo e installments
         await db.loans.add(loanData as any);
         await db.installments.bulkAdd(installments as any);
@@ -418,6 +463,7 @@ export function NewLoanWizard() {
               client: clientData,
               loan: loanData,
               installments: installments,
+              ...(refinanceOriginalId ? { refinance_original_loan_id: refinanceOriginalId } : {}),
             },
             status: 'pending',
             local_timestamp: new Date().toISOString(),
@@ -432,6 +478,7 @@ export function NewLoanWizard() {
               client: clientData,
               loan: loanData,
               installments: installments,
+              ...(refinanceOriginalId ? { refinance_original_loan_id: refinanceOriginalId } : {}),
             },
             status: 'pending',
             local_timestamp: new Date().toISOString(),
@@ -443,7 +490,7 @@ export function NewLoanWizard() {
       // Clear draft upon successful creation
       ['nlw_clientName', 'nlw_document', 'nlw_phone', 'nlw_address', 'nlw_amount', 'nlw_term', 'nlw_interestRate', 'nlw_sundays', 'nlw_receiptFee', 'nlw_wantsRaffle'].forEach(key => localStorage.removeItem(key));
 
-      toast.success(`Préstamo de ${formatCurrency(numAmount)} creado para ${clientName}${isOnline ? '' : ' (se sincronizará en línea)'}`);
+      toast.success(`${refinancing ? 'Refinanciación' : 'Préstamo'} de ${formatCurrency(numAmount)} creado para ${clientName}${isOnline ? '' : ' (se sincronizará en línea)'}`);
       if (isOnline && userId) {
         SyncService.fullSync(userId).catch((e) => console.error('Sync after new loan failed:', e));
       }
@@ -530,13 +577,42 @@ export function NewLoanWizard() {
                 </div>
               )}
 
-              {/* Banner: cliente con préstamo activo (bloquea avance) */}
-              {existingClient && existingClientHasActiveLoan && (
+              {/* Banner: cliente con préstamo activo → bloquea, salvo que se refinancie */}
+              {existingClient && existingClientHasActiveLoan && !refinancing && (
                 <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 rounded-2xl p-3">
                   <AlertCircle className="w-5 h-5 text-rose-500 mt-0.5 shrink-0" />
-                  <div>
+                  <div className="flex-1">
                     <p className="text-sm font-bold text-rose-700">{existingClient.full_name}</p>
-                    <p className="text-xs text-rose-600 mt-0.5">Ya tiene un préstamo activo. Debe terminarlo antes de crear uno nuevo.</p>
+                    <p className="text-xs text-rose-600 mt-0.5">Ya tiene un préstamo activo.</p>
+                    {activeLoanInfo && activeLoanInfo.pendingBalance > 0 && (
+                      <>
+                        <p className="text-xs text-rose-700 mt-1">
+                          Saldo pendiente: <strong>{formatCurrency(activeLoanInfo.pendingBalance)}</strong> ({activeLoanInfo.pendingCount} cuotas
+                          {activeLoanInfo.arrears > 0 ? `, atraso ${formatCurrency(activeLoanInfo.arrears)}` : ''})
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setRefinancing(true)}
+                          className="mt-2 px-3 py-2 bg-brand-600 text-white text-xs font-bold rounded-lg active:scale-95 transition-all"
+                        >
+                          Refinanciar: nuevo préstamo descontando el saldo
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Banner: refinanciación activa */}
+              {existingClient && refinancing && activeLoanInfo && (
+                <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-3">
+                  <UserCheck className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-amber-800">Refinanciando a {existingClient.full_name}</p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      Se descontarán <strong>{formatCurrency(activeLoanInfo.pendingBalance)}</strong> del dinero a entregar. El préstamo anterior queda cerrado como refinanciado y se crea una tarjeta nueva por el monto completo.
+                    </p>
+                    <button type="button" onClick={() => setRefinancing(false)} className="mt-1 text-xs font-semibold text-amber-800 underline">Cancelar refinanciación</button>
                   </div>
                 </div>
               )}
@@ -573,10 +649,10 @@ export function NewLoanWizard() {
                     value={clientName}
                     onChange={e => setClientName(e.target.value)}
                     // Si el cliente ya existe, bloquear el nombre para no crear inconsistencias
-                    readOnly={!!existingClient && !existingClientHasActiveLoan}
+                    readOnly={lockClientFields}
                     className={cn(
                       "w-full border rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none",
-                      existingClient && !existingClientHasActiveLoan
+                      lockClientFields
                         ? "bg-emerald-50 border-emerald-200 text-emerald-800 cursor-not-allowed"
                         : "bg-slate-50 border-slate-200"
                     )}
@@ -585,11 +661,11 @@ export function NewLoanWizard() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Teléfono</label>
-                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} readOnly={!!existingClient && !existingClientHasActiveLoan} className={cn("w-full border rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none", existingClient && !existingClientHasActiveLoan ? "bg-emerald-50 border-emerald-200 text-emerald-800 cursor-not-allowed" : "bg-slate-50 border-slate-200")} placeholder="300 987 6543" />
+                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} readOnly={lockClientFields} className={cn("w-full border rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none", lockClientFields ? "bg-emerald-50 border-emerald-200 text-emerald-800 cursor-not-allowed" : "bg-slate-50 border-slate-200")} placeholder="300 987 6543" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Dirección</label>
-                  <input type="text" value={address} onChange={e => setAddress(e.target.value)} readOnly={!!existingClient && !existingClientHasActiveLoan} className={cn("w-full border rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none", existingClient && !existingClientHasActiveLoan ? "bg-emerald-50 border-emerald-200 text-emerald-800 cursor-not-allowed" : "bg-slate-50 border-slate-200")} placeholder="Calle 5 # 12-34" />
+                  <input type="text" value={address} onChange={e => setAddress(e.target.value)} readOnly={lockClientFields} className={cn("w-full border rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none", lockClientFields ? "bg-emerald-50 border-emerald-200 text-emerald-800 cursor-not-allowed" : "bg-slate-50 border-slate-200")} placeholder="Calle 5 # 12-34" />
                 </div>
 
                 {/* Photo capture */}
@@ -719,6 +795,15 @@ export function NewLoanWizard() {
                     <span className="text-slate-500">Obligación total (+{(interestRate * 100).toFixed(0)}%)</span>
                     <span className="font-bold text-slate-800">{formatCurrency(obligation)}</span>
                   </div>
+                  {refinancing && (
+                    <div className="flex justify-between text-sm text-rose-600">
+                      <span>Saldo préstamo anterior</span>
+                      <span className="font-semibold">-{formatCurrency(refinanceDiscount)}</span>
+                    </div>
+                  )}
+                  {refinanceNotEnough && (
+                    <p className="text-xs font-semibold text-rose-600">El monto nuevo no alcanza para cubrir el saldo pendiente y los descuentos.</p>
+                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-500">Dinero entregado</span>
                     <span className="font-bold text-emerald-600 text-lg">{formatCurrency(delivered)}</span>
@@ -744,6 +829,7 @@ export function NewLoanWizard() {
                 <div className="flex justify-between text-sm"><span className="text-slate-500">Cuota diaria exacta</span><span className="font-bold text-brand-600">{formatCurrency(dailyQuota)}</span></div>
                 {sundays > 0 && <div className="flex justify-between text-sm text-rose-600"><span>Domingos descontados</span><span className="font-semibold">{sundays} (-{formatCurrency(totalSundaysDiscount)})</span></div>}
                 {receiptFee > 0 && <div className="flex justify-between text-sm text-rose-600"><span>Boleta</span><span className="font-semibold">-{formatCurrency(receiptFee)}</span></div>}
+                {refinancing && <div className="flex justify-between text-sm text-rose-600"><span>Saldo préstamo anterior</span><span className="font-semibold">-{formatCurrency(refinanceDiscount)}</span></div>}
                 <div className="flex justify-between text-lg pt-2 border-t border-slate-100">
                   <span className="text-slate-700 font-bold">Dinero entregado</span>
                   <span className="font-bold text-emerald-600">{formatCurrency(delivered)}</span>
@@ -766,11 +852,11 @@ export function NewLoanWizard() {
             disabled={
               (step === 1 && (!clientName || !document)) ||
               // Bloquear avance si el cliente encontrado ya tiene préstamo activo
-              (step === 1 && existingClientHasActiveLoan)
+              (step === 1 && blockedByActiveLoan)
             }
             className={cn(
               "w-full font-bold py-3.5 rounded-xl shadow-md transition-all active:scale-[0.98]",
-              ((step === 1 && (!clientName || !document)) || (step === 1 && existingClientHasActiveLoan))
+              ((step === 1 && (!clientName || !document)) || (step === 1 && blockedByActiveLoan))
                 ? "bg-slate-100 text-slate-400 cursor-not-allowed"
                 : "bg-brand-600 hover:bg-brand-700 text-white shadow-brand-500/30"
             )}
@@ -779,14 +865,14 @@ export function NewLoanWizard() {
           </button>
         ) : (
           <button
-            disabled={!confirmed || isSaving || numAmount <= 0}
+            disabled={!confirmed || isSaving || numAmount <= 0 || refinanceNotEnough}
             onClick={handleCreate}
             className={cn(
               "w-full font-bold py-3.5 rounded-xl shadow-md transition-all active:scale-[0.98]",
-              confirmed && !isSaving && numAmount > 0 ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/30" : "bg-slate-100 text-slate-400 cursor-not-allowed"
+              confirmed && !isSaving && numAmount > 0 && !refinanceNotEnough ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/30" : "bg-slate-100 text-slate-400 cursor-not-allowed"
             )}
           >
-            {isSaving ? 'Creando préstamo...' : 'Crear Préstamo'}
+            {isSaving ? 'Creando préstamo...' : refinancing ? 'Refinanciar' : 'Crear Préstamo'}
           </button>
         )}
       </div>

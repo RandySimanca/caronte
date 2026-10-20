@@ -462,6 +462,15 @@ export function ClientDetailPage() {
               {isPaidAndClear ? 'Registrar cobro adicional' : 'Registrar Cobro'}
             </button>
 
+            {loan && loan.status === 'ACTIVO' && (
+              <NavLink
+                to={`/loan/new?client=${client.id}`}
+                className="mt-3 w-full flex items-center justify-center py-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-bold rounded-xl transition-colors text-sm"
+              >
+                Refinanciar (nuevo préstamo)
+              </NavLink>
+            )}
+
             <div className="flex gap-3 mt-4">
               <button
                 onClick={exportPdf}
