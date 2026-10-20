@@ -1,2340 +1,891 @@
-import { supabase } from '@/lib/supabase';
-import type { User, Role } from '@/lib/database.types';
-import { dayRangeIso, colombiaDateFromIso, colombiaToday } from '@/lib/dailyCollection';
-import { parseLotteryLastDraw, isLotteryWinnerLoan } from '@/lib/lottery';
-import { useAuthStore } from '@/stores/authStore';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck, Plus, Building2, Smartphone, PencilLine, FileSpreadsheet, FastForward } from 'lucide-react';
+import { AdminService } from '@/services/AdminService';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { ClientsModal } from '@/components/admin/ClientsModal';
+import { LotteryModule } from '@/components/admin/LotteryModule';
+import { ObservationsModal } from '@/components/admin/ObservationsModal';
+import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
+import { PaidTodayModal } from '@/components/admin/PaidTodayModal';
+import { CompletedLoansModal } from '@/components/admin/CompletedLoansModal';
+import { AdminCreateLoanModal } from '@/components/admin/AdminCreateLoanModal';
+import { TransferVouchersModal } from '@/components/admin/TransferVouchersModal';
+import { EditPaymentModal } from '@/components/admin/EditPaymentModal';
+import { ExcelMigrationModal } from '@/components/admin/ExcelMigrationModal';
+import { NewLoansTodayModal } from '@/components/admin/NewLoansTodayModal';
+import toast from 'react-hot-toast';
 
-export interface UserWithRole extends User {
-  roles: {
-    name: string;
+
+interface EffectivenessCardProps {
+  title: string;
+  collected: number;
+  expected: number;
+  collectedLabel: string;
+  remainingLabel: string;
+  goalLabel: string;
+  isLoading: boolean;
+  formatCurrency: (n: number) => string;
+}
+
+function EffectivenessCard({
+  title, collected, expected,
+  collectedLabel, remainingLabel, goalLabel,
+  isLoading, formatCurrency
+}: EffectivenessCardProps) {
+  const pct = expected > 0 ? Math.min(100, (collected / expected) * 100) : 0;
+  const remaining = Math.max(0, expected - collected);
+
+  const gaugeColor = pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+  const bgClass = pct >= 80 ? 'from-emerald-50 to-green-100 border-emerald-200'
+    : pct >= 50 ? 'from-amber-50 to-yellow-100 border-amber-200'
+      : 'from-red-50 to-rose-100 border-red-200';
+  const labelClass = pct >= 80 ? 'text-emerald-700' : pct >= 50 ? 'text-amber-700' : 'text-red-700';
+  const titleClass = pct >= 80 ? 'text-emerald-900' : pct >= 50 ? 'text-amber-900' : 'text-red-900';
+
+  const radius = 52;
+  const circ = 2 * Math.PI * radius;
+  const dashOff = circ * (1 - pct / 100);
+
+  return (
+    <div className={`bg-gradient-to-br ${bgClass} border rounded-2xl p-6 shadow-sm relative overflow-hidden`}>
+      <div
+        className="absolute -right-10 -top-10 w-48 h-48 rounded-full blur-3xl opacity-30"
+        style={{ background: gaugeColor }}
+      />
+
+      <div className="relative z-10 flex flex-col sm:flex-row xl:flex-col 2xl:flex-row items-center gap-6">
+        {/* Gauge */}
+        <div className="relative shrink-0" style={{ width: 140, height: 140 }}>
+          <svg width="140" height="140" viewBox="0 0 140 140">
+            <circle cx="70" cy="70" r={radius} fill="none" stroke="white" strokeWidth="14" strokeOpacity="0.6" />
+            <circle
+              cx="70" cy="70" r={radius}
+              fill="none" stroke={gaugeColor} strokeWidth="14" strokeLinecap="round"
+              strokeDasharray={circ}
+              strokeDashoffset={isLoading ? circ : dashOff}
+              transform="rotate(-90 70 70)"
+              style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1)' }}
+            />
+            <text x="70" y="62" textAnchor="middle" dominantBaseline="middle"
+              fontSize="26" fontWeight="900" fill={gaugeColor}>
+              {isLoading ? '…' : `${Math.round(pct)}%`}
+            </text>
+            <text x="70" y="84" textAnchor="middle" dominantBaseline="middle"
+              fontSize="10" fontWeight="700" fill={gaugeColor} opacity="0.7">
+              recaudado
+            </text>
+          </svg>
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0 w-full">
+          <p className={`text-xs font-extrabold uppercase tracking-widest mb-1 ${labelClass}`}>{title}</p>
+          <h2 className={`text-3xl font-black leading-tight mb-3 ${titleClass}`}>
+            {isLoading ? '—' : `${Math.round(pct)}% cobrado`}
+          </h2>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white/60 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/80">
+              <p className="text-xs text-slate-500 font-semibold mb-0.5">{collectedLabel}</p>
+              <p className={`text-lg font-black ${labelClass}`}>{formatCurrency(collected)}</p>
+            </div>
+            <div className="bg-white/60 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/80">
+              <p className="text-xs text-slate-500 font-semibold mb-0.5">{remainingLabel}</p>
+              <p className="text-lg font-black text-slate-700">{formatCurrency(remaining)}</p>
+            </div>
+            <div className="col-span-2 bg-white/60 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/80">
+              <p className="text-xs text-slate-500 font-semibold mb-0.5">{goalLabel}</p>
+              <p className="text-lg font-black text-slate-700">{formatCurrency(expected)}</p>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="w-full h-2.5 bg-white/70 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-1000 ease-out"
+                style={{ width: `${pct}%`, background: gaugeColor }}
+              />
+            </div>
+            <div className="flex justify-between text-[10px] font-bold mt-1" style={{ color: gaugeColor }}>
+              <span>0%</span><span>50%</span><span>100%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function AdminDashboard() {
+  const [stats, setStats] = useState<any>(null);
+  const [routeStates, setRouteStates] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isStatsLoading, setIsStatsLoading] = useState(false);
+  const [selectedRoute, setSelectedRoute] = useState<string>('');
+  const [clientsModal, setClientsModal] = useState<{ open: boolean; onlyToday: boolean }>({ open: false, onlyToday: false });
+  const [isLotteryOpen, setIsLotteryOpen] = useState(false);
+  const [isObservationsOpen, setIsObservationsOpen] = useState(false);
+  const [isPrepaidModalOpen, setIsPrepaidModalOpen] = useState(false);
+  const [isCreateLoanOpen, setIsCreateLoanOpen] = useState(false);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [isEditPaymentOpen, setIsEditPaymentOpen] = useState(false);
+  const [isExcelMigrationOpen, setIsExcelMigrationOpen] = useState(false);
+  const [isAdelantosOpen, setIsAdelantosOpen] = useState(false);
+  const [isNewLoansOpen, setIsNewLoansOpen] = useState(false);
+  const [isPaidTodayOpen, setIsPaidTodayOpen] = useState(false);
+  const [completedLoansOpen, setCompletedLoansOpen] = useState(false);
+  const [completedLoans, setCompletedLoans] = useState<any[]>([]);
+  const [completedLoansLoading, setCompletedLoansLoading] = useState(false);
+
+  // Load route list only once
+  useEffect(() => {
+    const loadRoutes = async () => {
+      setIsLoading(true);
+      try {
+        const routes = await AdminService.getRouteStates();
+        setRouteStates(routes);
+      } catch (error) {
+        toast.error('Error cargando rutas');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadRoutes();
+  }, []);
+
+  // Carga de estadísticas. `silent` = recarga en segundo plano (tiempo real): sin spinner ni parpadeo.
+  // El contador evita que una respuesta vieja pise a una más reciente (p. ej. al cambiar de ruta).
+  const statsRequestRef = useRef(0);
+  const loadStats = useCallback(async (silent = false) => {
+    if (!selectedRoute) {
+      setStats({
+        clientes: 0,
+        nuevos: 0,
+        recaudo: 0,
+        recaudoOficina: 0,
+        recaudoTransferencias: 0,
+        esperado: 0,
+        prepaidToday: { count: 0, clients: [] },
+        adelantosHoy: { count: 0, total: 0, clientes: [] },
+        nuevosHoy: { count: 0, total: 0, clients: [] },
+        alerts: [],
+        cobradores: 0,
+        rutas: 0
+      });
+      return;
+    }
+
+    const requestId = ++statsRequestRef.current;
+    if (!silent) setIsStatsLoading(true);
+    try {
+      const dashboardStats = await AdminService.getDashboardStats(selectedRoute);
+      if (requestId === statsRequestRef.current) setStats(dashboardStats);
+    } catch (error) {
+      if (!silent) toast.error('Error cargando estadísticas');
+    } finally {
+      if (requestId === statsRequestRef.current) setIsStatsLoading(false);
+    }
+  }, [selectedRoute]);
+
+  // Reload stats whenever the selected route changes
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  useEffect(() => {
+    if (!selectedRoute) {
+      setCompletedLoans([]);
+      return;
+    }
+    let cancelled = false;
+    setCompletedLoansLoading(true);
+    AdminService.getCompletedLoans(selectedRoute)
+      .then((rows) => { if (!cancelled) setCompletedLoans(rows); })
+      .catch(() => { if (!cancelled) toast.error('No se pudo cargar el historial de préstamos terminados'); })
+      .finally(() => { if (!cancelled) setCompletedLoansLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedRoute]);
+
+  // Tiempo real: cuando un celular sube cobros/préstamos/gastos/cierres, el PC se actualiza solo.
+  const isLive = useRealtimeRefresh(
+    () => {
+      loadStats(true);
+      AdminService.getRouteStates().then(setRouteStates).catch(() => {});
+    },
+    { tables: ['payments', 'loans', 'loan_installments', 'clients', 'expenses', 'daily_closings'] },
+  );
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-CO', {
+      style: 'currency',
+      currency: 'COP',
+      minimumFractionDigits: 0
+    }).format(amount);
   };
-}
 
-export class AdminService {
-  /**
-   * Obtiene todos los usuarios del sistema junto con su rol.
-   * Por defecto solo muestra usuarios activos.
-   */
-  static async getUsers(showInactive: boolean = false): Promise<UserWithRole[]> {
-    const query = supabase
-      .from('users')
-      .select(`
-        *,
-        roles (
-          name
-        )
-      `);
-
-    // Si no se piden inactivos, filtrar solo activos
-    if (!showInactive) {
-      query.eq('active', true);
-    }
-
-    const { data, error } = await query.order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return (data as unknown) as UserWithRole[];
-  }
-
-  /**
-   * Obtiene todos los roles disponibles (para el formulario de creación).
-   */
-  static async getRoles(): Promise<Role[]> {
-    const { data, error } = await supabase
-      .from('roles')
-      .select('*')
-      .eq('active', true)
-      .order('name');
-
-    if (error) throw error;
-    return data as unknown as Role[];
-  }
-
-  /**
-   * Crea un nuevo usuario usando la función RPC admin_create_user
-   * @param payload Datos del nuevo usuario
-   */
-  static async createUser(payload: {
-    email: string;
-    password: string;
-    full_name: string;
-    phone?: string;
-    role_id: string;
-  }) {
-    // Check connection first
-    if (!navigator.onLine) {
-      throw new Error('No hay conexión a internet. La creación de usuarios requiere conexión.');
-    }
-
-    // Obtener company_id del usuario actual
-    const companyId = useAuthStore.getState().companyId;
-
-    const { data, error } = await supabase.rpc('admin_create_user', {
-      p_email: payload.email,
-      p_password: payload.password,
-      p_full_name: payload.full_name,
-      p_phone: payload.phone || null,
-      p_role_id: payload.role_id,
-      p_company_id: companyId,
-    });
-
-    if (error) {
-      throw new Error(error.message || 'Error desconocido al crear usuario');
-    }
-
-    return data;
-  }
-
-  /**
-   * Actualiza un usuario existente
-   */
-  static async updateUser(userId: string, updates: {
-    full_name: string;
-    phone?: string;
-    role_id: string;
-    active: boolean;
-  }) {
-    const { data, error } = await supabase
-      .from('users')
-      .update(updates)
-      .eq('id', userId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  }
-
-  /**
-   * Elimina un usuario físicamente de la base de datos
-   */
-  static async deleteUser(userId: string) {
-    const { error } = await supabase.rpc('admin_delete_user', { p_user_id: userId });
-
-    if (error) throw error;
-  }
-
-  // ─── GESTIÓN DE RUTAS ────────────────────────────────────────────────────────
-
-  /**
-   * Obtiene todas las rutas y su asignación activa (si la hay).
-   */
-  static async getRoutes() {
-    const { data, error } = await supabase
-      .from('routes')
-      .select(`
-        *,
-        assignments:route_assignments (
-          id,
-          collector_id,
-          date_start,
-          date_end,
-          collector:users!route_assignments_collector_id_fkey (
-            full_name
-          )
-        )
-      `)
-      .eq('active', true)
-      .order('name');
-
-    if (error) throw error;
-
-    // Mapear para facilitar el uso en UI
-    return data.map((route: any) => {
-      // Filtrar la asignación activa (date_end is null)
-      const activeAssignment = route.assignments?.find((a: any) => !a.date_end) || null;
-      return {
-        ...route,
-        activeAssignment
-      };
-    });
-  }
-
-  /**
-   * Crea una nueva ruta
-   */
-  static async createRoute(payload: { name: string; description: string; zones: string[] }) {
-    const { data, error } = await supabase
-      .from('routes')
-      .insert([{
-        name: payload.name,
-        description: payload.description,
-        zones: payload.zones,
-        active: true
-      } as any])
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as any;
-  }
-
-  /**
-   * Actualiza una ruta existente
-   */
-  static async updateRoute(id: string, payload: { name?: string; description?: string; zones?: string[]; active?: boolean }) {
-    const { data, error } = await supabase
-      .from('routes')
-      .update(payload as any)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as any;
-  }
-
-  /**
-   * Elimina una ruta (desactiva en lugar de borrar para preservar historial)
-   * Las rutas inactivas ya no se muestran en la lista
-   */
-  static async deleteRoute(routeId: string) {
-    const { error } = await supabase
-      .from('routes')
-      .update({ active: false })
-      .eq('id', routeId);
-
-    if (error) throw error;
-  }
-
-  /**
-   * Obtiene todos los cobradores activos para poder asignarles una ruta
-   */
-  static async getActiveCollectors() {
-    // Primero obtener el ID del rol de COBRADOR
-    const { data: roleData } = await supabase
-      .from('roles')
-      .select('id')
-      .eq('name', 'COBRADOR')
-      .single();
-
-    if (!roleData) return [];
-
-    const { data, error } = await supabase
-      .from('users')
-      .select('id, full_name, phone')
-      .eq('role_id', roleData.id)
-      .eq('active', true)
-      .order('full_name');
-
-    if (error) throw error;
-    return data as unknown as { id: string; full_name: string; phone: string | null }[];
-  }
-
-  /**
-   * Asigna un cobrador a una ruta.
-   * Si ya había uno activo, cierra esa asignación.
-   * viaticum y salary son opcionales: si se omiten (null) se usan los valores globales del sistema.
-   */
-  static async assignRoute(
-    routeId: string,
-    collectorId: string | null,
-    assignedBy: string,
-    viaticum?: number | null,
-    salary?: number | null
-  ) {
-    // 1. Cerrar asignación actual si existe
-    await supabase
-      .from('route_assignments')
-      .update({ date_end: new Date().toISOString() })
-      .eq('route_id', routeId)
-      .is('date_end', null);
-
-    // Si collectorId está vacío, significa que solo querían quitar la asignación (pausar la ruta)
-    if (!collectorId) return null;
-
-    // 2. Crear nueva asignación
-    const { data, error } = await supabase
-      .from('route_assignments')
-      .insert([{
-        route_id: routeId,
-        collector_id: collectorId,
-        date_start: new Date().toISOString(),
-        assigned_by: assignedBy,
-        viaticum: viaticum ?? null,
-        salary: salary ?? null
-      } as any])
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as any;
-  }
-
-  // ─── CONFIGURACIONES Y PARÁMETROS ──────────────────────────────────────────
-
-  /**
-   * Obtiene todos los feriados
-   */
-  static async getHolidays() {
-    const { data, error } = await supabase
-      .from('holidays')
-      .select('*')
-      .order('holiday_date', { ascending: false });
-
-    if (error) throw error;
-    return data;
-  }
-
-  /**
-   * Crea o actualiza un feriado
-   */
-  static async upsertHoliday(payload: { holiday_date: string; name: string; country_code: string; active?: boolean; id?: string }) {
-    const { companyId } = useAuthStore.getState();
-
-    const { data, error } = await supabase
-      .from('holidays')
-      .upsert({ ...payload, company_id: companyId } as any, { onConflict: 'company_id,holiday_date' })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as any;
-  }
-
-  /**
-   * Obtiene las categorías de gastos
-   */
-  static async getExpenseCategories() {
-    const { data, error } = await supabase
-      .from('expense_categories')
-      .select('*')
-      .order('name');
-
-    if (error) throw error;
-    return data;
-  }
-
-  /**
-   * Crea o actualiza una categoría de gastos
-   */
-  static async upsertExpenseCategory(payload: { name: string; description?: string; active?: boolean; is_system?: boolean; id?: string }) {
-    const { companyId } = useAuthStore.getState();
-
-    const { data, error } = await supabase
-      .from('expense_categories')
-      .upsert({ ...payload, company_id: companyId } as any, { onConflict: 'company_id,name' })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as any;
-  }
-
-  /**
-   * Obtiene los parámetros globales del sistema
-   */
-  static async getSystemSettings() {
-    const { data, error } = await supabase
-      .from('system_settings')
-      .select('*')
-      .order('key');
-
-    if (error) throw error;
-    return data;
-  }
-
-  /**
-   * Actualiza un parámetro del sistema
-   */
-  static async updateSystemSetting(key: string, value: any, updatedBy: string) {
-    const { companyId } = useAuthStore.getState();
-
-    const { data, error } = await supabase
-      .from('system_settings')
-      .update({ value, updated_by: updatedBy, updated_at: new Date().toISOString() } as any)
-      .eq('key', key)
-      .eq('company_id', companyId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as any;
-  }
-
-  // ─── DASHBOARD ───────────────────────────────────────────────────────────
-
-  /**
-   * Obtiene las métricas globales para el dashboard principal, opcionalmente filtradas por ruta
-   */
-  static async getDashboardStats(routeId?: string) {
-    // 1. Start of day and week for filters
-    const now = new Date();
-    // Today as YYYY-MM-DD (local date) — used to exclude loans whose first installment starts tomorrow
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const { start: startOfDay, end: endOfDay } = dayRangeIso(todayStr);
-
-    const dayOfWeek = now.getDay();
-    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Monday as first day
-    const startOfWeek = new Date(now.setDate(diff));
-    startOfWeek.setHours(0, 0, 0, 0);
-    const startOfWeekStr = startOfWeek.toISOString();
-
-    // 2. Fetch role COBRADOR and ADMINISTRADOR ids
-    const { data: rolesData } = await supabase.from('roles').select('id, name').in('name', ['COBRADOR', 'ADMINISTRADOR']);
-    const cobradorRoleId = rolesData?.find((r: any) => r.name === 'COBRADOR')?.id;
-    const adminRoleId = rolesData?.find((r: any) => r.name === 'ADMINISTRADOR')?.id;
-
-    // 3. Prepare queries
-    let clientsQuery = supabase.from('clients').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVO');
-    let loansQuery = supabase.from('loans').select('*', { count: 'exact', head: true }).gte('start_date', startOfWeekStr);
-    let newLoansTodayQuery = supabase
-      .from('loans')
-      .select('id, client_id, amount_delivered, client:clients(full_name)')
-      .eq('disbursement_date', todayStr);
-    // ── Esperado (hoy) & Cuotas del Día ─────────────────────────────────────
-    // Fetch all active loans to perfectly match collector's logic (including missing installments and lottery)
-    let activeLoansQuery = supabase
-      .from('loans')
-      .select('id, client_id, start_date, end_date, daily_installment, raffle_number, status')
-      .eq('status', 'ACTIVO')
-      .limit(5000);
-
-    // Cuotas de hoy — se obtienen todas y se filtra en JS por loan_id activo (igual que el cobrador)
-    let todayInstsScheduledQuery = supabase
-      .from('loan_installments')
-      .select('loan_id, scheduled_amount, paid_date, balance, loan:loans!inner(route_id)')
-      .eq('scheduled_date', todayStr)
-      .limit(5000);
-
-    // Cuotas vencidas pendientes (atrasos) — filtro por status de cuota solamente;
-    // el filtro por préstamos activos se aplica en el loop JS usando los IDs de activeLoans.
-    let arrearsQuery = supabase
-      .from('loan_installments')
-      .select('loan_id, balance, loan:loans!inner(route_id)')
-      .lt('scheduled_date', todayStr)
-      .in('status', ['PENDIENTE', 'PARCIAL', 'ATRASADA'])
-      .gt('balance', 0)
-      .limit(5000);
-
-    // Sorteo de lotería para excluir ganadores
-    const lotterySettingQuery = supabase.from('system_settings').select('value').eq('key', 'lottery_last_draw').maybeSingle();
-
-    // ── Adelantadas para hoy ─────────────────────────────────────────────────
-    // Cuotas cuya fecha programada es hoy pero que ya fueron pagadas en días
-    // anteriores (paid_date < hoy). Estas son las que reducen el esperado.
-    let prepaidTodayQuery = supabase
-      .from('loan_installments')
-      .select(`
-        loan_id,
-        paid_date,
-        scheduled_amount,
-        loan:loans!inner(route_id, daily_installment, client:clients(full_name))
-      `)
-      .eq('scheduled_date', todayStr)
-      .lte('balance', 0)
-      .lt('paid_date', todayStr);
-    
-    let alertsQuery = supabase.from('payments').select(`
-      id,
-      loan_id,
-      total_amount,
-      day_installment_amount,
-      arrears_amount,
-      advance_amount,
-      collected_at,
-      collector_observation,
-      is_above_expected,
-      is_transfer,
-      collector:users!payments_collector_id_fkey(id, full_name, role_id),
-      loan:loans!inner(route_id, daily_installment, client:clients(full_name))
-    `)
-    .gte('collected_at', startOfDay)
-    .lte('collected_at', endOfDay)
-    .order('collected_at', { ascending: false });
-    
-    // Apply route filter if provided
-    if (routeId && routeId !== 'all') {
-      clientsQuery = clientsQuery.eq('route_id', routeId);
-      loansQuery = loansQuery.eq('route_id', routeId);
-      newLoansTodayQuery = newLoansTodayQuery.eq('route_id', routeId);
-      activeLoansQuery = activeLoansQuery.eq('route_id', routeId);
-      todayInstsScheduledQuery = (todayInstsScheduledQuery as any).eq('loan.route_id', routeId);
-      arrearsQuery = (arrearsQuery as any).eq('loan.route_id', routeId);
-      prepaidTodayQuery = (prepaidTodayQuery as any).eq('loan.route_id', routeId);
-      alertsQuery = (alertsQuery as any).eq('loan.route_id', routeId);
-    }
-
-    // 4. Parallel fetch for exact counts and sums
-    const [
-      clientsRes,
-      usersRes,
-      routesRes,
-      loansRes,
-      newLoansTodayRes,
-      activeLoansRes,
-      todayInstsScheduledRes,
-      arrearsRes,
-      prepaidTodayRes,
-      alertsRes,
-      lotterySettingRes
-    ] = await Promise.all([
-      clientsQuery,
-      supabase.from('users').select('*', { count: 'exact', head: true }).eq('active', true).eq('role_id', cobradorRoleId),
-      supabase.from('routes').select('*', { count: 'exact', head: true }).eq('active', true),
-      loansQuery,
-      newLoansTodayQuery,
-      activeLoansQuery,
-      todayInstsScheduledQuery,
-      arrearsQuery,
-      prepaidTodayQuery,
-      alertsQuery,
-      lotterySettingQuery
-    ]);
-
-    const alertsData = alertsRes.data || [];
-
-    // Recaudo del día = suma de cobros reales (payments), no paid_amount de cuotas.
-    // paid_amount incluye abonos PARCIALES de días anteriores cuando la cuota se completa hoy.
-    const recaudoHoy = alertsData.reduce((sum: number, p: any) => sum + Number(p.total_amount || 0), 0);
-
-    // Esperado: Cálculo exacto igual al del cobrador
-    const draw = lotterySettingRes.data ? parseLotteryLastDraw(lotterySettingRes.data.value) : null;
-    let targetTodayOnly = 0;
-    let todayInstsTotal = 0;
-    let arrearsTotal = 0;
-
-    const activeLoans = activeLoansRes.data || [];
-    const todayInsts = todayInstsScheduledRes.data || [];
-    const arrearsInsts = arrearsRes.data || [];
-
-    for (const loan of activeLoans) {
-      if (isLotteryWinnerLoan(loan as any, draw)) continue;
-
-      const loanEnded = loan.end_date && loan.end_date < todayStr;
-      const todayInst = todayInsts.find((i: any) => i.loan_id === loan.id);
-      
-      // Target today
-      let loanTargetToday = 0;
-      if (loan.start_date > todayStr || loanEnded) {
-        loanTargetToday = 0;
-      } else if (todayInst) {
-        if (Number(todayInst.balance) <= 0 && todayInst.paid_date && todayInst.paid_date < todayStr) {
-          loanTargetToday = 0;
-        } else {
-          loanTargetToday = Number(todayInst.scheduled_amount || loan.daily_installment);
-        }
-      } else {
-        loanTargetToday = Number(loan.daily_installment || 0);
-      }
-      
-      // Current pending today (for expected balance calculation)
-      let loanCurrentToday = 0;
-      if (loan.start_date > todayStr || loanEnded) {
-        loanCurrentToday = 0;
-      } else if (todayInst) {
-        loanCurrentToday = Number(todayInst.balance || 0);
-      } else {
-        loanCurrentToday = Number(loan.daily_installment || 0);
-      }
-
-      // Arrears
-      const loanArrears = arrearsInsts.filter((i: any) => i.loan_id === loan.id).reduce((sum: number, i: any) => sum + Number(i.balance), 0);
-
-      targetTodayOnly += loanTargetToday;
-      todayInstsTotal += loanCurrentToday;
-      arrearsTotal += loanArrears;
-    }
-
-    // Adelantadas para hoy: cuotas de hoy ya pagadas en días anteriores
-    const prepaidTodayData = (prepaidTodayRes.data || []).map((i: any) => ({
-      loanId: i.loan_id,
-      clientName: (i.loan as any)?.client?.full_name || 'Cliente desconocido',
-      amount: Number((i.loan as any)?.daily_installment || i.scheduled_amount),
-      paidDate: i.paid_date as string,
-    }));
-
-    // ── Adelantos de hoy: pagos de hoy con advance_amount > 0 ──
-    // Misma fuente que "De adelantos" del recaudo y que escribe el cobrador (incluye abonos
-    // parciales a cuotas futuras). Se agrupa por préstamo: monto adelantado y días cubiertos.
-    const adelantosMap = new Map<string, {
-      clientName: string;
-      totalAdelantado: number;
-      diasCubiertos: number;
-      cuotaDiaria: number;
-    }>();
-    for (const p of alertsData as any[]) {
-      const adv = Number(p.advance_amount ?? 0);
-      if (adv <= 0) continue;
-      const loanId: string = p.loan_id;
-      const clientName: string = p.loan?.client?.full_name || 'Cliente desconocido';
-      const cuotaDiaria: number = Number(p.loan?.daily_installment || 0);
-      if (!adelantosMap.has(loanId)) {
-        adelantosMap.set(loanId, { clientName, totalAdelantado: 0, diasCubiertos: 0, cuotaDiaria });
-      }
-      const entry = adelantosMap.get(loanId)!;
-      entry.totalAdelantado += adv;
-      entry.diasCubiertos = cuotaDiaria > 0 ? Math.floor(entry.totalAdelantado / cuotaDiaria) : 0;
-    }
-    const adelantosHoyData = Array.from(adelantosMap.entries()).map(([loanId, data]) => ({
-      loanId,
-      clientName: data.clientName,
-      totalAdelantado: data.totalAdelantado,
-      diasCubiertos: data.diasCubiertos,
-      cuotaDiaria: data.cuotaDiaria,
-    }));
-    const totalAdelantadoHoy = adelantosHoyData.reduce((s, a) => s + a.totalAdelantado, 0);
-
-    const newLoansTodayClients = (newLoansTodayRes.data || []).map((l: any) => ({
-      loanId: l.id,
-      clientId: l.client_id,
-      clientName: l.client?.full_name || 'Cliente',
-      amount: Number(l.amount_delivered || 0),
-    }));
-    const newLoansTodayAmount = newLoansTodayClients.reduce((s, c) => s + c.amount, 0);
-    
-    // Calcular recaudo en oficina (Admin)
-    const recaudoOficina = alertsData
-      .filter((p: any) => p.collector?.role_id === adminRoleId)
-      .reduce((sum: number, p: any) => sum + Number(p.total_amount), 0);
-
-    // Calcular recaudo por transferencias
-    const recaudoTransferencias = alertsData
-      .filter((p: any) => p.is_transfer)
-      .reduce((sum: number, p: any) => sum + Number(p.total_amount), 0);
-
-    // Calcular efectivo físico del cobrador
-    const recaudoCobrador = recaudoHoy - recaudoOficina - recaudoTransferencias;
-
-    const enrichedAlerts = alertsData
-      .filter((alert: any) => alert.is_above_expected || alert.advance_amount > 0 || (alert.collector_observation && alert.collector_observation.trim() !== ''))
-      .map((alert: any) => ({
-        id: alert.id,
-        loanId: alert.loan_id,
-        amount: Number(alert.total_amount),
-        advance: Number(alert.advance_amount),
-        time: alert.collected_at,
-        clientName: alert.loan?.client?.full_name || 'Cliente desconocido',
-        collectorName: alert.collector?.full_name || 'Cobrador desconocido',
-        observation: alert.collector_observation || null,
-        is_excess: alert.is_above_expected || Number(alert.advance_amount) > 0,
-        is_transfer: !!alert.is_transfer,
-      }));
-
-    const pagosHoy = alertsData.map((p: any) => ({
-      loanId: p.loan_id,
-      clientName: p.loan?.client?.full_name || 'Cliente desconocido',
-      amount: Number(p.total_amount),
-      collectedAt: p.collected_at,
-      isTransfer: !!p.is_transfer,
-      isOffice: p.collector?.role_id === adminRoleId,
-      collectorName: p.collector?.full_name || undefined,
-    }));
-
-    // Split collected amount into "today installments", "arrears", and "advances"
-    // using the authoritative fields stored in each payment record
-    const recaudoCuotasHoy = alertsData.reduce((s: number, p: any) => s + Number(p.day_installment_amount ?? 0), 0);
-    const recaudoAtrasos   = alertsData.reduce((s: number, p: any) => s + Number(p.arrears_amount ?? 0), 0);
-    const recaudoAdelantos = alertsData.reduce((s: number, p: any) => s + Number(p.advance_amount ?? 0), 0);
-
-    const recaudoEsperado = targetTodayOnly + (arrearsTotal + recaudoAtrasos);
-
-    return {
-      clientes: clientsRes.count || 0,
-      nuevos: loansRes.count || 0,
-      recaudo: recaudoHoy,
-      recaudoCuotasHoy,
-      recaudoAtrasos,
-      recaudoAdelantos,
-      recaudoOficina,
-      recaudoTransferencias,
-      recaudoCobrador: Math.max(0, recaudoCobrador),
-      esperado: recaudoEsperado,
-      esperadoCuotasHoy: targetTodayOnly,
-      esperadoCuotasHoyBalance: todayInstsTotal,
-      esperadoAtrasos: arrearsTotal + recaudoAtrasos,
-      cobradores: usersRes.count || 0,
-      rutas: routesRes.count || 0,
-      alerts: enrichedAlerts,
-      pagosHoy,
-      prepaidToday: {
-        count: prepaidTodayData.length,
-        clients: prepaidTodayData,
-      },
-      adelantosHoy: {
-        count: adelantosHoyData.length,
-        total: totalAdelantadoHoy,
-        clientes: adelantosHoyData,
-      },
-      nuevosHoy: {
-        count: newLoansTodayClients.length,
-        total: newLoansTodayAmount,
-        clients: newLoansTodayClients,
-      },
-    };
-  }
-
-  /**
-   * Obtiene el estado de las rutas y sus cobradores asignados
-   */
-  static async getRouteStates() {
-    const { data, error } = await supabase
-      .from('routes')
-      .select(`
-        id,
-        name,
-        active,
-        assignments:route_assignments (
-          id,
-          date_end,
-          collector:users!route_assignments_collector_id_fkey(
-            id,
-            full_name
-          )
-        ),
-        clients (id)
-      `)
-      .eq('active', true)
-      .order('name');
-
-    if (error) throw error;
-
-    return data.map((route: any) => {
-      const activeAssignment = route.assignments?.find((a: any) => !a.date_end) || null;
-      const cobrador = activeAssignment?.collector?.full_name || 'Sin asignar';
-      
-      // Simulando estado de conexión por ahora (en el futuro se puede validar última sync del dispositivo)
-      let estado = route.active ? (activeAssignment ? 'Activo' : 'Sin asignar') : 'Inactiva';
-      
-      return {
-        id: route.id,
-        ruta: route.name,
-        cobrador,
-        clientesCount: route.clients?.length || 0,
-        estado
-      };
-    });
-  }
-
-  // ─── LIQUIDACIONES ────────────────────────────────────────────────────────
-
-  /**
-   * Obtiene la lista de rutas y su estado de liquidación para una fecha
-   */
-  static async getRouteLiquidations(dateStr: string) {
-    // 1. Obtener todas las rutas activas con su cobrador actual
-    const { data: routes, error: routesError } = await supabase
-      .from('routes')
-      .select(`
-        id, 
-        name,
-        assignments:route_assignments (
-          id,
-          date_end,
-          collector:users!route_assignments_collector_id_fkey(
-            id,
-            full_name
-          )
-        )
-      `)
-      .eq('active', true)
-      .order('name');
-    if (routesError) throw routesError;
-
-    // 2. Obtener cierres de caja para esa fecha
-    const { data: closings, error: closingsError } = await supabase
-      .from('daily_closings')
-      .select('route_id, is_closed, total_collected, total_expenses, expected_delivery, actual_delivery')
-      .eq('closing_date', dateStr);
-    if (closingsError) throw closingsError;
-
-    // 3. Mezclar la información
-    return routes.map((route: any) => {
-      const activeAssignment = route.assignments?.find((a: any) => !a.date_end);
-      const closing = (closings as any[])?.find((c: any) => c.route_id === route.id);
-      
-      return {
-        id: route.id,
-        ruta: route.name,
-        cobrador: activeAssignment?.collector?.full_name || 'Sin asignar',
-        cobradorId: activeAssignment?.collector?.id,
-        estado: closing?.is_closed ? 'Liquidado' : 'Pendiente',
-        recaudado: closing?.total_collected || 0,
-        aEntregar: closing?.expected_delivery || 0,
-        closingData: closing || null
-      };
-    });
-  }
-
-  /**
-   * Obtiene el detalle de ingresos, gastos y préstamos para liquidar una ruta
-   */
-  static async getRouteLiquidationDetail(routeId: string, dateStr: string) {
-    const { start: startOfDay, end: endOfDay } = dayRangeIso(dateStr);
-
-    // Obtener los IDs de administradores para excluirlos de la liquidación del cobrador
-    const { data: roleData } = await supabase.from('roles').select('id').eq('name', 'ADMINISTRADOR').single();
-    let adminUserIds = new Set<string>();
-    if (roleData) {
-      const { data: adminUsers } = await supabase.from('users').select('id').eq('role_id', roleData.id);
-      adminUserIds = new Set(adminUsers?.map(u => u.id) || []);
-    }
-
-    const [paymentsRes, expensesRes, loansRes, settingsRes, salarySettingRes, assignmentRes] = await Promise.all([
-      supabase.from('payments').select('total_amount, collector_id, is_transfer').eq('route_id', routeId).gte('collected_at', startOfDay).lte('collected_at', endOfDay),
-      supabase.from('expenses').select('amount, category:expense_categories(name)').eq('route_id', routeId).eq('expense_date', dateStr),
-      supabase.from('loans').select('amount_delivered, collector_id').eq('route_id', routeId).eq('disbursement_date', dateStr),
-      supabase.from('system_settings').select('value').eq('key', 'default_viaticum').maybeSingle(),
-      supabase.from('system_settings').select('value').eq('key', 'default_salary').maybeSingle(),
-      // Obtener la asignación activa para leer overrides de viático y salario del cobrador
-      supabase.from('route_assignments').select('viaticum, salary').eq('route_id', routeId).is('date_end', null).maybeSingle()
-    ]);
-
-    // Solo procesar pagos que no fueron hechos por el administrador
-    const collectorPayments = paymentsRes.data?.filter(p => !adminUserIds.has(p.collector_id)) || [];
-    const totalCobrado = collectorPayments.reduce((sum, p: any) => sum + Number(p.total_amount), 0);
-    const totalTransferencias = collectorPayments.filter(p => p.is_transfer).reduce((sum, p: any) => sum + Number(p.total_amount), 0);
-
-    const totalGastos = expensesRes.data?.reduce((sum, e: any) => sum + Number(e.amount), 0) || 0;
-    
-    // Solo contar préstamos entregados por el cobrador
-    const collectorLoans = loansRes.data?.filter(l => !adminUserIds.has(l.collector_id)) || [];
-    const prestamosNuevos = collectorLoans.length;
-    const totalPrestado = collectorLoans.reduce((sum, l: any) => sum + Number(l.amount_delivered), 0);
-
-    // Viático: primero el override del cobrador, luego el global
-    const assignmentData = assignmentRes.data as any;
-    let viaticoDia = 0;
-    if (assignmentData?.viaticum != null) {
-      viaticoDia = Number(assignmentData.viaticum);
-    } else if (settingsRes.data && (settingsRes.data as any).value) {
-      viaticoDia = Number((settingsRes.data as any).value);
-    }
-
-    // Salario: primero el override del cobrador, luego el global
-    let salarioCobrador = 0;
-    if (assignmentData?.salary != null) {
-      salarioCobrador = Number(assignmentData.salary);
-    } else if (salarySettingRes.data && (salarySettingRes.data as any).value) {
-      salarioCobrador = Number((salarySettingRes.data as any).value);
-    }
-
-    // El salario es un costo informativo (no se descuenta del monto a entregar diario)
-    const totalEntregar = totalCobrado - totalGastos - viaticoDia - totalPrestado - totalTransferencias;
-
-    return {
-      totalCobrado,
-      totalTransferencias,
-      totalGastos,
-      detalleGastos: expensesRes.data || [],
-      viaticoDia,
-      salarioCobrador,
-      prestamosNuevos,
-      totalPrestado,
-      totalEntregar
-    };
-  }
-
-  /**
-   * Aprueba la liquidación y la guarda en la base de datos
-   */
-  static async approveLiquidation(payload: any) {
-    const { data, error } = await supabase
-      .from('daily_closings')
-      .upsert({
-        route_id: payload.routeId,
-        collector_id: payload.collectorId,
-        closing_date: payload.date,
-        base_amount: payload.baseAmount || 0,
-        total_collected: payload.totalCobrado,
-        total_expenses: payload.totalGastos + (payload.totalPrestado || 0) + (payload.totalTransferencias || 0),
-        viaticum_assigned: payload.viaticoDia,
-        expected_delivery: payload.totalEntregar,
-        actual_delivery: payload.totalEntregar,
-        difference: 0,
-        is_closed: true,
-        has_pending_sync: false,
-        closed_by: payload.adminId,
-        closed_at: new Date().toISOString(),
-        expected_amount: payload.totalCobrado,
-        arrears_amount: 0,
-        arrears_recovered: 0,
-        partial_payments: 0,
-        advance_payments: 0,
-        above_expected_payments: 0,
-        fuel_expenses: 0,
-        oil_expenses: 0,
-        repair_expenses: 0,
-        tire_expenses: 0,
-        chain_expenses: 0,
-        other_expenses: payload.totalGastos + (payload.totalPrestado || 0) + (payload.totalTransferencias || 0)
-      } as any, { onConflict: 'route_id,closing_date' })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as any;
-  }
-
-  /**
-   * Reabre una liquidación (elimina o marca como no cerrada la liquidación de un día)
-   */
-  static async reopenLiquidation(routeId: string, dateStr: string) {
-    const { error } = await supabase
-      .from('daily_closings')
-      .update({ is_closed: false, closed_by: null, closed_at: null } as any)
-      .eq('route_id', routeId)
-      .eq('closing_date', dateStr);
-
-    if (error) throw error;
-  }
-
-  // ─── CLIENTES ────────────────────────────────────────────────────────
-
-  static async updateClient(id: string, data: { full_name?: string; document_id?: string; phone?: string; address?: string }) {
-    const { error } = await supabase
-      .from('clients')
-      .update(data as any)
-      .eq('id', id);
-    if (error) throw error;
-  }
-
-  // ─── CLIENTS & LOANS (Admin Modal) ────────────────────────────────────────────────────────
-
-  /**
-   * Obtiene clientes con filtros opcionales de ruta y fecha de creación.
-   */
-  static async getClients(filters?: { routeId?: string; onlyToday?: boolean; createdDate?: string; search?: string }) {
-    let query = supabase
-      .from('clients')
-      .select(`
-        id,
-        full_name,
-        document_id,
-        phone,
-        address,
-        neighborhood,
-        municipality,
-        status,
-        photo_face_url,
-        photo_doc_url,
-        created_at,
-        route:routes(id, name),
-        creator:users!clients_created_by_fkey(full_name),
-        loans(
-          id,
-          route_id,
-          amount_requested,
-          amount_delivered,
-          interest_amount,
-          initial_obligation,
-          term_days,
-          daily_installment,
-          disbursement_date,
-          status,
-          current_balance,
-          sundays_prepaid_count,
-          receipt_fee,
-          raffle_number
-        )
-      `)
-      .order('created_at', { ascending: false });
-
-    if (filters?.routeId && filters.routeId !== 'all') {
-      query = query.eq('route_id', filters.routeId);
-    }
-
-    if (filters?.createdDate && filters.createdDate.trim() !== '') {
-      const { start, end } = dayRangeIso(filters.createdDate);
-      query = query.gte('created_at', start).lte('created_at', end);
-    } else if (filters?.onlyToday) {
-      const todayStr = colombiaDateFromIso(new Date().toISOString());
-      const { start, end } = dayRangeIso(todayStr);
-      query = query.gte('created_at', start).lte('created_at', end);
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    // Client-side search filter (simple, avoids ilike complexity)
-    if (filters?.search && filters.search.trim() !== '') {
-      const term = filters.search.toLowerCase();
-      return data.filter((c: any) =>
-        c.full_name?.toLowerCase().includes(term) ||
-        c.document_id?.toLowerCase().includes(term) ||
-        c.phone?.toLowerCase().includes(term)
-      );
-    }
-
-    return data;
-  }
-
-  /**
-   * Obtiene préstamos desembolsados en una fecha específica, opcionalmente filtrados por ruta.
-   */
-  static async getNewLoansByDate(dateStr: string, routeId?: string) {
-    let query = supabase
-      .from('loans')
-      .select('id, client_id, amount_delivered, client:clients(full_name)')
-      .eq('disbursement_date', dateStr);
-
-    if (routeId && routeId !== 'all') {
-      query = query.eq('route_id', routeId);
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return (data || []).map((l: any) => ({
-      loanId: l.id,
-      clientId: l.client_id,
-      clientName: l.client?.full_name || 'Sin nombre',
-      amount: l.amount_delivered || 0
-    }));
-  }
-
-
-  /**
-   * Recalcula y reconcilia las cuotas y el saldo del préstamo basándose en los pagos reales
-   * existentes en la tabla `payments`. Corrige cualquier inconsistencia o cuota desincronizada.
-   */
-  static async reconcileLoanInstallments(loanId: string) {
-    const { data: loan, error: lErr } = await supabase
-      .from('loans')
-      .select('*')
-      .eq('id', loanId)
-      .single();
-    if (lErr || !loan) return;
-
-    const { data: payments, error: pErr } = await supabase
-      .from('payments')
-      .select('total_amount')
-      .eq('loan_id', loanId);
-    if (pErr) throw pErr;
-
-    const totalPaid = (payments || []).reduce((sum: number, p: any) => sum + Number(p.total_amount || 0), 0);
-
-    const { data: installments, error: instErr } = await supabase
-      .from('loan_installments')
-      .select('*')
-      .eq('loan_id', loanId)
-      .order('scheduled_date', { ascending: true });
-    if (instErr || !installments) return;
-
-    let remainingToAllocate = totalPaid;
-    const todayStr = colombiaToday();
-
-    for (const inst of installments) {
-      if (inst.is_prepaid) {
-        continue;
-      }
-
-      const scheduledAmount = Number(inst.scheduled_amount);
-      const payAmount = Math.min(scheduledAmount, remainingToAllocate);
-      remainingToAllocate -= payAmount;
-
-      const newPaid = payAmount;
-      const newBalance = scheduledAmount - payAmount;
-
-      let newStatus = 'PENDIENTE';
-      if (newBalance <= 0) {
-        newStatus = inst.scheduled_date > todayStr ? 'PAGADA_ANTICIPADAMENTE' : 'PAGADA';
-      } else if (newPaid > 0) {
-        newStatus = 'PARCIAL';
-      } else if (inst.scheduled_date < todayStr) {
-        newStatus = 'ATRASADA';
-      }
-
-      const currentPaid = Number(inst.paid_amount || 0);
-      const currentBalance = Number(inst.balance);
-      const currentStatus = inst.status;
-
-      if (currentPaid !== newPaid || currentBalance !== newBalance || currentStatus !== newStatus) {
-        await supabase
-          .from('loan_installments')
-          .update({
-            paid_amount: newPaid,
-            balance: newBalance,
-            status: newStatus,
-            paid_date: newPaid > 0 ? (inst.paid_date || todayStr) : null
-          })
-          .eq('id', inst.id);
-      }
-    }
-
-    const initialObligation = Number(loan.initial_obligation || 0);
-    const sundaysDiscount = Number(loan.sundays_prepaid_amount || 0);
-    const newLoanBalance = Math.max(0, initialObligation - sundaysDiscount - totalPaid);
-    const newLoanStatus = newLoanBalance <= 0 ? 'CANCELADO' : (loan.status === 'CANCELADO' ? 'ACTIVO' : loan.status);
-
-    if (Number(loan.current_balance) !== newLoanBalance || loan.status !== newLoanStatus) {
-      await supabase
-        .from('loans')
-        .update({
-          current_balance: newLoanBalance,
-          status: newLoanStatus
-        })
-        .eq('id', loanId);
-    }
-  }
-
-  /**
-   * Obtiene las cuotas de un préstamo para visualizar la tarjeta de cobros
-   */
-  static async getLoanInstallments(loanId: string) {
-    await this.reconcileLoanInstallments(loanId);
-
-    const { data, error } = await supabase
-      .from('loan_installments')
-      .select('*')
-      .eq('loan_id', loanId)
-      .order('scheduled_date', { ascending: true });
-
-    if (error) throw error;
-    return data;
-  }
-
-  /**
-   * Elimina un cliente por su ID.
-   * Usa la función RPC `delete_client` (SECURITY DEFINER) para evitar el trigger
-   * que bloquea el DELETE directo en la tabla clients cuando hay fotos en Storage.
-   */
-  static async deleteClient(clientId: string) {
-    // 1. Eliminar fotos de Storage ANTES de llamar al RPC
-    //    (el RPC sólo limpia las URLs en DB; la eliminación del bucket debe hacerse desde el cliente)
-    const { data: client } = await supabase
-      .from('clients')
-      .select('photo_face_url, photo_doc_url')
-      .eq('id', clientId)
-      .single();
-
-    const extractPath = (url: string | null) => {
-      if (!url) return null;
-      const parts = url.split('/clients_photos/');
-      return parts.length > 1 ? parts[1] : null;
-    };
-
-    const pathsToRemove: string[] = [];
-    const facePath = extractPath(client?.photo_face_url ?? null);
-    const docPath = extractPath(client?.photo_doc_url ?? null);
-    if (facePath) pathsToRemove.push(facePath);
-    if (docPath) pathsToRemove.push(docPath);
-
-    if (pathsToRemove.length > 0) {
-      await supabase.storage.from('clients_photos').remove(pathsToRemove);
-    }
-
-    // 2. Llamar al RPC que elimina cuotas → pagos → préstamos → cliente
-    //    (corre con SECURITY DEFINER, esquivando el trigger restrictivo)
-    const { error } = await supabase.rpc('delete_client', { p_client_id: clientId });
-
-    if (error) throw error;
-  }
-
-  // ─── LOTERÍA / BOLETAS ──────────────────────────────────────────────
-
-  /**
-   * Procesa un sorteo de boletas
-   */
-  static async processLotteryDraw(winningNumber: string, adminId: string) {
-    const { data, error } = await supabase.rpc('process_lottery_draw', {
-      p_winning_number: winningNumber,
-      p_admin_id: adminId
-    });
-
-    if (error) throw error;
-
-    // Persist draw + winner IDs so collectors can announce winners and block collection
-    // even before/without a full loan re-pull (offline-first).
-    const drawDate = new Date().toISOString().split('T')[0];
-    const drawId = (data as { draw_id?: string } | null)?.draw_id;
-
-    let winnerLoanIds: string[] = [];
-    let winnerClientIds: string[] = [];
-    if (drawId) {
-      const { data: winners } = await supabase
-        .from('lottery_winners')
-        .select('loan_id, loan:loans(client_id)')
-        .eq('draw_id', drawId);
-
-      for (const w of winners || []) {
-        if (w.loan_id) winnerLoanIds.push(w.loan_id);
-        const clientId = (w.loan as { client_id?: string } | null)?.client_id;
-        if (clientId) winnerClientIds.push(clientId);
-      }
-    }
-
-    await supabase.from('system_settings').upsert(
-      {
-        key: 'lottery_last_draw',
-        value: {
-          winning_number: winningNumber,
-          draw_date: drawDate,
-          processed_at: new Date().toISOString(),
-          winner_loan_ids: winnerLoanIds,
-          winner_client_ids: winnerClientIds,
-        },
-        description: 'Último sorteo procesado — usado para notificar al cobrador y bloquear cobros'
-      } as any,
-      { onConflict: 'key' }
+  if (isLoading) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto flex justify-center items-center h-64">
+        <div className="w-10 h-10 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
+      </div>
     );
-
-    return data;
   }
 
-  /**
-   * Obtiene el historial de sorteos y ganadores
-   */
-  static async getLotteryDraws() {
-    const { data, error } = await supabase
-      .from('lottery_draws')
-      .select(`
-        *,
-        processed_by:users(full_name),
-        winners:lottery_winners(
-          prize_amount,
-          loan:loans(
-            id,
-            client:clients(full_name, phone)
-          )
-        )
-      `)
-      .order('draw_date', { ascending: false });
-
-    if (error) throw error;
-    return data;
-  }
-
-  // ─── REPORTES ────────────────────────────────────────────────────────
-
-  /**
-   * Obtiene datos agregados para el módulo de reportes
-   */
-  static async getReportsData(startDate: string, endDate: string, routeId?: string) {
-    const startIso = `${startDate}T00:00:00.000Z`;
-    const endIso = `${endDate}T23:59:59.999Z`;
-
-    // 1. Pagos (Recaudos)
-    let paymentsQuery = supabase
-      .from('payments')
-      .select('total_amount, collected_at')
-      .gte('collected_at', startIso)
-      .lte('collected_at', endIso);
-
-    // 2. Gastos
-    let expensesQuery = supabase
-      .from('expenses')
-      .select('amount, expense_date, category:expense_categories(name)')
-      .gte('expense_date', startDate)
-      .lte('expense_date', endDate);
-
-    // 3. Préstamos Nuevos
-    let loansQuery = supabase
-      .from('loans')
-      .select('amount_delivered, amount_requested, interest_amount, disbursement_date, current_balance, status')
-      .gte('disbursement_date', startDate)
-      .lte('disbursement_date', endDate);
-
-    // 4. Asignaciones de ruta activas en el periodo
-    let assignmentsQuery = supabase
-      .from('route_assignments')
-      .select('date_start, date_end, viaticum, salary, route_id')
-      .lte('date_start', endDate)
-      .or(`date_end.is.null,date_end.gte.${startDate}`);
-
-    const { data: activeAssignments } = await supabase
-      .from('route_assignments')
-      .select('route_id')
-      .is('date_end', null);
-    const activeRouteIds = activeAssignments?.map((a: any) => a.route_id) || [];
-
-    if (routeId && routeId !== 'all') {
-      if (!activeRouteIds.includes(routeId)) {
-        // La ruta seleccionada está pausada, no devolver datos
-        paymentsQuery = paymentsQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        expensesQuery = expensesQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        loansQuery = loansQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        assignmentsQuery = assignmentsQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-      } else {
-        paymentsQuery = paymentsQuery.eq('route_id', routeId);
-        expensesQuery = expensesQuery.eq('route_id', routeId);
-        loansQuery = loansQuery.eq('route_id', routeId);
-        assignmentsQuery = assignmentsQuery.eq('route_id', routeId);
-      }
-    } else {
-      // Si es 'all', filtrar las rutas pausadas
-      if (activeRouteIds.length > 0) {
-        paymentsQuery = paymentsQuery.in('route_id', activeRouteIds);
-        expensesQuery = expensesQuery.in('route_id', activeRouteIds);
-        loansQuery = loansQuery.in('route_id', activeRouteIds);
-        assignmentsQuery = assignmentsQuery.in('route_id', activeRouteIds);
-      } else {
-        paymentsQuery = paymentsQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        expensesQuery = expensesQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        loansQuery = loansQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        assignmentsQuery = assignmentsQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-      }
-    }
-
-    const [paymentsRes, expensesRes, loansRes, assignmentsRes] = await Promise.all([
-      paymentsQuery,
-      expensesQuery,
-      loansQuery,
-      assignmentsQuery
-    ]);
-
-    if (paymentsRes.error) throw paymentsRes.error;
-    if (expensesRes.error) throw expensesRes.error;
-    if (loansRes.error) throw loansRes.error;
-    if (assignmentsRes.error) throw assignmentsRes.error;
-
-    return {
-      payments: paymentsRes.data || [],
-      expenses: expensesRes.data || [],
-      loans: loansRes.data || [],
-      assignments: assignmentsRes.data || []
-    };
-  }
-
-  /**
-   * Obtiene el estado de la cartera (préstamos activos y morosidad)
-   */
-  static async getPortfolioState(routeId?: string) {
-    let query = supabase.from('loans').select(`
-      id,
-      amount_requested,
-      amount_delivered,
-      initial_obligation,
-      current_balance,
-      status,
-      route_id,
-      route:routes(name),
-      client:clients(full_name, phone)
-    `).eq('status', 'ACTIVO');
-    
-    const { data: activeAssignments } = await supabase
-      .from('route_assignments')
-      .select('route_id')
-      .is('date_end', null);
-    const activeRouteIds = activeAssignments?.map((a: any) => a.route_id) || [];
-
-    if (routeId && routeId !== 'all') {
-      if (!activeRouteIds.includes(routeId)) {
-        query = query.eq('route_id', '00000000-0000-0000-0000-000000000000');
-      } else {
-        query = query.eq('route_id', routeId);
-      }
-    } else {
-      if (activeRouteIds.length > 0) {
-        query = query.in('route_id', activeRouteIds);
-      } else {
-        query = query.eq('route_id', '00000000-0000-0000-0000-000000000000');
-      }
-    }
-    
-    const { data: loans, error: loansError } = await query;
-    if (loansError) throw loansError;
-    
-    if (!loans || loans.length === 0) {
-      return { loans: [], arrearsInstallments: [] };
-    }
-
-    const loanIds = loans.map((l: any) => l.id);
-    const todayStr = colombiaToday();
-    
-    // Split into chunks of 100 if there are many loans to avoid URL too long issues in Supabase/PostgREST
-    const chunkSize = 100;
-    let allInstallments: any[] = [];
-    
-    for (let i = 0; i < loanIds.length; i += chunkSize) {
-      const chunk = loanIds.slice(i, i + chunkSize);
-      const { data: installments, error: instError } = await supabase
-        .from('loan_installments')
-        .select('loan_id, balance, scheduled_date, status')
-        .in('loan_id', chunk)
-        .lt('scheduled_date', todayStr)
-        .in('status', ['PENDIENTE', 'PARCIAL', 'ATRASADA']);
-        
-      if (instError) throw instError;
-      if (installments) {
-        allInstallments = [...allInstallments, ...installments];
-      }
-    }
-    
-    return { loans, arrearsInstallments: allInstallments };
-  }
-
-  /**
-   * Obtiene el Libro Auxiliar de transacciones cronológico
-   */
-  static async getLedgerTransactions(startDate: string, endDate: string, routeId?: string) {
-    const startIso = `${startDate}T00:00:00.000Z`;
-    const endIso = `${endDate}T23:59:59.999Z`;
-
-    let pQuery = supabase.from('payments').select('id, collected_at, total_amount, collector_observation, loan:loans(client:clients(full_name)), collector:users!payments_collector_id_fkey(full_name)').gte('collected_at', startIso).lte('collected_at', endIso);
-    let eQuery = supabase.from('expenses').select('id, expense_date, amount, description, category:expense_categories(name), route:routes(name)').gte('expense_date', startDate).lte('expense_date', endDate);
-    let lQuery = supabase.from('loans').select('id, disbursement_date, amount_delivered, client:clients(full_name), route:routes(name)').gte('disbursement_date', startDate).lte('disbursement_date', endDate);
-
-    const { data: activeAssignments } = await supabase
-      .from('route_assignments')
-      .select('route_id')
-      .is('date_end', null);
-    const activeRouteIds = activeAssignments?.map((a: any) => a.route_id) || [];
-
-    if (routeId && routeId !== 'all') {
-      if (!activeRouteIds.includes(routeId)) {
-        pQuery = pQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        eQuery = eQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        lQuery = lQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-      } else {
-        pQuery = pQuery.eq('route_id', routeId);
-        eQuery = eQuery.eq('route_id', routeId);
-        lQuery = lQuery.eq('route_id', routeId);
-      }
-    } else {
-      if (activeRouteIds.length > 0) {
-        pQuery = pQuery.in('route_id', activeRouteIds);
-        eQuery = eQuery.in('route_id', activeRouteIds);
-        lQuery = lQuery.in('route_id', activeRouteIds);
-      } else {
-        pQuery = pQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        eQuery = eQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        lQuery = lQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-      }
-    }
-
-    const [pRes, eRes, lRes] = await Promise.all([pQuery, eQuery, lQuery]);
-    
-    if (pRes.error) throw pRes.error;
-    if (eRes.error) throw eRes.error;
-    if (lRes.error) throw lRes.error;
-    
-    const transactions: any[] = [];
-    
-    pRes.data?.forEach((p: any) => transactions.push({
-      id: `p_${p.id}`,
-      date: p.collected_at,
-      type: 'INGRESO',
-      description: `Pago Cuota - ${p.loan?.client?.full_name || 'Desconocido'}`,
-      amount: Number(p.total_amount),
-      observation: p.collector_observation || ''
-    }));
-    
-    eRes.data?.forEach((e: any) => transactions.push({
-      id: `e_${e.id}`,
-      date: `${e.expense_date}T12:00:00.000Z`, // Approximation
-      type: 'GASTO',
-      description: `Gasto: ${e.category?.name || 'Otros'} - ${e.description || ''}`,
-      amount: -Number(e.amount),
-      observation: ''
-    }));
-    
-    lRes.data?.forEach((l: any) => transactions.push({
-      id: `l_${l.id}`,
-      date: `${l.disbursement_date}T08:00:00.000Z`, // Approximation
-      type: 'DESEMBOLSO',
-      description: `Desembolso - ${l.client?.full_name || 'Desconocido'}`,
-      amount: -Number(l.amount_delivered),
-      observation: ''
-    }));
-    
-    return transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }
-
-  /**
-   * Obtiene las tasas de viático y salario por defecto del sistema
-   * para el cálculo de costos de personal en reportes.
-   */
-  static async getPersonnelCostSettings(): Promise<{ viaticumRate: number; salaryMonthly: number }> {
-    const { data, error } = await supabase
-      .from('system_settings')
-      .select('key, value')
-      .in('key', ['default_viaticum', 'default_salary']);
-
-    if (error) throw error;
-
-    let viaticumRate = 0;
-    let salaryMonthly = 0;
-
-    (data || []).forEach((s: any) => {
-      if (s.key === 'default_viaticum') viaticumRate = Number(s.value) || 0;
-      if (s.key === 'default_salary') salaryMonthly = Number(s.value) || 0;
-    });
-
-    return { viaticumRate, salaryMonthly };
-  }
-
-  /**
-   * Obtiene el monto total programado y el saldo pendiente de cobro
-   * para las cuotas cuya fecha cae dentro del rango dado.
-   * Usado para la tarjeta "Dinero por Recoger" en reportes.
-   */
-  static async getPendingCollectionAmount(
-    startDate: string,
-    endDate: string,
-    routeId?: string
-  ): Promise<{ totalScheduled: number; totalPending: number; totalPaid: number; installmentCount: number; pendingCount: number }> {
-    // Obtener rutas activas (sin date_end)
-    const { data: activeAssignments } = await supabase
-      .from('route_assignments')
-      .select('route_id')
-      .is('date_end', null);
-    const activeRouteIds = activeAssignments?.map((a: any) => a.route_id) || [];
-
-    // Construir query de préstamos activos filtrados por ruta
-    let loansQuery = supabase
-      .from('loans')
-      .select('id')
-      .eq('status', 'ACTIVO');
-
-    if (routeId && routeId !== 'all') {
-      if (!activeRouteIds.includes(routeId)) {
-        return { totalScheduled: 0, totalPending: 0, totalPaid: 0, installmentCount: 0, pendingCount: 0 };
-      }
-      loansQuery = loansQuery.eq('route_id', routeId);
-    } else {
-      if (activeRouteIds.length > 0) {
-        loansQuery = loansQuery.in('route_id', activeRouteIds);
-      } else {
-        return { totalScheduled: 0, totalPending: 0, totalPaid: 0, installmentCount: 0, pendingCount: 0 };
-      }
-    }
-
-    const { data: loans, error: loansError } = await loansQuery;
-    if (loansError) throw loansError;
-    if (!loans || loans.length === 0) {
-      return { totalScheduled: 0, totalPending: 0, totalPaid: 0, installmentCount: 0, pendingCount: 0 };
-    }
-
-    const loanIds = loans.map((l: any) => l.id);
-    const chunkSize = 100;
-    let totalScheduled = 0;
-    let totalPending = 0;
-    let totalPaid = 0;
-    let installmentCount = 0;
-    let pendingCount = 0;
-
-    for (let i = 0; i < loanIds.length; i += chunkSize) {
-      const chunk = loanIds.slice(i, i + chunkSize);
-      const { data: installments, error } = await supabase
-        .from('loan_installments')
-        .select('scheduled_amount, balance, paid_amount, status')
-        .in('loan_id', chunk)
-        .gte('scheduled_date', startDate)
-        .lte('scheduled_date', endDate);
-
-      if (error) throw error;
-      if (!installments) continue;
-
-      installments.forEach((inst: any) => {
-        const scheduled = Number(inst.scheduled_amount);
-        const balance = Number(inst.balance);
-        const paid = Number(inst.paid_amount);
-        totalScheduled += scheduled;
-        totalPending += balance;
-        totalPaid += paid;
-        installmentCount++;
-        if (balance > 0) pendingCount++;
-      });
-    }
-
-    return { totalScheduled, totalPending, totalPaid, installmentCount, pendingCount };
-  }
-
-  // ─── ADMIN TRANSACTIONS ──────────────────────────────────────────────
-
-  /**
-   * Permite al administrador crear un préstamo y asignarlo a cualquier ruta.
-   */
-  /** Siguiente posición libre al final de la ruta (para que los clientes importados queden después de los existentes). */
-  static async getNextRouteOrder(routeId: string): Promise<number> {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('route_order')
-      .eq('route_id', routeId)
-      .order('route_order', { ascending: false })
-      .limit(1);
-    if (error) throw error;
-    const max = (data as any[] | null)?.[0]?.route_order;
-    return typeof max === 'number' ? max + 1 : 0;
-  }
-
-  static async createAdminLoan(payload: {
-    clientId: string | null;
-    clientData?: { full_name: string; document_id: string; phone: string; address: string };
-    routeId: string;
-    adminId: string;
-    amountRequested: number;
-    interestRate?: number;
-    termDays: number;
-    sundaysPrepaidCount: number;
-    receiptFee: number;
-    wantsRaffle: boolean;
-    disbursementDate?: string;
-    historicalPayments?: { amount: number; paymentDate: string; observation?: string }[];
-    routeOrder?: number; // posición del cliente nuevo en la ruta (migración masiva)
-  }) {
-    let clientId = payload.clientId;
-
-    // 1. Create client if needed
-    if (!clientId && payload.clientData) {
-      const { data: newClient, error: clientError } = await supabase
-        .from('clients')
-        .insert([{
-          full_name: payload.clientData.full_name,
-          document_id: payload.clientData.document_id,
-          phone: payload.clientData.phone || null,
-          address: payload.clientData.address || null,
-          status: 'ACTIVO',
-          route_id: payload.routeId,
-          ...(typeof payload.routeOrder === 'number' ? { route_order: payload.routeOrder } : {}),
-          created_by: payload.adminId
-        }] as any)
-        .select('id')
-        .single();
-      
-      if (clientError) throw clientError;
-      clientId = newClient.id;
-    }
-
-    if (!clientId) throw new Error("Cliente no especificado");
-
-    // 2. Calculations
-    const numAmount = payload.amountRequested;
-    const rate = payload.interestRate ?? 0.20;
-    const obligation = numAmount * (1 + rate);
-    const dailyQuota = payload.termDays > 0 ? obligation / payload.termDays : 0;
-    const totalSundaysDiscount = dailyQuota * payload.sundaysPrepaidCount;
-    const delivered = numAmount - totalSundaysDiscount - payload.receiptFee;
-    
-    // Raffle number
-    let raffleNumber = null;
-    if (payload.wantsRaffle) {
-      const { data: activeLoans } = await supabase.from('loans').select('raffle_number').eq('status', 'ACTIVO');
-      const usedNumbers = new Set(activeLoans?.map(l => l.raffle_number).filter(Boolean) || []);
-      let possibleNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-      for (let i = 0; i < 100; i++) {
-        if (!usedNumbers.has(possibleNum)) break;
-        possibleNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-      }
-      raffleNumber = possibleNum;
-    }
-
-    // Dates
-    let baseDate = new Date();
-    if (payload.disbursementDate) {
-      const parts = payload.disbursementDate.split('-').map(Number);
-      if (parts.length === 3 && !parts.some(isNaN)) {
-        baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
-      }
-    }
-
-    const disbursementDateStr = payload.disbursementDate || baseDate.toISOString().split('T')[0];
-    
-    const addDays = (date: Date, days: number) => {
-      const result = new Date(date);
-      result.setDate(result.getDate() + days);
-      return result;
-    };
-    
-    const startDate = addDays(baseDate, 1).toISOString().split('T')[0];
-    const endDate = addDays(baseDate, payload.termDays).toISOString().split('T')[0];
-    const graceEndDate = addDays(baseDate, payload.termDays + 7).toISOString().split('T')[0];
-
-    // 3. Insert Loan
-    const { data: newLoan, error: loanError } = await supabase
-      .from('loans')
-      .insert([{
-        client_id: clientId,
-        route_id: payload.routeId,
-        collector_id: payload.adminId, // Admin as collector
-        amount_requested: numAmount,
-        interest_rate: rate,
-        interest_amount: numAmount * rate,
-        initial_obligation: obligation,
-        term_days: payload.termDays,
-        daily_installment: dailyQuota,
-        frequency: 'DIARIO',
-        sundays_prepaid_count: payload.sundaysPrepaidCount,
-        sundays_prepaid_amount: totalSundaysDiscount,
-        receipt_fee: payload.receiptFee,
-        amount_delivered: delivered,
-        current_balance: obligation - totalSundaysDiscount,
-        disbursement_date: disbursementDateStr,
-        start_date: startDate,
-        end_date: endDate,
-        grace_end_date: graceEndDate,
-        status: 'ACTIVO',
-        wants_raffle: payload.wantsRaffle,
-        raffle_number: raffleNumber,
-        created_by: payload.adminId
-      }] as any)
-      .select('id')
-      .single();
-
-    if (loanError) throw loanError;
-
-    // 4. Generate Installments
-    const installments = [];
-    let sundaysUsed = 0;
-    for (let i = 0; i < payload.termDays; i++) {
-      const date = addDays(baseDate, i + 1);
-      const dateStr = date.toISOString().split('T')[0];
-      const isSun = date.getDay() === 0;
-      const isPrepaid = isSun && sundaysUsed < payload.sundaysPrepaidCount;
-      if (isPrepaid) sundaysUsed++;
-
-      installments.push({
-        loan_id: newLoan.id,
-        installment_number: i + 1,
-        scheduled_date: dateStr,
-        scheduled_amount: dailyQuota,
-        paid_amount: isPrepaid ? dailyQuota : 0,
-        balance: isPrepaid ? 0 : dailyQuota,
-        status: isPrepaid ? 'PAGADA_ANTICIPADAMENTE' : 'PENDIENTE',
-        day_type: isSun ? 'DOMINGO' : 'NORMAL',
-        is_prepaid: isPrepaid,
-        is_sunday: isSun,
-        is_holiday: false,
-        paid_date: isPrepaid ? disbursementDateStr : null
-      });
-    }
-
-    const { data: createdInsts, error: instError } = await supabase
-      .from('loan_installments')
-      .insert(installments as any)
-      .select('*');
-    if (instError) throw instError;
-
-    // 5. Process Historical Payments if provided
-    if (payload.historicalPayments && payload.historicalPayments.length > 0 && createdInsts) {
-      const sortedPayments = [...payload.historicalPayments].sort(
-        (a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime()
-      );
-
-      const activeInsts = (createdInsts as any[]).sort((a, b) => a.installment_number - b.installment_number);
-      let totalHistoricalPaid = 0;
-
-      for (const hp of sortedPayments) {
-        if (!hp.amount || hp.amount <= 0) continue;
-        totalHistoricalPaid += hp.amount;
-
-        const crypto = window.crypto;
-        const array = new Uint32Array(4);
-        crypto.getRandomValues(array);
-        const operationId = Array.from(array, dec => ('0' + dec.toString(16)).substr(-2)).join('');
-        const collectedAt = `${hp.paymentDate}T12:00:00.000Z`;
-
-        const { error: paymentError } = await supabase
-          .from('payments')
-          .upsert([{
-            operation_id: operationId,
-            device_id: 'admin_panel_migration',
-            loan_id: newLoan.id,
-            collector_id: payload.adminId,
-            route_id: payload.routeId,
-            total_amount: hp.amount,
-            day_installment_amount: hp.amount,
-            arrears_amount: 0,
-            advance_amount: 0,
-            collector_observation: hp.observation || 'Carga inicial de ruta (Pago histórico)',
-            is_partial_payment: false,
-            is_advance_payment: false,
-            is_above_expected: false,
-            sync_status: 'synced',
-            collected_at: collectedAt,
-            synced_at: collectedAt,
-            created_by: payload.adminId
-          }] as any);
-
-        if (paymentError) console.error("Error saving historical payment:", paymentError);
-
-        const { data: savedPayment } = await supabase
-          .from('payments')
-          .select('id')
-          .eq('operation_id', operationId)
-          .maybeSingle();
-        const paymentId = savedPayment?.id ?? null;
-
-        let remainingToDistribute = hp.amount;
-        const allocations = [];
-
-        for (const inst of activeInsts) {
-          if (remainingToDistribute <= 0) break;
-          const balance = Number(inst.balance);
-          if (balance <= 0) continue;
-
-          const payAmount = Math.min(balance, remainingToDistribute);
-          remainingToDistribute -= payAmount;
-
-          const newPaidAmount = Number(inst.paid_amount) + payAmount;
-          const newBalance = balance - payAmount;
-
-          let newStatus = inst.status;
-          if (newBalance === 0) {
-            newStatus = inst.scheduled_date > hp.paymentDate ? 'PAGADA_ANTICIPADAMENTE' : 'PAGADA';
-          } else {
-            newStatus = 'PARCIAL';
-          }
-
-          inst.paid_amount = newPaidAmount;
-          inst.balance = newBalance;
-          inst.status = newStatus;
-          inst.paid_date = hp.paymentDate;
-
-          await supabase.from('loan_installments').update({
-            paid_amount: newPaidAmount,
-            balance: newBalance,
-            status: newStatus,
-            paid_date: hp.paymentDate
-          }).eq('id', inst.id);
-
-          if (paymentId) {
-            let allocationType = 'DIA_ACTUAL';
-            if (inst.scheduled_date < hp.paymentDate) allocationType = 'ATRASO';
-            if (inst.scheduled_date > hp.paymentDate) allocationType = 'ADELANTO';
-            if (newStatus === 'PARCIAL') allocationType = 'PARCIAL';
-
-            allocations.push({
-              payment_id: paymentId,
-              installment_id: inst.id,
-              allocated_amount: payAmount,
-              allocation_type: allocationType
-            });
-          }
-        }
-
-        if (allocations.length > 0) {
-          await supabase.from('payment_allocations').insert(allocations as any);
-        }
-      }
-
-      // Final loan balance and status update
-      const initialBalance = obligation - totalSundaysDiscount;
-      const finalBalance = Math.max(0, initialBalance - totalHistoricalPaid);
-      await supabase.from('loans').update({
-        current_balance: finalBalance,
-        status: finalBalance <= 0 ? 'CANCELADO' : 'ACTIVO'
-      }).eq('id', newLoan.id);
-    }
-
-    return newLoan;
-  }
-
-  /**
-   * Permite al administrador registrar un pago de cualquier préstamo en la oficina.
-   */
-  static async registerAdminPayment(payload: {
-    loanId: string;
-    routeId: string;
-    adminId: string;
-    totalAmount: number;
-    observation?: string;
-  }) {
-    // 1. Get loan to calculate distributions
-    const { data: loan, error: loanErr } = await supabase.from('loans').select('*').eq('id', payload.loanId).single();
-    if (loanErr) throw loanErr;
-
-    // 2. Insert Payment
-    const crypto = window.crypto;
-    const array = new Uint32Array(4);
-    crypto.getRandomValues(array);
-    const operationId = Array.from(array, dec => ('0' + dec.toString(16)).substr(-2)).join('');
-
-    const collectedAt = new Date().toISOString();
-
-    const { error: paymentError } = await supabase
-      .from('payments')
-      .upsert([{
-        operation_id: operationId,
-        device_id: 'admin_panel',
-        loan_id: payload.loanId,
-        collector_id: payload.adminId,
-        route_id: payload.routeId,
-        total_amount: payload.totalAmount,
-        day_installment_amount: payload.totalAmount,
-        arrears_amount: 0,
-        advance_amount: 0,
-        collector_observation: payload.observation || 'Cobro en oficina',
-        is_partial_payment: false,
-        is_advance_payment: false,
-        is_above_expected: false,
-        sync_status: 'synced',
-        collected_at: collectedAt,
-        synced_at: collectedAt,
-        created_by: payload.adminId
-      }] as any);
-
-    if (paymentError) throw paymentError;
-
-    // Fetch the payment id by operation_id (upsert doesn't return data)
-    const { data: savedPayment } = await supabase
-      .from('payments')
-      .select('id')
-      .eq('operation_id', operationId)
-      .maybeSingle();
-    const paymentId = savedPayment?.id ?? null;
-
-    // 3. Process distributions
-    let remainingToDistribute = payload.totalAmount;
-    
-    const { data: pendingInsts, error: instsErr } = await supabase
-      .from('loan_installments')
-      .select('*')
-      .eq('loan_id', payload.loanId)
-      .gt('balance', 0)
-      .order('scheduled_date', { ascending: true });
-    
-    if (instsErr) throw instsErr;
-
-    const allocations = [];
-    const updatedInsts = [];
-
-    const todayStr = colombiaToday();
-
-    for (const inst of (pendingInsts || [])) {
-      if (remainingToDistribute <= 0) break;
-
-      const balance = Number(inst.balance);
-      const payAmount = Math.min(balance, remainingToDistribute);
-      remainingToDistribute -= payAmount;
-
-      const newPaidAmount = Number(inst.paid_amount) + payAmount;
-      const newBalance = balance - payAmount;
-
-      let newStatus = inst.status;
-      if (newBalance === 0) {
-        if (inst.scheduled_date > todayStr) {
-          newStatus = 'PAGADA_ANTICIPADAMENTE';
-        } else {
-          newStatus = 'PAGADA';
-        }
-      } else if (newPaidAmount > 0) {
-        newStatus = 'PARCIAL';
-      }
-
-      updatedInsts.push({
-        id: inst.id,
-        paid_amount: newPaidAmount,
-        balance: newBalance,
-        status: newStatus,
-        paid_date: newBalance === 0 ? todayStr : inst.paid_date
-      });
-
-      let allocationType = 'DIA_ACTUAL';
-      if (inst.scheduled_date < todayStr) allocationType = 'ATRASO';
-      if (inst.scheduled_date > todayStr) allocationType = 'ADELANTO';
-      if (newStatus === 'PARCIAL') allocationType = 'PARCIAL';
-
-      allocations.push({
-        payment_id: paymentId,
-        installment_id: inst.id,
-        allocated_amount: payAmount,
-        allocation_type: allocationType
-      });
-    }
-
-    for (const uInst of updatedInsts) {
-      await supabase.from('loan_installments').update({
-        paid_amount: uInst.paid_amount,
-        balance: uInst.balance,
-        status: uInst.status,
-        paid_date: uInst.paid_date
-      }).eq('id', uInst.id);
-    }
-
-    if (allocations.length > 0) {
-      await supabase.from('payment_allocations').insert(allocations as any);
-    }
-
-    const newLoanBalance = Number(loan.current_balance) - payload.totalAmount;
-    await supabase.from('loans').update({
-      current_balance: Math.max(0, newLoanBalance),
-      status: newLoanBalance <= 0 ? 'CANCELADO' : loan.status
-    }).eq('id', payload.loanId);
-
-    return { operation_id: operationId };
-  }
-
-  /**
-   * Calcula la nómina de un trabajador en un mes específico
-   */
-  static async getWorkerPayroll(userId: string, year: number, month: number) {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
-    
-    // Obtener asignaciones
-    const { data: assignments, error } = await supabase
-      .from('route_assignments')
-      .select('date_start, date_end, salary, viaticum')
-      .eq('collector_id', userId)
-      .lte('date_start', endDate.toISOString())
-      .or(`date_end.is.null,date_end.gte.${startDate.toISOString()}`);
-      
-    if (error) throw error;
-    
-    // Obtener configuraciones globales de salario y viático
-    const { viaticumRate, salaryMonthly } = await AdminService.getPersonnelCostSettings();
-    
-    // Para simplificar, calculamos día por día en el mes
-    // si el trabajador estuvo asignado a *alguna* ruta.
-    const daysInMonth = endDate.getDate();
-    let workedDays = 0;
-    
-    const today = new Date();
-    today.setHours(23, 59, 59, 999); // Permitir contar el día de hoy completo
-    
-    for (let day = 1; day <= daysInMonth; day++) {
-      const d = new Date(year, month - 1, day);
-      
-      // No contar días en el futuro
-      if (d > today) {
-        continue;
-      }
-
-      // Usamos el locale local para armar el string ISO del día
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      const dayStr = `${yyyy}-${mm}-${dd}`;
-      
-      const wasAssigned = assignments?.some(a => {
-        const start = a.date_start.split('T')[0];
-        const end = a.date_end ? a.date_end.split('T')[0] : null;
-        return dayStr >= start && (!end || dayStr <= end);
-      });
-      
-      if (wasAssigned) {
-        workedDays++;
-      }
-    }
-    
-    // ¿Cuál es el salario base de este trabajador?
-    // Si la última asignación tiene un override, usar ese. Si no, global.
-    const sortedAssignments = (assignments || []).sort((a, b) => 
-      new Date(b.date_start).getTime() - new Date(a.date_start).getTime()
-    );
-    
-    const latestAssignment = sortedAssignments[0];
-    const workerSalary = latestAssignment?.salary ?? salaryMonthly;
-    const workerViaticum = latestAssignment?.viaticum ?? viaticumRate;
-    
-    const payrollAmount = (workerSalary / 30) * workedDays;
-    const totalViaticum = workerViaticum * workedDays;
-    
-    return {
-      workedDays,
-      workerSalary, // salario base mensual
-      payrollAmount,
-      totalViaticum,
-      workerViaticum, // viatico base por dia
-      daysInMonth
-    };
-  }
-
-  /**
-   * Obtiene los pagos por transferencia del día para el administrador.
-   */
-  static async getTransferPayments(date: string, routeId?: string) {
-    const { start: startOfDay, end: endOfDay } = dayRangeIso(date);
-
-    let query = supabase
-      .from('payments')
-      .select(`
-        id,
-        total_amount,
-        collected_at,
-        transfer_voucher_url,
-        collector_observation,
-        collector:users!payments_collector_id_fkey(full_name),
-        loan:loans!payments_loan_id_fkey(
-          route_id,
-          client:clients!loans_client_id_fkey(full_name, document_id)
-        )
-      `)
-      .eq('is_transfer', true)
-      .gte('collected_at', startOfDay)
-      .lte('collected_at', endOfDay)
-      .order('collected_at', { ascending: false });
-
-    if (routeId && routeId !== 'all') {
-      query = (query as any).eq('loan.route_id', routeId);
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
-  }
-
-  /**
-   * Obtiene los pagos de un día, filtrable por nombre/documento de cliente.
-   * Usado por el admin para buscar un cobro a corregir.
-   */
-  static async getPaymentsByDate(date: string, clientSearch?: string) {
-    const { start: startOfDay, end: endOfDay } = dayRangeIso(date);
-
-    const { data, error } = await supabase
-      .from('payments')
-      .select(`
-        id,
-        total_amount,
-        collected_at,
-        collector_observation,
-        loan_id,
-        collector:users!payments_collector_id_fkey(full_name),
-        loan:loans!payments_loan_id_fkey(
-          id,
-          current_balance,
-          daily_installment,
-          route_id,
-          client:clients!loans_client_id_fkey(full_name, document_id)
-        )
-      `)
-      .gte('collected_at', startOfDay)
-      .lte('collected_at', endOfDay)
-      .order('collected_at', { ascending: false });
-
-    if (error) throw error;
-
-    let results = (data || []) as any[];
-
-    if (clientSearch && clientSearch.trim() !== '') {
-      const term = clientSearch.toLowerCase();
-      results = results.filter((p: any) => {
-        const name = (p.loan?.client?.full_name || '').toLowerCase();
-        const doc  = (p.loan?.client?.document_id || '').toLowerCase();
-        return name.includes(term) || doc.includes(term);
-      });
-    }
-
-    return results;
-  }
-
-  /**
-   * Obtiene todos los pagos (cobros) realizados a un préstamo específico.
-   */
-  static async getLoanPayments(loanId: string) {
-    const { data, error } = await supabase
-      .from('payments')
-      .select(`
-        id,
-        total_amount,
-        collected_at,
-        collector_observation,
-        is_transfer,
-        collector:users!payments_collector_id_fkey(full_name)
-      `)
-      .eq('loan_id', loanId)
-      .order('collected_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
-  }
-
-  /**
-   * Corrige el monto de un cobro registrado por un cobrador.
-   * Revierte las allocations anteriores, re-distribuye el nuevo monto
-   * y recalcula el saldo del préstamo.
-   */
-  static async correctPayment(paymentId: string, newAmount: number, reason: string, adminId: string, isTransfer: boolean = false) {
-    // 1. Obtener el pago original
-    const { data: payment, error: pErr } = await supabase
-      .from('payments')
-      .select('id, total_amount, loan_id')
-      .eq('id', paymentId)
-      .single();
-    if (pErr) throw pErr;
-
-    const oldAmount = Number(payment.total_amount);
-    const loanId    = payment.loan_id;
-
-    // 2. Obtener el préstamo
-    const { data: loan, error: lErr } = await supabase
-      .from('loans')
-      .select('*')
-      .eq('id', loanId)
-      .single();
-    if (lErr) throw lErr;
-
-    // 3. Revertir allocations en cuotas (o fallback manual)
-    const { data: allocations } = await supabase
-      .from('payment_allocations')
-      .select('installment_id, allocated_amount')
-      .eq('payment_id', paymentId);
-
-    const allocationsArray = allocations || [];
-
-    if (allocationsArray.length > 0) {
-      for (const alloc of allocationsArray) {
-        const { data: inst } = await supabase
-          .from('loan_installments')
-          .select('paid_amount, balance, scheduled_amount, scheduled_date')
-          .eq('id', alloc.installment_id)
-          .single();
-        if (!inst) continue;
-
-        const revertedPaid    = Math.max(0, Number(inst.paid_amount) - Number(alloc.allocated_amount));
-        const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
-        const today = colombiaToday();
-
-        let newStatus = 'PENDIENTE';
-        if (revertedPaid >= Number(inst.scheduled_amount)) {
-          newStatus = inst.scheduled_date < today ? 'PAGADA' : 'PAGADA_ANTICIPADAMENTE';
-        } else if (revertedPaid > 0) {
-          newStatus = 'PARCIAL';
-        } else if (inst.scheduled_date < today) {
-          newStatus = 'ATRASADA';
-        }
-
-        await supabase
-          .from('loan_installments')
-          .update({ paid_amount: revertedPaid, balance: revertedBalance, status: newStatus })
-          .eq('id', alloc.installment_id);
-      }
-    } else {
-      // Manual fallback for old/collector payments without allocations
-      const { data: paidInsts } = await supabase
-        .from('loan_installments')
-        .select('id, paid_amount, balance, scheduled_amount, scheduled_date')
-        .eq('loan_id', loanId)
-        .gt('paid_amount', 0)
-        .order('scheduled_date', { ascending: false });
-
-      let remainingToRevert = oldAmount;
-      for (const inst of (paidInsts || [])) {
-        if (remainingToRevert <= 0) break;
-        const currentPaid = Number(inst.paid_amount);
-        const revertAmount = Math.min(currentPaid, remainingToRevert);
-        remainingToRevert -= revertAmount;
-
-        const revertedPaid = currentPaid - revertAmount;
-        const revertedBalance = Number(inst.scheduled_amount) - revertedPaid;
-        const today = colombiaToday();
-
-        let newStatus = 'PENDIENTE';
-        if (revertedPaid >= Number(inst.scheduled_amount)) {
-          newStatus = inst.scheduled_date < today ? 'PAGADA' : 'PAGADA_ANTICIPADAMENTE';
-        } else if (revertedPaid > 0) {
-          newStatus = 'PARCIAL';
-        } else if (inst.scheduled_date < today) {
-          newStatus = 'ATRASADA';
-        }
-
-        await supabase
-          .from('loan_installments')
-          .update({ paid_amount: revertedPaid, balance: revertedBalance, status: newStatus })
-          .eq('id', inst.id);
-      }
-    }
-
-    // 4. Eliminar allocations antiguas
-    await supabase.from('payment_allocations').delete().eq('payment_id', paymentId);
-
-    // 5. Re-distribuir el nuevo monto en cuotas pendientes y calcular la distribución
-    const { data: pendingInsts } = await supabase
-      .from('loan_installments')
-      .select('*')
-      .eq('loan_id', loanId)
-      .gt('balance', 0)
-      .order('scheduled_date', { ascending: true });
-
-    let remaining = newAmount;
-    const newAllocations: any[] = [];
-    const todayStr = colombiaToday();
-
-    let dayInstallmentAmount = 0;
-    let arrearsAmount = 0;
-    let advanceAmount = 0;
-
-    for (const inst of (pendingInsts || [])) {
-      if (remaining <= 0) break;
-      const balance   = Number(inst.balance);
-      const payAmount = Math.min(balance, remaining);
-      remaining -= payAmount;
-
-      const newPaid    = Number(inst.paid_amount) + payAmount;
-      const newBalance = balance - payAmount;
-
-      let status = inst.status;
-      if (newBalance === 0) {
-        status = inst.scheduled_date > todayStr ? 'PAGADA_ANTICIPADAMENTE' : 'PAGADA';
-      } else if (newPaid > 0) {
-        status = 'PARCIAL';
-      }
-
-        await supabase
-          .from('loan_installments')
-          .update({
-            paid_amount: newPaid,
-            balance: newBalance,
-            status,
-            paid_date: newBalance === 0 ? todayStr : inst.paid_date,
-          })
-          .eq('id', inst.id);
-
-      let allocationType = 'DIA_ACTUAL';
-      if (inst.scheduled_date < todayStr) {
-        allocationType = 'ATRASO';
-        arrearsAmount += payAmount;
-      } else if (inst.scheduled_date > todayStr) {
-        allocationType = 'ADELANTO';
-        advanceAmount += payAmount;
-      } else {
-        dayInstallmentAmount += payAmount;
-      }
-
-      newAllocations.push({
-        payment_id: paymentId,
-        installment_id: inst.id,
-        allocated_amount: payAmount,
-        allocation_type: allocationType
-      });
-    }
-
-    if (newAllocations.length > 0) {
-      await supabase.from('payment_allocations').insert(newAllocations as any);
-    }
-
-    // 6. Actualizar monto del pago con la distribución calculada exacta
-    const { error: upErr } = await supabase
-      .from('payments')
-      .update({
-        total_amount: newAmount,
-        day_installment_amount: dayInstallmentAmount,
-        arrears_amount: arrearsAmount,
-        advance_amount: advanceAmount,
-        is_transfer: isTransfer,
-        collector_observation: `[CORREGIDO] ${reason}`.trim(),
-      })
-      .eq('id', paymentId);
-    if (upErr) throw upErr;
-
-    // 7. Recalcular saldo del préstamo
-    const balanceDelta   = oldAmount - newAmount; // si bajó el pago, saldo sube
-    const newLoanBalance = Number(loan.current_balance) + balanceDelta;
-    await supabase
-      .from('loans')
-      .update({
-        current_balance: Math.max(0, newLoanBalance),
-        status: newLoanBalance <= 0 ? 'CANCELADO' : loan.status
-      })
-      .eq('id', loanId);
-  }
-
-  /**
-   * Elimina un cobro registrado por completo, revirtiendo el saldo del préstamo
-   * y el estado de las cuotas.
-   */
-  static async deletePayment(paymentId: string) {
-    // 1. Obtener el pago original
-    const { data: payment, error: pErr } = await supabase
-      .from('payments')
-      .select('id, total_amount, loan_id')
-      .eq('id', paymentId)
-      .single();
-    if (pErr) throw pErr;
-
-    const loanId = payment.loan_id;
-
-    // 2. Eliminar allocations antiguas
-    await supabase.from('payment_allocations').delete().eq('payment_id', paymentId);
-
-    // 3. Eliminar el pago en la tabla payments
-    const { error: delErr } = await supabase.from('payments').delete().eq('id', paymentId);
-    if (delErr) throw delErr;
-
-    // 4. Reconciliar el préstamo y sus cuotas
-    await this.reconcileLoanInstallments(loanId);
-  }
+  // Derive context for the second row of cards based on selection
+  const isFiltered = selectedRoute !== 'all' && selectedRoute !== '';
+  const selectedRouteData = isFiltered ? routeStates.find(r => r.id === selectedRoute) : null;
+
+  // Filter table rows
+  const visibleRoutes = selectedRoute === ''
+    ? []
+    : selectedRoute === 'all'
+      ? routeStates
+      : routeStates.filter(r => r.id === selectedRoute);
+
+  const routeSubtitle = selectedRoute === ''
+    ? 'Seleccione una ruta'
+    : isFiltered ? `En ruta: ${selectedRouteData?.ruta}` : 'Todas las rutas';
+
+  // Clientes que pagaron hoy
+  const paidLoanIds = new Set((stats?.pagosHoy ?? []).map((p: any) => p.loanId));
+  const clientesPagaronHoy = paidLoanIds.size;
+
+  // "Pagaron adelantado" = clientes que hoy pagaron cuotas FUTURAS (adelantosHoy).
+  // Esto es consistente con "De adelantos" en el recaudo, que proviene del mismo campo advance_amount.
+  const clientesAdelantados = stats?.adelantosHoy?.count ?? 0;
+
+  // Para la barra de progreso: cubiertos = pagaron hoy + cuota de hoy pre-pagada antes de hoy
+  const prepaidLoanIds = new Set((stats?.prepaidToday?.clients ?? []).map((c: any) => c.loanId));
+  const allCoveredLoanIds = new Set([
+    ...Array.from(paidLoanIds),
+    ...Array.from(prepaidLoanIds),
+  ]);
+  const totalVisitados = allCoveredLoanIds.size;
+  const pctVisitados = (stats?.clientes ?? 0) > 0
+    ? Math.min(100, Math.round((totalVisitados / (stats?.clientes ?? 1)) * 100))
+    : 0;
+
+  return (
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+        <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
+          <Activity className="w-6 h-6 text-brand-600" />
+          Dashboard
+          {isStatsLoading && <div className="w-4 h-4 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin ml-2" />}
+          <span
+            title={isLive ? 'Se actualiza solo cuando los cobradores sincronizan' : 'Sin conexión en tiempo real: se actualiza cada 90 s'}
+            className={`ml-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase ${isLive ? 'text-emerald-600' : 'text-slate-400'}`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+            {isLive ? 'En vivo' : 'Sin tiempo real'}
+          </span>
+        </h1>
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+          <label>Ruta:</label>
+          <select
+            value={selectedRoute}
+            onChange={(e) => setSelectedRoute(e.target.value)}
+            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-brand-500"
+          >
+            <option value="" disabled>Seleccione una ruta</option>
+            <option value="all">Todas las rutas</option>
+            {routeStates.map(r => (
+              <option key={r.id} value={r.id}>{r.ruta}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Quick Action Buttons */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <button
+          onClick={() => setIsCreateLoanOpen(true)}
+          className="flex items-center justify-center gap-3 px-5 py-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 transition-all group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors shrink-0">
+            <Plus className="w-5 h-5" />
+          </div>
+          <span className="text-sm sm:text-base">Nuevo Préstamo</span>
+        </button>
+
+        <button
+          onClick={() => setIsExcelMigrationOpen(true)}
+          className="flex items-center justify-center gap-3 px-5 py-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 transition-all group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors shrink-0">
+            <FileSpreadsheet className="w-5 h-5" />
+          </div>
+          <span className="text-sm sm:text-base">Migración Excel</span>
+        </button>
+
+        <button
+          onClick={() => setClientsModal({ open: true, onlyToday: false })}
+          className="flex items-center justify-center gap-3 px-5 py-4 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-teal-500/20 transition-all group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors shrink-0">
+            <Building2 className="w-5 h-5" />
+          </div>
+          <span className="text-sm sm:text-base">Cobro en Oficina</span>
+        </button>
+
+        <button
+          onClick={() => setIsEditPaymentOpen(true)}
+          className="flex items-center justify-center gap-3 px-5 py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-amber-500/20 transition-all group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors shrink-0">
+            <PencilLine className="w-5 h-5" />
+          </div>
+          <span className="text-sm sm:text-base">Corregir Cobro</span>
+        </button>
+
+      </div>
+
+      {/* Cards Row 1 — always filtered by selected route */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Clientes Activos + Clientes que pagaron hoy + clientes que han pagado adelantado */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between gap-3.5">
+          {/* Fila 1: clientes activos */}
+          <button
+            onClick={() => setClientsModal({ open: true, onlyToday: false })}
+            className="flex items-center justify-between group w-full text-left"
+          >
+            <div className="flex items-center gap-2 text-slate-500 font-bold text-sm">
+              <Users className="w-4 h-4 text-brand-500" />
+              Clientes Activos
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className={`text-2xl font-black text-slate-800 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+                {stats?.clientes ?? '—'}
+              </span>
+              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors" />
+            </div>
+          </button>
+
+          {/* Divisor */}
+          <div className="border-t border-slate-100" />
+
+          {/* Fila 2: clientes que pagaron hoy */}
+          <button
+            onClick={() => setIsPaidTodayOpen(true)}
+            disabled={clientesPagaronHoy === 0}
+            className="flex items-center justify-between group w-full text-left disabled:cursor-default"
+          >
+            <div className="flex items-center gap-2 text-slate-500 font-bold text-sm">
+              <CheckCircle className="w-4 h-4 text-emerald-500" />
+              Pagaron hoy
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className={`text-2xl font-black text-emerald-600 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+                {clientesPagaronHoy}
+              </span>
+              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 transition-colors" />
+            </div>
+          </button>
+
+          {/* Divisor */}
+          <div className="border-t border-slate-100" />
+
+          {/* Fila 3: clientes que pagaron cuotas futuras hoy (adelantosHoy) */}
+          <button
+            onClick={() => setIsAdelantosOpen(true)}
+            disabled={clientesAdelantados === 0}
+            className="flex items-center justify-between group w-full text-left disabled:cursor-default"
+          >
+            <div className="flex items-center gap-2 text-slate-500 font-bold text-sm">
+              <CalendarCheck className="w-4 h-4 text-indigo-500" />
+              Pagaron adelantado
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className={`text-2xl font-black text-indigo-600 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+                {clientesAdelantados}
+              </span>
+              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 transition-colors" />
+            </div>
+          </button>
+
+          {/* Barra de progreso y resumen */}
+          <div className="pt-2 border-t border-slate-100 flex flex-col gap-1.5">
+            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-all duration-700 ease-out"
+                style={{ width: isStatsLoading ? '0%' : `${pctVisitados}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-slate-400 font-medium">
+              {totalVisitados} cubiertos ({pctVisitados}%) · {routeSubtitle}
+            </p>
+          </div>
+        </div>
+
+        {/* Préstamos nuevos del día — suma desembolsada */}
+        <button
+          onClick={() => setIsNewLoansOpen(true)}
+          className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm text-left hover:shadow-md hover:border-blue-200 transition-all group"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2 text-slate-500 font-bold">
+              <UserPlus className="w-5 h-5 text-blue-500" />
+              Préstamos nuevos (hoy)
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 transition-colors" />
+          </div>
+          <div className={`text-3xl sm:text-4xl font-black text-slate-800 mb-1 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+            {formatCurrency(stats?.nuevosHoy?.total ?? 0)}
+          </div>
+          <p className="text-xs text-slate-400">
+            {stats?.nuevosHoy?.count ?? 0} préstamo{(stats?.nuevosHoy?.count ?? 0) !== 1 ? 's' : ''} · {routeSubtitle}
+          </p>
+        </button>
+
+        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-slate-500 font-bold">
+                <DollarSign className="w-5 h-5 text-emerald-500" />
+                Recaudo (hoy)
+              </div>
+              <button
+                onClick={() => setIsPaidTodayOpen(true)}
+                disabled={!stats?.recaudo}
+                className="text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full hover:bg-emerald-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                Ver lista
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            </div>
+
+            <div className={`text-3xl sm:text-4xl font-black text-slate-800 mb-3 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+              {formatCurrency(stats?.recaudo ?? 0)}
+            </div>
+
+            <div className={`flex-1 flex flex-col justify-end transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+              <div className="pt-2 border-t border-slate-100 space-y-1 text-xs">
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>De cuotas del día:</span>
+                  <span className="font-bold text-emerald-600">{formatCurrency(stats?.recaudoCuotasHoy ?? 0)}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>De atrasos recuperados:</span>
+                  <span className="font-bold text-emerald-600">{formatCurrency(stats?.recaudoAtrasos ?? 0)}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>De adelantos:</span>
+                  <span className="font-bold text-emerald-600">{formatCurrency(stats?.recaudoAdelantos ?? 0)}</span>
+                </div>
+              </div>
+
+              <div className="pt-2 mt-2 border-t border-slate-100 space-y-1 text-xs">
+                <div className="flex justify-between items-center text-slate-500">
+                  <span>Por cobrador (Físico):</span>
+                  <span className="font-semibold">{formatCurrency(stats?.recaudoCobrador ?? 0)}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500">
+                  <span>En oficina:</span>
+                  <span className="font-semibold">{formatCurrency(stats?.recaudoOficina ?? 0)}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500">
+                  <span>Transferencias:</span>
+                  <button
+                    onClick={() => setIsTransferModalOpen(true)}
+                    className="font-semibold text-indigo-600 hover:text-indigo-700 underline underline-offset-2"
+                  >
+                    {formatCurrency(stats?.recaudoTransferencias ?? 0)}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-slate-500 font-bold">
+                <DollarSign className="w-5 h-5 text-amber-500" />
+                Cuotas del Día (Hoy)
+              </div>
+              <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200">
+                Del día
+              </span>
+            </div>
+            <div className={`text-3xl sm:text-4xl font-black text-slate-800 mb-3 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+              {formatCurrency(stats?.esperadoCuotasHoy ?? stats?.esperado ?? 0)}
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 space-y-1.5 text-xs">
+            <div className="flex justify-between items-center text-slate-500">
+              <span>+ Atrasos acumulados:</span>
+              <span className="font-bold text-red-600">{formatCurrency(stats?.esperadoAtrasos ?? 0)}</span>
+            </div>
+            <div className="flex justify-between items-center font-bold text-slate-700 pt-1.5 border-t border-slate-100">
+              <span>Total por recoger (Hoy + Atrasos):</span>
+              <span className="font-black text-amber-600">{formatCurrency(stats?.esperado ?? 0)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── ACTION MODULES GRID ─── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
+
+        {/* 1. Cuota de hoy ya pagada (adelantada en días anteriores). No suma al esperado del día */}
+        <button
+          onClick={() => setIsPrepaidModalOpen(true)}
+          className="bg-white rounded-3xl border border-indigo-100 shadow-sm p-6 hover:shadow-md hover:border-indigo-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
+        >
+          <div className="flex items-start justify-between w-full mb-6">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center relative shadow-inner">
+              <CalendarCheck className="w-7 h-7 text-indigo-600" />
+              <span className="absolute -top-2 -right-2 w-7 h-7 bg-indigo-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md">
+                {stats!.prepaidToday!.count}
+              </span>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-indigo-50 transition-colors">
+              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all" />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Cuota de Hoy Ya Pagada</h3>
+            <p className="text-sm text-slate-500 leading-relaxed">
+              <strong className="text-indigo-600">{stats!.prepaidToday!.count}</strong> cliente{stats!.prepaidToday!.count !== 1 ? 's' : ''} ya pagaron la cuota de hoy en días anteriores. No se cuentan en lo esperado del día.
+            </p>
+            <p className="text-sm font-black text-indigo-700 mt-1">
+              {formatCurrency((stats!.prepaidToday!.clients ?? []).reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0))}
+            </p>
+          </div>
+        </button>
+
+        {/* 2. Sorteo de boletas */}
+        <button
+          onClick={() => setIsLotteryOpen(true)}
+          className="bg-gradient-to-br from-indigo-900 via-purple-900 to-violet-900 hover:from-indigo-800 hover:via-purple-800 hover:to-violet-800 active:scale-[0.98] transition-all rounded-3xl p-6 flex flex-col justify-between shadow-lg shadow-purple-900/20 group h-full relative overflow-hidden"
+        >
+          {/* Decorative glow */}
+          <div className="absolute top-0 right-0 w-40 h-40 bg-purple-500/30 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+
+          <div className="flex items-start justify-between w-full mb-6 relative z-10">
+            <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-sm border border-white/10">
+              <Trophy className="w-7 h-7 text-white" />
+            </div>
+            <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-white/20 transition-colors">
+              <ChevronRight className="w-5 h-5 text-purple-200 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+            </div>
+          </div>
+          <div className="relative z-10 text-left">
+            <h3 className="text-xl font-black text-white leading-tight mb-1.5">Sorteo de Boletas</h3>
+            <p className="text-sm text-purple-200/80 leading-relaxed">
+              Digita el número ganador y procesa el sorteo para todas las rutas.
+            </p>
+          </div>
+        </button>
+
+        {/* 3. Observaciones y Adicionales */}
+        {stats?.alerts && stats.alerts.length > 0 && (() => {
+          const withObs = stats.alerts.filter((a: any) => a.observation);
+          const withoutObs = stats.alerts.filter((a: any) => !a.observation);
+          return (
+            <button
+              onClick={() => setIsObservationsOpen(true)}
+              className="bg-white rounded-3xl border border-amber-100 shadow-sm p-6 hover:shadow-md hover:border-amber-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
+            >
+              <div className="flex items-start justify-between w-full mb-6">
+                <div className="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center relative shadow-inner">
+                  <Bell className="w-7 h-7 text-amber-500" />
+                  <span className="absolute -top-2 -right-2 w-7 h-7 bg-amber-500 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md">
+                    {stats.alerts.length}
+                  </span>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-amber-50 transition-colors">
+                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
+                </div>
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-800 leading-tight mb-3">Observaciones y Alertas</h3>
+                <div className="flex flex-col gap-2">
+                  {withoutObs.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-rose-500"></div>
+                      <span className="text-xs font-bold text-slate-600">
+                        {withoutObs.length} alerta{withoutObs.length !== 1 ? 's' : ''} sin justificar
+                      </span>
+                    </div>
+                  )}
+                  {withObs.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                      <span className="text-xs font-bold text-slate-600">
+                        {withObs.length} {withObs.length !== 1 ? 'justificadas' : 'justificada'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </button>
+          );
+        })()}
+      </div>
+
+      {/* ─── EFECTIVIDAD DE RECAUDO ─── */}
+      {selectedRoute && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <EffectivenessCard
+            title="Efectividad · Cuotas de Hoy"
+            collected={stats?.recaudoCuotasHoy ?? 0}
+            expected={stats?.esperadoCuotasHoy ?? 0}
+            collectedLabel="Ya cobrado"
+            remainingLabel="Por recoger"
+            goalLabel="Meta del día (cuotas)"
+            isLoading={isStatsLoading}
+            formatCurrency={formatCurrency}
+          />
+
+          <EffectivenessCard
+            title="Efectividad · Atrasos"
+            collected={stats?.recaudoAtrasos ?? 0}
+            expected={stats?.esperadoAtrasos ?? 0}
+            collectedLabel="Atrasos recuperados"
+            remainingLabel="Atrasos pendientes"
+            goalLabel="Total de atrasos"
+            isLoading={isStatsLoading}
+            formatCurrency={formatCurrency}
+          />
+        </div>
+      )}
+
+      {/* Cards Row 2 — changes meaning based on filter */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full md:w-2/3 mb-8">
+        {isFiltered ? (
+          /* Route-specific context cards */
+          <>
+            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-500 font-bold mb-3">
+                <UserCheck className="w-5 h-5 text-amber-500" />
+                Cobrador Asignado
+              </div>
+              <div className="text-lg font-black text-slate-800 leading-tight">
+                {selectedRouteData?.cobrador || 'Sin asignar'}
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-500 font-bold mb-3">
+                <Map className="w-5 h-5 text-indigo-500" />
+                Estado de Ruta
+              </div>
+              <div className={`flex items-center gap-2 text-lg font-black ${selectedRouteData?.estado === 'Activo' ? 'text-emerald-600' : 'text-amber-600'
+                }`}>
+                {selectedRouteData?.estado === 'Activo'
+                  ? <CheckCircle className="w-5 h-5" />
+                  : <AlertCircle className="w-5 h-5" />
+                }
+                {selectedRouteData?.estado || '—'}
+              </div>
+            </div>
+          </>
+        ) : (
+          /* Global context cards */
+          <>
+            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-500 font-bold mb-3">
+                <UserCheck className="w-5 h-5 text-amber-500" />
+                Cobradores Activos
+              </div>
+              <div className={`text-3xl font-black text-slate-800 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+                {stats?.cobradores ?? '—'}
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-500 font-bold mb-3">
+                <Map className="w-5 h-5 text-indigo-500" />
+                Rutas Activas
+              </div>
+              <div className={`text-3xl font-black text-slate-800 transition-all ${isStatsLoading ? 'opacity-40' : 'opacity-100'}`}>
+                {stats?.rutas ?? '—'}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Préstamos terminados */}
+      <button
+        onClick={() => setCompletedLoansOpen(true)}
+        className="mb-8 w-full md:w-2/3 text-left bg-gradient-to-r from-emerald-50 to-white border border-emerald-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-emerald-300 transition-all"
+      >
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center"><CheckCircle className="w-6 h-6" /></div>
+            <div><p className="font-black text-slate-800">Clientes que terminaron de pagar</p><p className="text-sm text-slate-500">Incluye préstamos refinanciados y muestra el nuevo préstamo si existe</p></div>
+          </div>
+          <div className="text-right shrink-0"><p className="text-3xl font-black text-emerald-700">{completedLoansLoading ? '…' : completedLoans.length}</p><p className="text-xs font-bold text-emerald-700">préstamos</p></div>
+        </div>
+      </button>
+
+      {/* Table Section */}
+      <div className="pt-4">
+        <h3 className="text-lg font-bold text-slate-800 mb-4">
+          {selectedRoute === '' ? 'Seleccione una ruta para ver detalles' : isFiltered ? `Detalle: ${selectedRouteData?.ruta}` : 'Estado de las rutas'}
+        </h3>
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 text-sm">
+                <th className="py-4 px-6 font-semibold w-1/4">Ruta</th>
+                <th className="py-4 px-6 font-semibold w-1/4">Cobrador</th>
+                <th className="py-4 px-6 font-semibold text-center w-1/4">Clientes</th>
+                <th className="py-4 px-6 font-semibold w-1/4">Estado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {visibleRoutes.map(route => (
+                <tr key={route.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="py-4 px-6 font-bold text-slate-800">{route.ruta}</td>
+                  <td className="py-4 px-6 text-slate-600">{route.cobrador}</td>
+                  <td className="py-4 px-6 text-center font-semibold text-slate-700">{route.clientesCount}</td>
+                  <td className="py-4 px-6">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded-full ${route.estado === 'Activo' ? 'bg-emerald-500' :
+                        route.estado === 'Sin asignar' ? 'bg-amber-500' :
+                          'bg-slate-300'
+                        }`} />
+                      <span className="text-sm font-semibold text-slate-700">{route.estado}</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {visibleRoutes.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-slate-500">
+                    No hay rutas registradas
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Clients Modal */}
+      <ClientsModal
+        isOpen={clientsModal.open}
+        onClose={() => setClientsModal({ open: false, onlyToday: false })}
+        initialRouteId={selectedRoute}
+        initialOnlyToday={clientsModal.onlyToday}
+        routeStates={routeStates}
+      />
+
+      <LotteryModule
+        isOpen={isLotteryOpen}
+        onClose={() => setIsLotteryOpen(false)}
+      />
+
+      <ObservationsModal
+        isOpen={isObservationsOpen}
+        onClose={() => setIsObservationsOpen(false)}
+        alerts={stats?.alerts || []}
+      />
+
+      <PrepaidTodayModal
+        isOpen={isPrepaidModalOpen}
+        onClose={() => setIsPrepaidModalOpen(false)}
+        clients={stats?.prepaidToday?.clients || []}
+      />
+
+      <NewLoansTodayModal
+        isOpen={isNewLoansOpen}
+        onClose={() => setIsNewLoansOpen(false)}
+        clients={stats?.nuevosHoy?.clients || []}
+        routeId={selectedRoute}
+        onClientClick={() => { }}
+      />
+
+      {/* Modal Adelantos de Hoy */}
+      {isAdelantosOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsAdelantosOpen(false)} />
+          <div className="relative bg-white rounded-3xl shadow-xl w-full max-w-lg overflow-hidden">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-emerald-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                  <FastForward className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-800">Adelantos de Hoy</h3>
+                  <p className="text-xs font-semibold text-slate-500">Cuotas futuras cobradas hoy en efectivo</p>
+                </div>
+              </div>
+              <button onClick={() => setIsAdelantosOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
+              <div className="flex justify-between items-center bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 mb-4">
+                <span className="font-bold text-emerald-700 text-sm">Total adelantado hoy</span>
+                <span className="font-black text-emerald-700 text-lg">{formatCurrency(stats?.adelantosHoy?.total ?? 0)}</span>
+              </div>
+              {(stats?.adelantosHoy?.clientes || []).map((a: any) => (
+                <div key={a.loanId} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-slate-800 text-sm">{a.clientName}</span>
+                    <span className="font-black text-emerald-700">{formatCurrency(a.totalAdelantado)}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-slate-500">
+                    <span>Cuota diaria: <strong className="text-slate-700">{formatCurrency(a.cuotaDiaria)}</strong></span>
+                    <span>Días cubiertos: <strong className="text-emerald-600">{a.diasCubiertos} d{a.diasCubiertos !== 1 ? 'ías' : 'ía'}</strong></span>
+                  </div>
+                </div>
+              ))}
+              {(stats?.adelantosHoy?.clientes?.length ?? 0) === 0 && (
+                <p className="text-center text-slate-400 py-6">No hay adelantos registrados hoy.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <AdminCreateLoanModal
+        isOpen={isCreateLoanOpen}
+        onClose={() => setIsCreateLoanOpen(false)}
+        routeStates={routeStates}
+        onSuccess={() => setIsCreateLoanOpen(false)}
+      />
+
+      <TransferVouchersModal
+        isOpen={isTransferModalOpen}
+        onClose={() => setIsTransferModalOpen(false)}
+        routeStates={routeStates}
+        initialRouteId={selectedRoute}
+      />
+
+      <EditPaymentModal
+        isOpen={isEditPaymentOpen}
+        onClose={() => setIsEditPaymentOpen(false)}
+      />
+
+      <ExcelMigrationModal
+        isOpen={isExcelMigrationOpen}
+        onClose={() => setIsExcelMigrationOpen(false)}
+        routeStates={routeStates}
+        onSuccess={() => setIsExcelMigrationOpen(false)}
+      />
+
+      <PaidTodayModal
+        isOpen={isPaidTodayOpen}
+        onClose={() => setIsPaidTodayOpen(false)}
+        entries={stats?.pagosHoy || []}
+        routeLabel={isFiltered ? selectedRouteData?.ruta : undefined}
+      />
+
+      <CompletedLoansModal
+        isOpen={completedLoansOpen}
+        onClose={() => setCompletedLoansOpen(false)}
+        loans={completedLoans}
+        isLoading={completedLoansLoading}
+        formatCurrency={formatCurrency}
+      />
+    </div>
+  );
 }
-
-
