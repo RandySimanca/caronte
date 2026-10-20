@@ -269,8 +269,11 @@ export function PaymentConfirmationModal({
           remaining -= allocated;
         }
 
-        // Update loan balance locally
-        await db.loans.update(loan.id, { current_balance: newLoanBalance });
+        // Update loan balance locally; cerrar el préstamo si el saldo llega a 0
+        await db.loans.update(loan.id, {
+          current_balance: newLoanBalance,
+          ...(newLoanBalance <= 0 ? { status: 'CANCELADO' } : {}),
+        } as any);
 
         // Recordar hasta dónde va la ruta hoy: un cliente nuevo se inserta justo después de este
         await markLastCollected(loan.client_id, today);

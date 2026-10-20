@@ -205,6 +205,18 @@ export function RouteClientList() {
         avatarUrl: client.photo_face_url
       };
     })
+    .filter(c => {
+      // Ocultar clientes que ya no tienen préstamo activo ni son ganadores del sorteo.
+      // Cuando un pago cierra el préstamo (saldo 0 → CANCELADO), el cliente desaparece de
+      // la lista de inmediato, sin esperar la sincronización del día siguiente.
+      const hasActiveLoan = loans.some(
+        l => l.client_id === c.id && l.status === 'ACTIVO'
+      );
+      const isWinner = loans.some(
+        l => l.client_id === c.id && isLotteryWinnerLoan(l, lotteryDraw)
+      );
+      return hasActiveLoan || isWinner;
+    })
     .filter(c => c.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [clients, loans, installments, searchTerm, today, lotteryDraw, todayPaidByLoan]);
 

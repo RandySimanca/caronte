@@ -268,7 +268,9 @@ export class SyncService {
               .upsert(paymentDb as any, { onConflict: 'operation_id', ignoreDuplicates: true });
             if (paymentError) throw paymentError;
 
-            const { error: loanError } = await supabase.from('loans').update({ current_balance: newLoanBalance } as any).eq('id', loanId);
+            const loanUpdate: any = { current_balance: newLoanBalance };
+            if (newLoanBalance <= 0) loanUpdate.status = 'CANCELADO';
+            const { error: loanError } = await supabase.from('loans').update(loanUpdate).eq('id', loanId);
             if (loanError) throw loanError;
 
             for (const inst of updatedInstallments) {
@@ -404,9 +406,11 @@ export class SyncService {
               if (instError) throw instError;
 
               if (newLoanBalance !== undefined) {
+                const loanUpdate: any = { current_balance: newLoanBalance };
+                if (newLoanBalance <= 0) loanUpdate.status = 'CANCELADO';
                 const { error: loanError } = await supabase
                   .from('loans')
-                  .update({ current_balance: newLoanBalance } as any)
+                  .update(loanUpdate)
                   .eq('id', loanId);
                 if (loanError) throw loanError;
               }
