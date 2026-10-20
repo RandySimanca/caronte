@@ -194,17 +194,18 @@ export function AdminDashboard() {
 
 
   const loadCompletedLoans = useCallback(async () => {
-    // Sin ruta elegida se muestran los de todas las rutas (la tarjeta nunca debe quedar en 0 por no filtrar).
+    // Se traen los de todas las rutas; el filtrado por ruta se hace en pantalla
+    // (contador de la tarjeta y selector del modal) para poder mostrar a qué ruta pertenece cada uno.
     setCompletedLoansLoading(true);
     try {
-      const rows = await AdminService.getCompletedLoans(selectedRoute || 'all');
+      const rows = await AdminService.getCompletedLoans('all');
       setCompletedLoans(rows);
     } catch (error) {
       toast.error('No se pudo cargar el historial de préstamos terminados');
     } finally {
       setCompletedLoansLoading(false);
     }
-  }, [selectedRoute]);
+  }, []);
 
   useEffect(() => {
     loadCompletedLoans();
@@ -246,6 +247,11 @@ export function AdminDashboard() {
     : selectedRoute === 'all'
       ? routeStates
       : routeStates.filter(r => r.id === selectedRoute);
+
+  // Préstamos terminados de la ruta elegida en el dashboard ('' o 'all' = todas)
+  const completedLoansInRoute = isFiltered
+    ? completedLoans.filter((l: any) => l.route_id === selectedRoute)
+    : completedLoans;
 
   const routeSubtitle = selectedRoute === ''
     ? 'Seleccione una ruta'
@@ -641,7 +647,7 @@ export function AdminDashboard() {
             <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center relative shadow-inner">
               <CheckCircle className="w-7 h-7 text-emerald-600" />
               <span className={`absolute -top-2 -right-2 min-w-7 h-7 px-1.5 bg-emerald-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md ${completedLoansLoading ? 'opacity-50' : ''}`}>
-                {completedLoansLoading ? '…' : completedLoans.length}
+                {completedLoansLoading ? '…' : completedLoansInRoute.length}
               </span>
             </div>
             <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
@@ -899,6 +905,8 @@ export function AdminDashboard() {
         isOpen={completedLoansOpen}
         onClose={() => setCompletedLoansOpen(false)}
         loans={completedLoans}
+        routes={routeStates}
+        initialRouteId={selectedRoute || 'all'}
         isLoading={completedLoansLoading}
         formatCurrency={formatCurrency}
       />
