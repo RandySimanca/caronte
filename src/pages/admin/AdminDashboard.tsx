@@ -194,14 +194,14 @@ export function AdminDashboard() {
 
 
   const loadCompletedLoans = useCallback(async () => {
-    // Se traen los de todas las rutas; el filtrado por ruta se hace en pantalla
-    // (contador de la tarjeta y selector del modal) para poder mostrar a qué ruta pertenece cada uno.
+    // Solo se cargan los préstamos que terminaron HOY para la tarjeta del dashboard.
+    // El modal permite buscar el historial completo con filtros adicionales.
     setCompletedLoansLoading(true);
     try {
-      const rows = await AdminService.getCompletedLoans('all');
+      const rows = await AdminService.getCompletedLoans('all', true);
       setCompletedLoans(rows);
     } catch (error) {
-      toast.error('No se pudo cargar el historial de préstamos terminados');
+      toast.error('No se pudo cargar los préstamos terminados de hoy');
     } finally {
       setCompletedLoansLoading(false);
     }
@@ -216,7 +216,7 @@ export function AdminDashboard() {
     () => {
       loadStats(true);
       loadCompletedLoans();
-      AdminService.getRouteStates().then(setRouteStates).catch(() => {});
+      AdminService.getRouteStates().then(setRouteStates).catch(() => { });
     },
     { tables: ['payments', 'loans', 'loan_installments', 'clients', 'expenses', 'daily_closings'] },
   );
@@ -568,7 +568,35 @@ export function AdminDashboard() {
           </div>
         </button>
 
-        {/* 2. Sorteo de boletas */}
+        {/* 2. Préstamos terminados (debajo del Sorteo de Boletas) */}
+        <button
+          type="button"
+          onClick={() => setCompletedLoansOpen(true)}
+          className="bg-white rounded-3xl border border-emerald-100 shadow-sm p-6 hover:shadow-md hover:border-emerald-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
+        >
+          <div className="flex items-start justify-between w-full mb-6">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center relative shadow-inner">
+              <CheckCircle className="w-7 h-7 text-emerald-600" />
+              <span className={`absolute -top-2 -right-2 min-w-7 h-7 px-1.5 bg-emerald-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md ${completedLoansLoading ? 'opacity-50' : ''}`}>
+                {completedLoansLoading ? '…' : completedLoansInRoute.length}
+              </span>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
+              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Préstamos Terminados Hoy</h3>
+            <p className="text-sm text-slate-500 leading-relaxed">
+              Clientes que terminaron de pagar hoy · {selectedRoute === '' ? 'Todas las rutas' : routeSubtitle}
+            </p>
+            <p className="text-xs text-emerald-600 font-semibold mt-1.5">
+              Clic para ver detalle o buscar historial
+            </p>
+          </div>
+        </button>
+
+        {/* 3. Sorteo de boletas */}
         <button
           onClick={() => setIsLotteryOpen(true)}
           className="bg-gradient-to-br from-indigo-900 via-purple-900 to-violet-900 hover:from-indigo-800 hover:via-purple-800 hover:to-violet-800 active:scale-[0.98] transition-all rounded-3xl p-6 flex flex-col justify-between shadow-lg shadow-purple-900/20 group h-full relative overflow-hidden"
@@ -592,7 +620,7 @@ export function AdminDashboard() {
           </div>
         </button>
 
-        {/* 3. Observaciones y Adicionales */}
+        {/* 4. Observaciones y Adicionales */}
         {stats?.alerts && stats.alerts.length > 0 && (() => {
           const withObs = stats.alerts.filter((a: any) => a.observation);
           const withoutObs = stats.alerts.filter((a: any) => !a.observation);
@@ -637,30 +665,6 @@ export function AdminDashboard() {
           );
         })()}
 
-        {/* 4. Préstamos terminados (debajo del Sorteo de Boletas) */}
-        <button
-          type="button"
-          onClick={() => setCompletedLoansOpen(true)}
-          className="bg-white rounded-3xl border border-emerald-100 shadow-sm p-6 hover:shadow-md hover:border-emerald-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
-        >
-          <div className="flex items-start justify-between w-full mb-6">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center relative shadow-inner">
-              <CheckCircle className="w-7 h-7 text-emerald-600" />
-              <span className={`absolute -top-2 -right-2 min-w-7 h-7 px-1.5 bg-emerald-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md ${completedLoansLoading ? 'opacity-50' : ''}`}>
-                {completedLoansLoading ? '…' : completedLoansInRoute.length}
-              </span>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
-              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
-            </div>
-          </div>
-          <div>
-            <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Préstamos Terminados</h3>
-            <p className="text-sm text-slate-500 leading-relaxed">
-              Clientes que pagaron su deuda completa o refinanciaron · {selectedRoute === '' ? 'Todas las rutas' : routeSubtitle}
-            </p>
-          </div>
-        </button>
       </div>
 
       {/* ─── EFECTIVIDAD DE RECAUDO ─── */}

@@ -2362,8 +2362,22 @@ export class AdminService {
   /**
    * Obtiene préstamos finalizados y relaciona el préstamo nuevo cuando el anterior
    * fue refinanciado. `routeId` puede ser una ruta específica o "all".
+   *
+   * @param routeId  Ruta a filtrar o "all" para todas.
+   * @param onlyToday  Si es true, solo devuelve los que tienen end_date igual a hoy (Colombia).
+   * @param searchTerm  Texto libre para filtrar por nombre, documento o teléfono del cliente.
+   * @param fromDate  Fecha inicio (YYYY-MM-DD) del rango de búsqueda histórica.
+   * @param toDate    Fecha fin (YYYY-MM-DD) del rango de búsqueda histórica.
    */
-  static async getCompletedLoans(routeId?: string) {
+  static async getCompletedLoans(
+    routeId?: string,
+    onlyToday: boolean = false,
+    searchTerm?: string,
+    fromDate?: string,
+    toDate?: string
+  ) {
+    const todayStr = colombiaToday();
+
     let query = supabase
       .from('loans')
       .select(`
@@ -2382,17 +2396,40 @@ export class AdminService {
         client:clients(full_name, document_id, phone)
       `)
       .in('status', ['CANCELADO', 'REFINANCIADO'])
-      .order('created_at', { ascending: false })
-      .limit(1000);
+      .order('end_date', { ascending: false })
+      .limit(500);
 
     if (routeId && routeId !== 'all') {
       query = query.eq('route_id', routeId);
     }
 
+    if (onlyToday) {
+      // Solo los que terminaron hoy: end_date == todayStr
+      query = query.eq('end_date', todayStr);
+    } else {
+      // Rango de fechas opcional para búsqueda histórica
+      if (fromDate) query = query.gte('end_date', fromDate);
+      if (toDate)   query = query.lte('end_date', toDate);
+    }
+
     const { data, error } = await query;
     if (error) throw error;
 
-    const loans = (data || []) as any[];
+    let loans = (data || []) as any[];
+
+    // Filtro de texto del lado del cliente (nombre, documento, teléfono)
+    if (searchTerm && searchTerm.trim() !== '') {
+      const term = searchTerm.toLowerCase();
+      loans = loans.filter((loan: any) => {
+        const client = Array.isArray(loan.client) ? loan.client[0] : loan.client;
+        return (
+          (client?.full_name || '').toLowerCase().includes(term) ||
+          (client?.document_id || '').toLowerCase().includes(term) ||
+          (client?.phone || '').toLowerCase().includes(term)
+        );
+      });
+    }
+
     const refinancedIds = loans
       .filter((loan) => loan.status === 'REFINANCIADO')
       .map((loan) => loan.id);
