@@ -444,7 +444,7 @@ export function CollectorDashboard() {
           <p className="text-2xl font-black mt-1 mb-1 leading-none">{formatCurrency(stats.collected)}</p>
           <div className="pt-2 border-t border-emerald-400/40 mt-3">
             <div className="flex justify-between items-center text-[10px] text-emerald-100 mb-0.5">
-              <span>Cobrado hoy:</span>
+              <span>Cuotas de hoy:</span>
               <span className="font-bold text-emerald-50">{formatCurrency(stats.collectedTodayOnly)}</span>
             </div>
             <div className="flex justify-between items-center text-[10px] text-emerald-100 mb-0.5">
