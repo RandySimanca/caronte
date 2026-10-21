@@ -787,8 +787,10 @@ export class AdminService {
 
     const totalGastos = expensesRes.data?.reduce((sum, e: any) => sum + Number(e.amount), 0) || 0;
 
-    // Solo contar préstamos entregados por el cobrador
-    const collectorLoans = loansRes.data?.filter(l => !adminUserIds.has(l.collector_id)) || [];
+    // Se cuentan TODOS los préstamos nuevos de la ruta en la fecha (incluidos los creados desde el
+    // panel del administrador, que quedan con el admin como collector_id). Así la liquidación
+    // coincide con el modal "Préstamos nuevos" del dashboard.
+    const collectorLoans = loansRes.data || [];
     const prestamosNuevos = collectorLoans.length;
     const totalPrestado = collectorLoans.reduce((sum, l: any) => sum + Number(l.amount_delivered), 0);
 
@@ -2392,5 +2394,3 @@ export class AdminService {
     }));
   }
 }
-
-
