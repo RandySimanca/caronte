@@ -14,7 +14,7 @@ import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
 import { NewLoansTodayModal } from '@/components/admin/NewLoansTodayModal';
 import { PaidTodayModal, type PaidTodayEntry } from '@/components/admin/PaidTodayModal';
 import { CompletedLoansTodayModal } from '@/components/collector/CompletedLoansTodayModal';
-import { completedLoansSettingKey, type CompletedLoanEntry } from '@/lib/completedLoans';
+import { buildCompletedToday, completedLoansSettingKey, countWithCompleted, type CompletedLoanEntry } from '@/lib/completedLoans';
 import { applyLotteryDrawLocally, isLotteryWinnerLoan, parseLotteryLastDraw } from '@/lib/lottery';
 import { NavLink } from 'react-router-dom';
 import { SyncIssuesPanel } from '@/components/sync/SyncIssuesPanel';
@@ -98,6 +98,8 @@ export function CollectorDashboard() {
     let arrearsClients = 0;
     let visitedCount = 0;
     let newCount = 0;
+    const visitedClientIds = new Set<string>();
+    const newClientIds = new Set<string>();
     
     let totalCollectedAdelantos = 0;
     let totalCollectedTodayOnly = 0;
@@ -173,45 +175,19 @@ export function CollectorDashboard() {
 
     // Préstamos terminados hoy (pagados o refinanciados): lista del servidor (se conserva tras
     // sincronizar) + los que se cerraron en este celular y aún no se sincronizan.
-    const completedMap = new Map<string, CompletedLoanEntry>();
-    const serverCompleted = allSettings.find(s => s.key === completedLoansSettingKey(today))?.value as CompletedLoanEntry[] | undefined;
-    for (const e of serverCompleted || []) completedMap.set(e.loanId, e);
-    for (const l of allLoans) {
-      if (l.status !== 'CANCELADO' || completedMap.has(l.id)) continue;
-      if (!paidTodayByLoan.has(l.id)) continue;
-      const lastEntry = paidTodayEntries
-        .filter(e => e.loanId === l.id)
-        .sort((a, b) => (b.collectedAt || '').localeCompare(a.collectedAt || ''))[0];
-      completedMap.set(l.id, {
-        loanId: l.id,
-        clientId: l.client_id,
-        clientName: clients.find(c => c.id === l.client_id)?.full_name || 'Cliente',
-        clientPhone: clients.find(c => c.id === l.client_id)?.phone ?? null,
-        totalPaid: Number(l.initial_obligation ?? l.amount_requested ?? 0),
-        amountRequested: Number(l.amount_requested || 0),
-        completedAt: lastEntry?.collectedAt || '',
-      });
+    const lastPaymentByLoan = new Map<string, string>();
+    for (const id of paidTodayByLoan.keys()) lastPaymentByLoan.set(id, '');
+    for (const e of paidTodayEntries) {
+      if (!e.loanId) continue;
+      if ((e.collectedAt || '') > (lastPaymentByLoan.get(e.loanId) || '')) lastPaymentByLoan.set(e.loanId, e.collectedAt || '');
     }
-    // Refinanciados hoy en este celular (préstamo nuevo de hoy que apunta al anterior)
-    for (const l of allLoans) {
-      const origId = l.refinanced_from_loan_id;
-      if (!origId || l.disbursement_date !== today || completedMap.has(origId)) continue;
-      const orig = allLoans.find(o => o.id === origId);
-      const cl = clients.find(c => c.id === l.client_id);
-      completedMap.set(origId, {
-        loanId: origId,
-        clientId: l.client_id,
-        clientName: cl?.full_name || 'Cliente',
-        clientPhone: cl?.phone ?? null,
-        totalPaid: Number(orig?.initial_obligation ?? orig?.amount_requested ?? 0),
-        amountRequested: Number(orig?.amount_requested || 0),
-        completedAt: l.created_at || '',
-        refinanced: true,
-      });
-    }
-    const completedToday = [...completedMap.values()].sort((a, b) =>
-      (b.completedAt || '').localeCompare(a.completedAt || '')
-    );
+    const completedToday = buildCompletedToday({
+      serverList: allSettings.find(s => s.key === completedLoansSettingKey(today))?.value as CompletedLoanEntry[] | undefined,
+      allLoans,
+      clients,
+      today,
+      lastPaymentByLoan,
+    });
 
     for (const loan of loans) {
       if (isLotteryWinnerLoan(loan, draw)) continue;
@@ -276,8 +252,10 @@ export function CollectorDashboard() {
 
       if (isFutureStart && !loanPaidToday) {
         newCount++;
+        newClientIds.add(loan.client_id);
       } else if (isTodayPaid || loanPaidToday) {
         visitedCount++;
+        visitedClientIds.add(loan.client_id);
       }
     } // end for loan of loans
 
@@ -313,9 +291,17 @@ export function CollectorDashboard() {
     const winnerClientIds = new Set(
       allLoans.filter(l => isLotteryWinnerLoan(l, draw)).map(l => l.client_id)
     );
-    const routeClientCount = clients.filter(
-      c => activeClientIds.has(c.id) || winnerClientIds.has(c.id)
-    ).length;
+    const routeClientIds = new Set(
+      clients.filter(c => activeClientIds.has(c.id) || winnerClientIds.has(c.id)).map(c => c.id)
+    );
+    const routeClientCount = routeClientIds.size;
+
+    // Los clientes que terminaron hoy cuentan como visitados (y suman al total si salieron de la ruta)
+    const counts = countWithCompleted(
+      { total: routeClientCount, visited: visitedCount, newCount },
+      completedToday,
+      { route: routeClientIds, visited: visitedClientIds, fresh: newClientIds }
+    );
 
     return {
       targetExpected,
@@ -326,10 +312,10 @@ export function CollectorDashboard() {
       collectedArrears: totalCollectedArrears,
       collectedAdelantos: totalCollectedAdelantos,
       pending: Math.max(targetExpected - collected, 0),
-      clientsTotal: routeClientCount,
-      clientsVisited: visitedCount,
-      clientsNew: newCount,
-      clientsPending: routeClientCount - visitedCount - newCount,
+      clientsTotal: counts.total,
+      clientsVisited: counts.visited,
+      clientsNew: counts.newCount,
+      clientsPending: counts.total - counts.visited - counts.newCount,
       arrearsAmount: currentArrears,
       arrearsClients,
       prepaidTodayCount: prepaidTodayClients.length,

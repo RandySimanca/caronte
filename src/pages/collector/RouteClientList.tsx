@@ -16,6 +16,7 @@ import { useSyncStore } from '@/stores/syncStore';
 import { SyncService } from '@/services/SyncService';
 import { sortByRouteOrder } from '@/lib/routeOrder';
 import { colombiaDateFromIso, mergeTodayPayments, paymentsTodaySettingKey } from '@/lib/dailyCollection';
+import { buildCompletedToday, completedLoansSettingKey, countWithCompleted, type CompletedLoanEntry } from '@/lib/completedLoans';
 
 // Posición del scroll de la lista: se guarda por día para volver "por donde vas" después de cobrar
 const SCROLL_KEY = 'route_list_scroll';
@@ -64,6 +65,18 @@ export function RouteClientList() {
     }
     return map;
   }, [allSettings, syncQueue, today]);
+
+  // Clientes que terminaron hoy su préstamo (pagaron todo o refinanciaron): cuentan como visitados
+  const completedToday = useMemo(
+    () => buildCompletedToday({
+      serverList: allSettings.find(s => s.key === completedLoansSettingKey(today))?.value as CompletedLoanEntry[] | undefined,
+      allLoans: loans,
+      clients,
+      today,
+      lastPaymentByLoan: new Map([...todayPaidByLoan.keys()].map(id => [id, ''] as [string, string])),
+    }),
+    [allSettings, loans, clients, today, todayPaidByLoan]
+  );
 
   const listRef = useRef<HTMLUListElement | null>(null);
   const scrollRestoredRef = useRef(false);
@@ -320,11 +333,25 @@ export function RouteClientList() {
     }
   }
 
-  const totalClients = sortedClients.length;
-  const visitedCount = sortedClients.filter(c => c.status === 'VISITADO' || c.status === 'ADELANTADO').length;
+  const baseVisited = sortedClients.filter(c => c.status === 'VISITADO' || c.status === 'ADELANTADO');
+  const baseNew = sortedClients.filter(c => c.status === 'NUEVO');
   const arrearsCount = sortedClients.filter(c => c.status === 'ATRASADO').length;
-  const newCount = sortedClients.filter(c => c.status === 'NUEVO').length;
   const winnerCount = sortedClients.filter(c => c.status === 'GANADOR').length;
+  // Con búsqueda activa se muestran los números de la lista filtrada, sin sumar los terminados
+  const counts = searchTerm
+    ? { total: sortedClients.length, visited: baseVisited.length, newCount: baseNew.length }
+    : countWithCompleted(
+        { total: sortedClients.length, visited: baseVisited.length, newCount: baseNew.length },
+        completedToday,
+        {
+          route: new Set(sortedClients.map(c => c.id)),
+          visited: new Set(baseVisited.map(c => c.id)),
+          fresh: new Set(baseNew.map(c => c.id)),
+        }
+      );
+  const totalClients = counts.total;
+  const visitedCount = counts.visited;
+  const newCount = counts.newCount;
   const pendingCount = totalClients - visitedCount - newCount - winnerCount;
 
   return (
