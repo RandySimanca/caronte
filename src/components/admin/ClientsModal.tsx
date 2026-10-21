@@ -151,6 +151,8 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
   const [search, setSearch] = useState('');
   const [createdDate, setCreatedDate] = useState<string>('');
   const [routeId, setRouteId] = useState(initialRouteId);
+  // Por defecto se muestran solo los clientes con préstamo activo (igual que la ruta del cobrador).
+  const [onlyActiveLoan, setOnlyActiveLoan] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paymentCardLoanId, setPaymentCardLoanId] = useState<string | null>(null);
   const [editClient, setEditClient] = useState<any | null>(null);
@@ -164,6 +166,8 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
     if (isOpen) {
       setRouteId(initialRouteId);
       setCreatedDate(initialDate || (initialOnlyToday ? todayStr : ''));
+      // Si se abre para ver clientes nuevos de una fecha, no se filtra por préstamo activo
+      setOnlyActiveLoan(!(initialOnlyToday || initialDate));
       setSearch('');
       setExpandedId(null);
     }
@@ -174,7 +178,7 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
     const load = async () => {
       setIsLoading(true);
       try {
-        const data = await AdminService.getClients({ routeId, createdDate, search });
+        const data = await AdminService.getClients({ routeId, createdDate, search, onlyActiveLoan });
         setClients(data);
       } catch (error: any) {
         toast.error('Error cargando clientes: ' + error.message);
@@ -184,7 +188,7 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
     };
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
-  }, [isOpen, routeId, createdDate, search, editClient, adminPaymentLoan, isCreateLoanOpen]);
+  }, [isOpen, routeId, createdDate, search, onlyActiveLoan, editClient, adminPaymentLoan, isCreateLoanOpen]);
 
   const handleDeleteClient = async (clientId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -194,7 +198,7 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
       confirmText: 'Sí, eliminar',
     });
     if (!confirmed) return;
-    
+
     try {
       await AdminService.deleteClient(clientId);
       toast.success('Cliente eliminado correctamente');
@@ -228,304 +232,314 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
       <div className="fixed inset-0 z-[100] flex items-start justify-center pt-8 pb-4 px-4">
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
 
-      <div
-        className="relative bg-white rounded-3xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden"
-        style={{ maxHeight: 'calc(100vh - 4rem)' }}
-      >
-        {/* Header */}
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-brand-100 text-brand-600 flex items-center justify-center">
-              <Users className="w-6 h-6" />
+        <div
+          className="relative bg-white rounded-3xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden"
+          style={{ maxHeight: 'calc(100vh - 4rem)' }}
+        >
+          {/* Header */}
+          <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-brand-100 text-brand-600 flex items-center justify-center">
+                <Users className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-800">Clientes</h3>
+                <p className="text-sm font-medium text-slate-500">
+                  {isLoading ? 'Cargando...' : `${clients.length} resultado${clients.length !== 1 ? 's' : ''}`}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-xl font-black text-slate-800">Clientes</h3>
-              <p className="text-sm font-medium text-slate-500">
-                {isLoading ? 'Cargando...' : `${clients.length} resultado${clients.length !== 1 ? 's' : ''}`}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => { setCreateLoanClientId(undefined); setIsCreateLoanOpen(true); }}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Nuevo Préstamo
-            </button>
-            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors ml-2">
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 shrink-0 bg-white items-stretch md:items-center">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Buscar por nombre, cédula o teléfono..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-brand-500 transition"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-slate-400 shrink-0" />
-              <select
-                value={routeId}
-                onChange={e => setRouteId(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-500 font-medium text-slate-700"
+              <button
+                onClick={() => { setCreateLoanClientId(undefined); setIsCreateLoanOpen(true); }}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors"
               >
-                <option value="all">Todas las rutas</option>
-                {routeStates.map(r => (
-                  <option key={r.id} value={r.id}>{r.ruta}</option>
-                ))}
-              </select>
+                <Plus className="w-4 h-4" />
+                Nuevo Préstamo
+              </button>
+              <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors ml-2">
+                <X className="w-6 h-6" />
+              </button>
             </div>
-
-            {/* Date filter selector */}
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm">
-              <Calendar className="w-4 h-4 text-brand-600 shrink-0" />
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:inline">Fecha:</span>
-              <input
-                type="date"
-                value={createdDate}
-                onChange={e => setCreatedDate(e.target.value)}
-                className="bg-transparent text-sm font-bold text-slate-800 outline-none cursor-pointer"
-                title="Filtrar por fecha de adición del cliente"
-              />
-              {createdDate && (
-                <button
-                  type="button"
-                  onClick={() => setCreatedDate('')}
-                  className="p-1 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-200 transition-colors"
-                  title="Ver todos los clientes (quitar filtro de fecha)"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setCreatedDate(createdDate === todayStr ? '' : todayStr)}
-              className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
-                createdDate === todayStr
-                  ? 'bg-brand-600 border-brand-600 text-white shadow-md shadow-brand-500/20'
-                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-brand-400'
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              Hoy
-            </button>
           </div>
-        </div>
 
-        {/* Table */}
-        <div className="overflow-y-auto flex-1">
-          <table className="w-full text-left border-collapse">
-            <thead className="sticky top-0 bg-slate-50 z-10">
-              <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wider">
-                <th className="py-3 px-4 font-semibold w-8"></th>
-                <th className="py-3 px-4 font-semibold">Nombre</th>
-                <th className="py-3 px-4 font-semibold">Cédula</th>
-                <th className="py-3 px-4 font-semibold">Teléfono</th>
-                <th className="py-3 px-4 font-semibold">Ruta</th>
-                <th className="py-3 px-4 font-semibold text-right">Préstamo</th>
-                <th className="py-3 px-4 font-semibold text-center">Fotos</th>
-                <th className="py-3 px-4 font-semibold">Estado</th>
-                <th className="py-3 px-4 font-semibold">Registrado</th>
-                <th className="py-3 px-4 font-semibold text-center">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={9} className="py-16 text-center">
-                    <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto" />
-                  </td>
+          {/* Filters */}
+          <div className="px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 shrink-0 bg-white items-stretch md:items-center">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Buscar por nombre, cédula o teléfono..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-brand-500 transition"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+                <select
+                  value={routeId}
+                  onChange={e => setRouteId(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-500 font-medium text-slate-700"
+                >
+                  <option value="all">Todas las rutas</option>
+                  {routeStates.map(r => (
+                    <option key={r.id} value={r.id}>{r.ruta}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Solo con préstamo activo */}
+              <label className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={onlyActiveLoan}
+                  onChange={e => setOnlyActiveLoan(e.target.checked)}
+                  className="w-4 h-4 accent-emerald-600"
+                />
+                Solo con préstamo activo
+              </label>
+
+              {/* Date filter selector */}
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                <Calendar className="w-4 h-4 text-brand-600 shrink-0" />
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:inline">Fecha:</span>
+                <input
+                  type="date"
+                  value={createdDate}
+                  onChange={e => setCreatedDate(e.target.value)}
+                  className="bg-transparent text-sm font-bold text-slate-800 outline-none cursor-pointer"
+                  title="Filtrar por fecha de adición del cliente"
+                />
+                {createdDate && (
+                  <button
+                    type="button"
+                    onClick={() => setCreatedDate('')}
+                    className="p-1 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-200 transition-colors"
+                    title="Ver todos los clientes (quitar filtro de fecha)"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCreatedDate(createdDate === todayStr ? '' : todayStr)}
+                className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${createdDate === todayStr
+                    ? 'bg-brand-600 border-brand-600 text-white shadow-md shadow-brand-500/20'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-brand-400'
+                  }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                Hoy
+              </button>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-y-auto flex-1">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 bg-slate-50 z-10">
+                <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wider">
+                  <th className="py-3 px-4 font-semibold w-8"></th>
+                  <th className="py-3 px-4 font-semibold">Nombre</th>
+                  <th className="py-3 px-4 font-semibold">Cédula</th>
+                  <th className="py-3 px-4 font-semibold">Teléfono</th>
+                  <th className="py-3 px-4 font-semibold">Ruta</th>
+                  <th className="py-3 px-4 font-semibold text-right">Préstamo</th>
+                  <th className="py-3 px-4 font-semibold text-center">Fotos</th>
+                  <th className="py-3 px-4 font-semibold">Estado</th>
+                  <th className="py-3 px-4 font-semibold">Registrado</th>
+                  <th className="py-3 px-4 font-semibold text-center">Acciones</th>
                 </tr>
-              ) : clients.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-16 text-center text-slate-400 font-medium">
-                    No se encontraron clientes con los filtros actuales.
-                  </td>
-                </tr>
-              ) : (
-                clients.map((c: any) => {
-                  const activeLoan = c.loans?.find((l: any) => l.status === 'ACTIVO') || c.loans?.[0] || null;
-                  const isExpanded = expandedId === c.id;
-                  return (
-                    <React.Fragment key={c.id}>
-                      <tr
-                        className={`border-b border-slate-50 hover:bg-slate-50/70 transition-colors cursor-pointer ${isExpanded ? 'bg-blue-50/40' : ''}`}
-                        onClick={() => activeLoan && toggleExpand(c.id)}
-                      >
-                        {/* Expand icon */}
-                        <td className="py-3 px-4 text-slate-400">
-                          {activeLoan
-                            ? (isExpanded ? <ChevronUp className="w-4 h-4 text-blue-500" /> : <ChevronDown className="w-4 h-4" />)
-                            : <span className="block w-4" />}
-                        </td>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={9} className="py-16 text-center">
+                      <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto" />
+                    </td>
+                  </tr>
+                ) : clients.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-16 text-center text-slate-400 font-medium">
+                      No se encontraron clientes con los filtros actuales.
+                    </td>
+                  </tr>
+                ) : (
+                  clients.map((c: any) => {
+                    const activeLoan = c.loans?.find((l: any) => l.status === 'ACTIVO') || c.loans?.[0] || null;
+                    const isExpanded = expandedId === c.id;
+                    return (
+                      <React.Fragment key={c.id}>
+                        <tr
+                          className={`border-b border-slate-50 hover:bg-slate-50/70 transition-colors cursor-pointer ${isExpanded ? 'bg-blue-50/40' : ''}`}
+                          onClick={() => activeLoan && toggleExpand(c.id)}
+                        >
+                          {/* Expand icon */}
+                          <td className="py-3 px-4 text-slate-400">
+                            {activeLoan
+                              ? (isExpanded ? <ChevronUp className="w-4 h-4 text-blue-500" /> : <ChevronDown className="w-4 h-4" />)
+                              : <span className="block w-4" />}
+                          </td>
 
-                        <td className="py-3 px-4 font-bold text-slate-800 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            {c.full_name}
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setEditClient(c); }}
-                              className="text-slate-400 hover:text-blue-600 transition-colors p-1 bg-white rounded-md hover:bg-blue-50 border border-transparent hover:border-blue-100"
-                              title="Editar cliente"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 font-mono text-sm">{c.document_id}</td>
-                        <td className="py-3 px-4 text-slate-600">{c.phone || '—'}</td>
-                        <td className="py-3 px-4 text-slate-600">{(c.route as any)?.name || '—'}</td>
-
-                        {/* Loan amount */}
-                        <td className="py-3 px-4 text-right">
-                          {activeLoan ? (
-                            <div className="flex items-center justify-end gap-1">
-                              <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
-                              <span className="font-black text-slate-800 text-sm">
-                                {formatCurrency(activeLoan.amount_requested)}
-                              </span>
+                          <td className="py-3 px-4 font-bold text-slate-800 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              {c.full_name}
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setEditClient(c); }}
+                                className="text-slate-400 hover:text-blue-600 transition-colors p-1 bg-white rounded-md hover:bg-blue-50 border border-transparent hover:border-blue-100"
+                                title="Editar cliente"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
                             </div>
-                          ) : (
+                          </td>
+                          <td className="py-3 px-4 text-slate-600 font-mono text-sm">{c.document_id}</td>
+                          <td className="py-3 px-4 text-slate-600">{c.phone || '—'}</td>
+                          <td className="py-3 px-4 text-slate-600">{(c.route as any)?.name || '—'}</td>
+
+                          {/* Loan amount */}
+                          <td className="py-3 px-4 text-right">
+                            {activeLoan ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
+                                <span className="font-black text-slate-800 text-sm">
+                                  {formatCurrency(activeLoan.amount_requested)}
+                                </span>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCreateLoanClientId(c.id);
+                                  setIsCreateLoanOpen(true);
+                                }}
+                                className="text-brand-600 bg-brand-50 hover:bg-brand-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-brand-200"
+                              >
+                                Asignar préstamo
+                              </button>
+                            )}
+                          </td>
+
+                          {/* Photos */}
+                          <td className="py-3 px-4" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-center gap-1.5">
+                              {c.photo_face_url ? (
+                                <div className="flex items-center gap-1">
+                                  <Camera className="w-3.5 h-3.5 text-slate-400" />
+                                  <PhotoViewer url={c.photo_face_url} label={`Foto persona — ${c.full_name}`} />
+                                </div>
+                              ) : (
+                                <span className="text-slate-300 text-xs flex items-center gap-1">
+                                  <Camera className="w-3.5 h-3.5" /> —
+                                </span>
+                              )}
+                              {c.photo_doc_url ? (
+                                <div className="flex items-center gap-1">
+                                  <FileText className="w-3.5 h-3.5 text-slate-400" />
+                                  <PhotoViewer url={c.photo_doc_url} label={`Foto documento — ${c.full_name}`} />
+                                </div>
+                              ) : (
+                                <span className="text-slate-300 text-xs flex items-center gap-1">
+                                  <FileText className="w-3.5 h-3.5" /> —
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-4">
+                            <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${statusColors[c.status] || 'bg-slate-100 text-slate-600'}`}>
+                              {c.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-500 text-xs whitespace-nowrap">
+                            <p>{formatDate(c.created_at)}</p>
+                            {c.creator && <p className="text-slate-400 mt-0.5">Por: {c.creator.full_name}</p>}
+                          </td>
+                          <td className="py-3 px-4 text-center">
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCreateLoanClientId(c.id);
-                                setIsCreateLoanOpen(true);
-                              }}
-                              className="text-brand-600 bg-brand-50 hover:bg-brand-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-brand-200"
+                              onClick={(e) => handleDeleteClient(c.id, e)}
+                              className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="Eliminar Cliente"
                             >
-                              Asignar préstamo
+                              <Trash2 className="w-4 h-4" />
                             </button>
-                          )}
-                        </td>
-
-                        {/* Photos */}
-                        <td className="py-3 px-4" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center justify-center gap-1.5">
-                            {c.photo_face_url ? (
-                              <div className="flex items-center gap-1">
-                                <Camera className="w-3.5 h-3.5 text-slate-400" />
-                                <PhotoViewer url={c.photo_face_url} label={`Foto persona — ${c.full_name}`} />
-                              </div>
-                            ) : (
-                              <span className="text-slate-300 text-xs flex items-center gap-1">
-                                <Camera className="w-3.5 h-3.5" /> —
-                              </span>
-                            )}
-                            {c.photo_doc_url ? (
-                              <div className="flex items-center gap-1">
-                                <FileText className="w-3.5 h-3.5 text-slate-400" />
-                                <PhotoViewer url={c.photo_doc_url} label={`Foto documento — ${c.full_name}`} />
-                              </div>
-                            ) : (
-                              <span className="text-slate-300 text-xs flex items-center gap-1">
-                                <FileText className="w-3.5 h-3.5" /> —
-                              </span>
-                            )}
-                          </div>
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${statusColors[c.status] || 'bg-slate-100 text-slate-600'}`}>
-                            {c.status}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-500 text-xs whitespace-nowrap">
-                          <p>{formatDate(c.created_at)}</p>
-                          {c.creator && <p className="text-slate-400 mt-0.5">Por: {c.creator.full_name}</p>}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={(e) => handleDeleteClient(c.id, e)}
-                            className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-                            title="Eliminar Cliente"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-
-                      {/* Expanded loan detail row */}
-                      {isExpanded && activeLoan && (
-                        <tr key={`${c.id}-detail`} className="bg-blue-50/40">
-                          <td colSpan={9} className="px-6 pb-4 pt-1">
-                            <LoanDetail loan={activeLoan} onOpenPaymentCard={setPaymentCardLoanId} onAdminPayment={setAdminPaymentLoan} />
                           </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
 
-        {/* Footer */}
-        {createdDate && !isLoading && (
-          <div className="px-6 py-3 border-t border-slate-100 bg-brand-50 shrink-0 flex items-center justify-between text-sm text-brand-700 font-medium">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-brand-600" />
-              <span>
-                Mostrando clientes agregados el{' '}
-                <strong className="font-bold text-brand-800">
-                  {createdDate === todayStr ? `hoy (${createdDate})` : createdDate}
-                </strong>
-                {clients.length > 0 && ` (${clients.length} cliente${clients.length !== 1 ? 's' : ''})`}
-              </span>
-            </div>
-            <button
-              onClick={() => setCreatedDate('')}
-              className="text-xs text-brand-700 hover:text-brand-900 underline font-bold"
-            >
-              Ver todos los clientes
-            </button>
+                        {/* Expanded loan detail row */}
+                        {isExpanded && activeLoan && (
+                          <tr key={`${c.id}-detail`} className="bg-blue-50/40">
+                            <td colSpan={9} className="px-6 pb-4 pt-1">
+                              <LoanDetail loan={activeLoan} onOpenPaymentCard={setPaymentCardLoanId} onAdminPayment={setAdminPaymentLoan} />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
+
+          {/* Footer */}
+          {createdDate && !isLoading && (
+            <div className="px-6 py-3 border-t border-slate-100 bg-brand-50 shrink-0 flex items-center justify-between text-sm text-brand-700 font-medium">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-brand-600" />
+                <span>
+                  Mostrando clientes agregados el{' '}
+                  <strong className="font-bold text-brand-800">
+                    {createdDate === todayStr ? `hoy (${createdDate})` : createdDate}
+                  </strong>
+                  {clients.length > 0 && ` (${clients.length} cliente${clients.length !== 1 ? 's' : ''})`}
+                </span>
+              </div>
+              <button
+                onClick={() => setCreatedDate('')}
+                className="text-xs text-brand-700 hover:text-brand-900 underline font-bold"
+              >
+                Ver todos los clientes
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-    
-    <PaymentCardModal 
-      isOpen={!!paymentCardLoanId} 
-      onClose={() => setPaymentCardLoanId(null)} 
-      loanId={paymentCardLoanId || ''} 
-    />
 
-    <EditClientModal
-      isOpen={!!editClient}
-      onClose={() => setEditClient(null)}
-      client={editClient}
-      onUpdated={() => {
-        setEditClient(null);
-      }}
-    />
+      <PaymentCardModal
+        isOpen={!!paymentCardLoanId}
+        onClose={() => setPaymentCardLoanId(null)}
+        loanId={paymentCardLoanId || ''}
+      />
 
-    <AdminPaymentModal
-      isOpen={!!adminPaymentLoan}
-      onClose={() => setAdminPaymentLoan(null)}
-      loan={adminPaymentLoan}
-      onSuccess={() => {}}
-    />
+      <EditClientModal
+        isOpen={!!editClient}
+        onClose={() => setEditClient(null)}
+        client={editClient}
+        onUpdated={() => {
+          setEditClient(null);
+        }}
+      />
 
-    <AdminCreateLoanModal
-      isOpen={isCreateLoanOpen}
-      onClose={() => setIsCreateLoanOpen(false)}
-      routeStates={routeStates}
-      onSuccess={() => {}}
-      initialClientId={createLoanClientId}
-    />
+      <AdminPaymentModal
+        isOpen={!!adminPaymentLoan}
+        onClose={() => setAdminPaymentLoan(null)}
+        loan={adminPaymentLoan}
+        onSuccess={() => { }}
+      />
+
+      <AdminCreateLoanModal
+        isOpen={isCreateLoanOpen}
+        onClose={() => setIsCreateLoanOpen(false)}
+        routeStates={routeStates}
+        onSuccess={() => { }}
+        initialClientId={createLoanClientId}
+      />
     </>
   );
 }

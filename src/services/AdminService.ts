@@ -630,7 +630,9 @@ export class AdminService {
     const recaudoEsperado = targetTodayOnly + (arrearsTotal + recaudoAtrasos);
 
     return {
-      clientes: clientsRes.count || 0,
+      // Clientes con préstamo ACTIVO (los que realmente deben y se cobran), igual que la ruta del cobrador.
+      // activeLoans ya viene filtrado por ruta cuando se elige una.
+      clientes: new Set(activeLoans.map((l: any) => l.client_id).filter(Boolean)).size,
       nuevos: loansRes.count || 0,
       recaudo: recaudoHoy,
       recaudoCuotasHoy,
@@ -689,6 +691,19 @@ export class AdminService {
 
     if (error) throw error;
 
+    // Clientes con préstamo ACTIVO por ruta (mismo criterio que ve el cobrador)
+    const { data: activeLoanRows } = await supabase
+      .from('loans')
+      .select('route_id, client_id')
+      .eq('status', 'ACTIVO')
+      .limit(10000);
+    const activeClientsByRoute = new Map<string, Set<string>>();
+    for (const l of (activeLoanRows || []) as any[]) {
+      if (!l.route_id || !l.client_id) continue;
+      if (!activeClientsByRoute.has(l.route_id)) activeClientsByRoute.set(l.route_id, new Set());
+      activeClientsByRoute.get(l.route_id)!.add(l.client_id);
+    }
+
     return data.map((route: any) => {
       const activeAssignment = route.assignments?.find((a: any) => !a.date_end) || null;
       const cobrador = activeAssignment?.collector?.full_name || 'Sin asignar';
@@ -700,7 +715,7 @@ export class AdminService {
         id: route.id,
         ruta: route.name,
         cobrador,
-        clientesCount: route.clients?.length || 0,
+        clientesCount: activeClientsByRoute.get(route.id)?.size || 0,
         estado
       };
     });
@@ -896,7 +911,7 @@ export class AdminService {
   /**
    * Obtiene clientes con filtros opcionales de ruta y fecha de creación.
    */
-  static async getClients(filters?: { routeId?: string; onlyToday?: boolean; createdDate?: string; search?: string }) {
+  static async getClients(filters?: { routeId?: string; onlyToday?: boolean; createdDate?: string; search?: string; onlyActiveLoan?: boolean }) {
     let query = supabase
       .from('clients')
       .select(`
@@ -945,8 +960,13 @@ export class AdminService {
       query = query.gte('created_at', start).lte('created_at', end);
     }
 
-    const { data, error } = await query;
+    const { data: rawClients, error } = await query;
     if (error) throw error;
+
+    // Solo clientes con al menos un préstamo ACTIVO (los que ve el cobrador en su ruta)
+    const data = filters?.onlyActiveLoan
+      ? (rawClients || []).filter((c: any) => (c.loans || []).some((l: any) => l.status === 'ACTIVO'))
+      : (rawClients || []);
 
     // Client-side search filter (simple, avoids ilike complexity)
     if (filters?.search && filters.search.trim() !== '') {
@@ -2394,3 +2414,5 @@ export class AdminService {
     }));
   }
 }
+
+
