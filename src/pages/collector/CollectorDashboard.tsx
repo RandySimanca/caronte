@@ -13,6 +13,8 @@ import { confirmWarning } from '@/lib/swal';
 import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
 import { NewLoansTodayModal } from '@/components/admin/NewLoansTodayModal';
 import { PaidTodayModal, type PaidTodayEntry } from '@/components/admin/PaidTodayModal';
+import { CompletedLoansTodayModal } from '@/components/collector/CompletedLoansTodayModal';
+import { completedLoansSettingKey, type CompletedLoanEntry } from '@/lib/completedLoans';
 import { applyLotteryDrawLocally, isLotteryWinnerLoan, parseLotteryLastDraw } from '@/lib/lottery';
 import { NavLink } from 'react-router-dom';
 import { SyncIssuesPanel } from '@/components/sync/SyncIssuesPanel';
@@ -55,6 +57,7 @@ export function CollectorDashboard() {
   const [isPrepaidModalOpen, setIsPrepaidModalOpen] = useState(false);
   const [isNewLoansModalOpen, setIsNewLoansModalOpen] = useState(false);
   const [isPaidTodayOpen, setIsPaidTodayOpen] = useState(false);
+  const [isCompletedOpen, setIsCompletedOpen] = useState(false);
 
   const lotteryDraw = parseLotteryLastDraw(lotterySetting?.value);
 
@@ -167,6 +170,48 @@ export function CollectorDashboard() {
         paidTodayByLoan.set(p.loan_id, Number(p.total_amount || 0));
       }
     }
+
+    // Préstamos terminados hoy (pagados o refinanciados): lista del servidor (se conserva tras
+    // sincronizar) + los que se cerraron en este celular y aún no se sincronizan.
+    const completedMap = new Map<string, CompletedLoanEntry>();
+    const serverCompleted = allSettings.find(s => s.key === completedLoansSettingKey(today))?.value as CompletedLoanEntry[] | undefined;
+    for (const e of serverCompleted || []) completedMap.set(e.loanId, e);
+    for (const l of allLoans) {
+      if (l.status !== 'CANCELADO' || completedMap.has(l.id)) continue;
+      if (!paidTodayByLoan.has(l.id)) continue;
+      const lastEntry = paidTodayEntries
+        .filter(e => e.loanId === l.id)
+        .sort((a, b) => (b.collectedAt || '').localeCompare(a.collectedAt || ''))[0];
+      completedMap.set(l.id, {
+        loanId: l.id,
+        clientId: l.client_id,
+        clientName: clients.find(c => c.id === l.client_id)?.full_name || 'Cliente',
+        clientPhone: clients.find(c => c.id === l.client_id)?.phone ?? null,
+        totalPaid: Number(l.initial_obligation ?? l.amount_requested ?? 0),
+        amountRequested: Number(l.amount_requested || 0),
+        completedAt: lastEntry?.collectedAt || '',
+      });
+    }
+    // Refinanciados hoy en este celular (préstamo nuevo de hoy que apunta al anterior)
+    for (const l of allLoans) {
+      const origId = l.refinanced_from_loan_id;
+      if (!origId || l.disbursement_date !== today || completedMap.has(origId)) continue;
+      const orig = allLoans.find(o => o.id === origId);
+      const cl = clients.find(c => c.id === l.client_id);
+      completedMap.set(origId, {
+        loanId: origId,
+        clientId: l.client_id,
+        clientName: cl?.full_name || 'Cliente',
+        clientPhone: cl?.phone ?? null,
+        totalPaid: Number(orig?.initial_obligation ?? orig?.amount_requested ?? 0),
+        amountRequested: Number(orig?.amount_requested || 0),
+        completedAt: l.created_at || '',
+        refinanced: true,
+      });
+    }
+    const completedToday = [...completedMap.values()].sort((a, b) =>
+      (b.completedAt || '').localeCompare(a.completedAt || '')
+    );
 
     for (const loan of loans) {
       if (isLotteryWinnerLoan(loan, draw)) continue;
@@ -293,6 +338,7 @@ export function CollectorDashboard() {
       newLoansTodayAmount,
       newLoansTodayClients,
       paidTodayEntries,
+      completedToday,
     };
   }, [loans, allLoans, installments, clients, today, lotterySetting?.value, allSettings, syncQueue]);
 
@@ -451,10 +497,16 @@ export function CollectorDashboard() {
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col justify-between">
-          <p className="text-slate-500 text-xs font-medium leading-tight">Pendientes por visitar</p>
-          <p className="text-2xl font-bold text-slate-800 mt-2">{stats.clientsPending}</p>
-        </div>
+        <button
+          onClick={() => setIsCompletedOpen(true)}
+          className="bg-white rounded-2xl p-4 border border-emerald-100 shadow-sm flex flex-col justify-between text-left active:scale-[0.98] transition-transform"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-slate-500 text-xs font-medium leading-tight">Préstamos terminados</p>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-300 -mr-0.5" />
+          </div>
+          <p className="text-2xl font-bold text-emerald-600 mt-2">{stats.completedToday.length}</p>
+        </button>
       </div>
 
       {/* Arrears + New loans cards */}
@@ -575,6 +627,12 @@ export function CollectorDashboard() {
         isOpen={isNewLoansModalOpen}
         onClose={() => setIsNewLoansModalOpen(false)}
         clients={stats.newLoansTodayClients}
+      />
+
+      <CompletedLoansTodayModal
+        isOpen={isCompletedOpen}
+        onClose={() => setIsCompletedOpen(false)}
+        loans={stats.completedToday}
       />
 
       <PaidTodayModal

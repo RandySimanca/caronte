@@ -10,6 +10,7 @@ import {
 } from '@/lib/lottery';
 import { LAST_COLLECTED_KEY } from '@/lib/routeOrder';
 import { dayRangeIso, paymentsTodaySettingKey } from '@/lib/dailyCollection';
+import { completedLoansSettingKey, type CompletedLoanEntry } from '@/lib/completedLoans';
 
 /** Usuario de la sesión local (no hace request de red, funciona con conexión inestable). */
 async function getCurrentUser() {
@@ -607,6 +608,80 @@ export class SyncService {
         collected_at: p.collected_at || null,
       }));
       localSettings.push({ key: paymentsTodaySettingKey(today), value: paymentsToday });
+
+      // Préstamos que el cliente terminó HOY: pagados (CANCELADO + cobro de hoy) o refinanciados. El servidor ya no
+      // los devuelve como ACTIVO y el pull los borra del celular, así que se guardan aparte para la
+      // tarjeta "Préstamos terminados". Si la consulta falla se conserva la lista anterior.
+      const completedKey = completedLoansSettingKey(today);
+      try {
+        const lastPaymentByLoan = new Map<string, string>();
+        for (const p of paymentsToday) {
+          if (!p.loan_id) continue;
+          const prev = lastPaymentByLoan.get(p.loan_id) || '';
+          const at = p.collected_at || '';
+          if (!lastPaymentByLoan.has(p.loan_id) || at > prev) lastPaymentByLoan.set(p.loan_id, at);
+        }
+        const completedRows = await fetchAllByIds<any>(
+          'loans',
+          'id',
+          [...lastPaymentByLoan.keys()],
+          q => q
+            .select('id, client_id, amount_requested, initial_obligation, current_balance, client:clients(full_name, phone)')
+            .eq('status', 'CANCELADO')
+        );
+        const completedToday: CompletedLoanEntry[] = completedRows.map((l: any) => {
+          const c = Array.isArray(l.client) ? l.client[0] : l.client;
+          return {
+            loanId: l.id,
+            clientId: l.client_id,
+            clientName: c?.full_name || 'Cliente',
+            clientPhone: c?.phone ?? null,
+            totalPaid: Number(l.initial_obligation ?? l.amount_requested ?? 0) - Number(l.current_balance ?? 0),
+            amountRequested: Number(l.amount_requested || 0),
+            completedAt: lastPaymentByLoan.get(l.id) || '',
+          };
+        });
+
+        // Refinanciados hoy: el préstamo nuevo (disbursement_date = hoy) apunta al anterior, que
+        // pasó a REFINANCIADO. El cliente sigue en la ruta con el préstamo nuevo.
+        const refinancedNew = await fetchAllByIds<any>(
+          'loans',
+          'route_id',
+          routeIds,
+          q => q
+            .select('id, client_id, created_at, refinanced_from_loan_id, client:clients(full_name, phone)')
+            .eq('disbursement_date', today)
+            .not('refinanced_from_loan_id', 'is', null)
+        );
+        const originalIds = refinancedNew.map((l: any) => l.refinanced_from_loan_id as string);
+        const originals = await fetchAllByIds<any>(
+          'loans',
+          'id',
+          originalIds,
+          q => q.select('id, amount_requested, initial_obligation')
+        );
+        for (const l of refinancedNew) {
+          if (completedToday.some(e => e.loanId === l.refinanced_from_loan_id)) continue;
+          const orig = originals.find((o: any) => o.id === l.refinanced_from_loan_id);
+          const c = Array.isArray(l.client) ? l.client[0] : l.client;
+          completedToday.push({
+            loanId: l.refinanced_from_loan_id,
+            clientId: l.client_id,
+            clientName: c?.full_name || 'Cliente',
+            clientPhone: c?.phone ?? null,
+            totalPaid: Number(orig?.initial_obligation ?? orig?.amount_requested ?? 0),
+            amountRequested: Number(orig?.amount_requested || 0),
+            completedAt: l.created_at || '',
+            refinanced: true,
+          });
+        }
+
+        localSettings.push({ key: completedKey, value: completedToday });
+      } catch (completedErr) {
+        console.warn('[SyncService] No se pudo actualizar préstamos terminados de hoy:', completedErr);
+        const previous = await db.settings.get(completedKey);
+        if (previous) localSettings.push({ key: completedKey, value: previous.value });
+      }
 
       let officeCash = 0;
       let officeTransfers = 0;
