@@ -62,7 +62,7 @@ export function CollectorDashboard() {
   const lotteryDraw = parseLotteryLastDraw(lotterySetting?.value);
 
   useEffect(() => {
-    if (lotteryDraw) applyLotteryDrawLocally(lotteryDraw).catch(() => {});
+    if (lotteryDraw) applyLotteryDrawLocally(lotteryDraw).catch(() => { });
   }, [lotterySetting?.value]);
 
   const lotteryWinners = useMemo(() => {
@@ -100,7 +100,7 @@ export function CollectorDashboard() {
     let newCount = 0;
     const visitedClientIds = new Set<string>();
     const newClientIds = new Set<string>();
-    
+
     let totalCollectedAdelantos = 0;
     let totalCollectedTodayOnly = 0;
     let totalCollectedArrears = 0;
@@ -191,7 +191,7 @@ export function CollectorDashboard() {
 
     for (const loan of loans) {
       if (isLotteryWinnerLoan(loan, draw)) continue;
-      
+
       // Prevent orphaned loans (e.g. from deleted clients but stuck pending sync) from affecting stats
       const client = clients.find(c => c.id === loan.client_id);
       if (!client) continue;
@@ -203,7 +203,7 @@ export function CollectorDashboard() {
       );
 
       const loanEnded = loan.end_date && loan.end_date < today;
-      
+
       // 1. Target today (doesn't discount when paid today)
       let loanTargetToday = 0;
       if (loan.start_date > today || loanEnded) {
@@ -217,7 +217,7 @@ export function CollectorDashboard() {
       } else {
         loanTargetToday = Number(loan.daily_installment || 0);
       }
-      
+
       // 2. Current pending for today (discounts when paid today)
       let loanCurrentToday = 0;
       if (loan.start_date > today || loanEnded) {
@@ -263,7 +263,7 @@ export function CollectorDashboard() {
     for (const p of mergedPayments) {
       if (p.device_id === 'admin_panel') continue; // Exclude office payments
       totalCollectedTodayOnly += Number(p.day_installment_amount ?? 0);
-      totalCollectedArrears   += Number(p.arrears_amount ?? 0);
+      totalCollectedArrears += Number(p.arrears_amount ?? 0);
       totalCollectedAdelantos += Number(p.advance_amount ?? 0);
     }
 
@@ -437,10 +437,19 @@ export function CollectorDashboard() {
           onClick={() => setIsPaidTodayOpen(true)}
           className="bg-emerald-500 rounded-2xl p-4 text-white shadow-sm shadow-emerald-500/20 flex flex-col justify-between text-left active:scale-[0.98] transition-transform"
         >
-          <div className="flex items-center justify-between">
-            <p className="text-emerald-50 text-[11px] font-medium uppercase tracking-wider">Cobrado (Hoy)</p>
-            <ChevronRight className="w-3.5 h-3.5 text-emerald-200 -mr-0.5" />
+          <div className="flex justify-between items-center text-[11px] font-bold text-white mt-1 pt-1 border-t border-emerald-400/20">
+            <span>Total recaudado:</span>
+            <p className="text-emerald-50 text-[11px] font-medium uppercase tracking-wider">Total Recaudado (hoy)</p>
+            <span>{formatCurrency(stats.collected)}</span>
           </div>
+
+
+
+          <div className="flex justify-between items-center text-[11px] font-bold text-white mt-1 pt-1 border-t border-emerald-400/20">
+            <span>Total recaudado:</span>
+            <p className="text-emerald-50 text-[11px] font-medium uppercase tracking-wider">Cuotas de hoy</p>
+          </div>
+
           <p className="text-2xl font-black mt-1 mb-1 leading-none">{formatCurrency(stats.collectedTodayOnly)}</p>
           <div className="pt-2 border-t border-emerald-400/40 mt-3">
             <div className="flex justify-between items-center text-[10px] text-emerald-100 mb-0.5">
@@ -450,10 +459,6 @@ export function CollectorDashboard() {
             <div className="flex justify-between items-center text-[10px] text-emerald-100 mb-0.5">
               <span>Adelantos:</span>
               <span className="font-bold text-emerald-50">{formatCurrency(stats.collectedAdelantos)}</span>
-            </div>
-            <div className="flex justify-between items-center text-[11px] font-bold text-white mt-1 pt-1 border-t border-emerald-400/20">
-              <span>Total recaudado:</span>
-              <span>{formatCurrency(stats.collected)}</span>
             </div>
           </div>
         </button>
@@ -557,8 +562,8 @@ export function CollectorDashboard() {
                 const warning = unsynced.total === 0
                   ? '¿Forzar limpieza y resincronizar? No hay operaciones sin enviar.'
                   : `Hay ${unsynced.total} operación(es) sin enviar` +
-                    (unsynced.paymentsCount > 0 ? `, entre ellas ${unsynced.paymentsCount} cobro(s) por ${formatCurrency(unsynced.paymentsAmount)}` : '') +
-                    '. Se descargará un respaldo antes de borrarlas, pero esos datos NO llegarán al servidor.';
+                  (unsynced.paymentsCount > 0 ? `, entre ellas ${unsynced.paymentsCount} cobro(s) por ${formatCurrency(unsynced.paymentsAmount)}` : '') +
+                  '. Se descargará un respaldo antes de borrarlas, pero esos datos NO llegarán al servidor.';
                 const confirmed = await confirmWarning({
                   title: 'Forzar limpieza y resincronizar',
                   text: warning,
