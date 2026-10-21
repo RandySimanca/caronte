@@ -437,26 +437,21 @@ export function CollectorDashboard() {
           onClick={() => setIsPaidTodayOpen(true)}
           className="bg-emerald-500 rounded-2xl p-4 text-white shadow-sm shadow-emerald-500/20 flex flex-col justify-between text-left active:scale-[0.98] transition-transform"
         >
-          <div className="flex justify-between items-center text-[11px] font-bold text-white mt-1 pt-1 border-t border-emerald-400/20">
-            <span>Total recaudado:</span>
-            <p className="text-emerald-50 text-[11px] font-medium uppercase tracking-wider">Total Recaudado (hoy)</p>
-            <span>{formatCurrency(stats.collected)}</span>
+          <div className="flex items-center justify-between">
+            <p className="text-emerald-50 text-[11px] font-medium uppercase tracking-wider">Total recaudado (Hoy)</p>
+            <ChevronRight className="w-3.5 h-3.5 text-emerald-200 -mr-0.5" />
           </div>
-
-
-
-          <div className="flex justify-between items-center text-[11px] font-bold text-white mt-1 pt-1 border-t border-emerald-400/20">
-            <span>Total recaudado:</span>
-            <p className="text-emerald-50 text-[11px] font-medium uppercase tracking-wider">Cuotas de hoy</p>
-          </div>
-
-          <p className="text-2xl font-black mt-1 mb-1 leading-none">{formatCurrency(stats.collectedTodayOnly)}</p>
+          <p className="text-2xl font-black mt-1 mb-1 leading-none">{formatCurrency(stats.collected)}</p>
           <div className="pt-2 border-t border-emerald-400/40 mt-3">
+            <div className="flex justify-between items-center text-[10px] text-emerald-100 mb-0.5">
+              <span>Cobrado hoy:</span>
+              <span className="font-bold text-emerald-50">{formatCurrency(stats.collectedTodayOnly)}</span>
+            </div>
             <div className="flex justify-between items-center text-[10px] text-emerald-100 mb-0.5">
               <span>Atrasos:</span>
               <span className="font-bold text-emerald-50">{formatCurrency(stats.collectedArrears)}</span>
             </div>
-            <div className="flex justify-between items-center text-[10px] text-emerald-100 mb-0.5">
+            <div className="flex justify-between items-center text-[10px] text-emerald-100">
               <span>Adelantos:</span>
               <span className="font-bold text-emerald-50">{formatCurrency(stats.collectedAdelantos)}</span>
             </div>
