@@ -216,14 +216,28 @@ export function RouteClientList() {
         l => l.client_id === c.id && isLotteryWinnerLoan(l, lotteryDraw)
       );
       return hasActiveLoan || isWinner;
-    })
-    .filter(c => c.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [clients, loans, installments, searchTerm, today, lotteryDraw, todayPaidByLoan]);
+    });
+  }, [clients, loans, installments, today, lotteryDraw, todayPaidByLoan]);
 
-  // Aplicar ordenamiento después del filtro (usar sortByRouteOrder para lógica consistente)
-  const sortedClients = useMemo(() => {
+  // Ruta completa en su orden personalizado (usar sortByRouteOrder para lógica consistente)
+  const fullSortedClients = useMemo(() => {
     return sortByRouteOrder(enrichedClients);
   }, [enrichedClients]);
+
+  // Número de cada cliente según su lugar en la ruta completa: no cambia al buscar,
+  // así el cobrador ve siempre la posición real del cliente en su recorrido.
+  const positionById = useMemo(() => {
+    const map = new Map<string, number>();
+    fullSortedClients.forEach((c, i) => map.set(c.id, i + 1));
+    return map;
+  }, [fullSortedClients]);
+
+  // La búsqueda solo filtra lo que se muestra; no altera el orden ni la numeración
+  const sortedClients = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return fullSortedClients;
+    return fullSortedClients.filter(c => c.full_name.toLowerCase().includes(term));
+  }, [fullSortedClients, searchTerm]);
 
   useEffect(() => {
     if (!isReordering) {
@@ -407,7 +421,7 @@ export function RouteClientList() {
                     key={client.id} 
                     client={client} 
                     isReordering={isReordering} 
-                    position={index + 1}
+                    position={positionById.get(client.id) ?? index + 1}
                     onMoveTo={moveClientTo}
                   />
                 ))}

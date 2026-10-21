@@ -50,6 +50,19 @@ export function SortableClientItem({ client, isReordering, position, onMoveTo }:
         </button>
       )}
 
+      {/* Número de orden en la ruta (solo lectura; al ordenar se usa el botón de arriba) */}
+      {!isReordering && typeof position === 'number' && (
+        <span
+          className={cn(
+            "mr-3 min-w-[2rem] px-1.5 py-1 rounded-lg text-center text-xs font-bold tabular-nums flex-shrink-0",
+            client.status === 'VISITADO' ? "bg-emerald-200 text-emerald-800" : "bg-slate-100 text-slate-500"
+          )}
+          aria-label={`Posición ${position} en la ruta`}
+        >
+          {position}
+        </span>
+      )}
+
       {/* Avatar */}
       <div className="relative flex-shrink-0 mr-4">
         <div className={cn(
