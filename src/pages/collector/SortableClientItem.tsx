@@ -21,8 +21,15 @@ export function SortableClientItem({ client, isReordering, position, onMoveTo }:
     position: 'relative' as const,
   };
 
+  // Cobrado hoy (pago completo o abono): se pinta toda el área en verde, además de la palomita
+  const isCollected = client.status === 'VISITADO' && !isReordering;
+
   const Content = (
-    <div className={cn("flex items-center p-4", isReordering ? "bg-white border shadow-sm rounded-lg my-1 mx-2" : "active:bg-slate-100", isDragging && "shadow-md ring-2 ring-brand-500 opacity-90")}>
+    <div className={cn(
+      "flex items-center p-4",
+      isReordering ? "bg-white border shadow-sm rounded-lg my-1 mx-2" : (isCollected ? "border-l-4 border-emerald-500 active:bg-emerald-200" : "active:bg-slate-100"),
+      isDragging && "shadow-md ring-2 ring-brand-500 opacity-90"
+    )}>
       {isReordering && (
         <div
           {...attributes}
@@ -91,7 +98,7 @@ export function SortableClientItem({ client, isReordering, position, onMoveTo }:
       <div className="flex-1 min-w-0">
         <p className={cn(
           "text-sm font-semibold truncate",
-          client.status === 'VISITADO' && !client.isAbono ? "text-slate-400" :
+          client.status === 'VISITADO' && !client.isAbono ? "text-emerald-800" :
             client.status === 'ADELANTADO' ? "text-slate-500" :
               client.status === 'GANADOR' ? "text-amber-800" : "text-slate-800"
         )}>
@@ -159,7 +166,11 @@ export function SortableClientItem({ client, isReordering, position, onMoveTo }:
   );
 
   return (
-    <li id={`route-client-${client.id}`} ref={setNodeRef} style={style} className={cn("bg-white transition-colors", !isReordering && "hover:bg-slate-50")}>
+    <li id={`route-client-${client.id}`} ref={setNodeRef} style={style} className={cn(
+      "transition-colors",
+      isCollected ? "bg-emerald-100" : "bg-white",
+      !isReordering && (isCollected ? "hover:bg-emerald-100" : "hover:bg-slate-50")
+    )}>
       {isReordering ? (
         Content
       ) : (
