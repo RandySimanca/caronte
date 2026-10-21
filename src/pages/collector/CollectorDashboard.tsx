@@ -118,45 +118,22 @@ export function CollectorDashboard() {
     });
     const mergedPayments = mergeTodayPayments(serverPaymentsToday, syncQueue, today);
 
-    // Build paidTodayEntries FIRST so we can derive paidTodayByLoan from it
-    // (TodayPayment doesn't carry loan_id, so we use the enriched server payload)
+    // Una sola lista de cobros del día (mergedPayments) alimenta la tarjeta, su desglose y el modal,
+    // para que los totales siempre coincidan.
     const paidTodayEntries: PaidTodayEntry[] = [];
-    if (serverPaymentsToday) {
-      for (const sp of serverPaymentsToday as any[]) {
-        if (!sp.operation_id) continue;
-        const loanId = sp.loan_id || '';
-        const clientName = clients.find(c => {
-          const loan = allLoans.find(l => l.id === loanId);
-          return loan && c.id === loan.client_id;
-        })?.full_name || (sp.client_name || 'Cliente');
-        paidTodayEntries.push({
-          loanId,
-          clientName,
-          amount: Number(sp.total_amount || 0),
-          collectedAt: sp.collected_at || sp.collectedAt || new Date().toISOString(),
-          isTransfer: !!sp.is_transfer,
-          isOffice: sp.device_id === 'admin_panel',
-        });
-      }
-    }
-    for (const op of syncQueue) {
-      if (op.operation_type !== 'PAYMENT' && op.operation_type !== 'PAYMENT_BUNDLE') continue;
-      const p = op.payload?.payment ?? op.payload;
-      if (!p) continue;
-      const collectedAt = p.collectedAt || p.collected_at || op.local_timestamp || '';
-      if (colombiaDateFromIso(collectedAt) !== today) continue;
-      const opId = p.operationId || p.operation_id;
-      if (serverPayments && (serverPayments as any[]).some((sp: any) => sp.operation_id === opId)) continue;
-      const loanId = p.loanId || p.loan_id || '';
+    for (const mp of mergedPayments) {
+      const loanId = mp.loan_id || '';
       const loan = allLoans.find(l => l.id === loanId);
-      const clientName = loan ? (clients.find(c => c.id === loan.client_id)?.full_name || 'Cliente') : 'Cliente';
+      const clientName = (loan ? clients.find(c => c.id === loan.client_id)?.full_name : undefined)
+        || mp.client_name
+        || 'Cliente';
       paidTodayEntries.push({
         loanId,
         clientName,
-        amount: Number(p.totalAmount ?? p.total_amount ?? 0),
-        collectedAt,
-        isTransfer: !!(p.isTransfer ?? p.is_transfer),
-        isOffice: false,
+        amount: Number(mp.total_amount || 0),
+        collectedAt: mp.collected_at || new Date().toISOString(),
+        isTransfer: !!mp.is_transfer,
+        isOffice: mp.device_id === 'admin_panel',
       });
     }
 

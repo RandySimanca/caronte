@@ -591,7 +591,7 @@ export class SyncService {
 
       const { data: todayPayments } = await supabase
         .from('payments')
-        .select('operation_id, loan_id, total_amount, day_installment_amount, arrears_amount, advance_amount, is_transfer, device_id, collected_at')
+        .select('operation_id, loan_id, total_amount, day_installment_amount, arrears_amount, advance_amount, is_transfer, device_id, collected_at, loan:loans(client:clients(full_name))')
         .in('route_id', routeIds)
         .gte('collected_at', todayStart)
         .lte('collected_at', todayEnd);
@@ -606,6 +606,7 @@ export class SyncService {
         is_transfer: !!p.is_transfer,
         device_id: p.device_id || null,
         collected_at: p.collected_at || null,
+        client_name: p.loan?.client?.full_name || null,
       }));
       localSettings.push({ key: paymentsTodaySettingKey(today), value: paymentsToday });
 

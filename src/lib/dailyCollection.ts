@@ -35,6 +35,7 @@ export type TodayPayment = {
   is_transfer?: boolean;
   device_id?: string | null;
   collected_at?: string | null;
+  client_name?: string | null;
 };
 
 function paymentFromSyncOp(op: { operation_type?: string; payload?: any; local_timestamp?: string }): TodayPayment | null {
@@ -70,7 +71,7 @@ function isOpOnDate(op: { payload?: any; local_timestamp?: string }, dateStr: st
  */
 export function mergeTodayPayments(
   serverPayments: TodayPayment[] | undefined,
-  syncOps: { operation_type?: string; payload?: any; local_timestamp?: string }[],
+  syncOps: { operation_type?: string; payload?: any; local_timestamp?: string; status?: string }[],
   dateStr: string,
 ): TodayPayment[] {
   const map = new Map<string, TodayPayment>();
@@ -87,12 +88,19 @@ export function mergeTodayPayments(
       is_transfer: !!p.is_transfer,
       device_id: p.device_id || null,
       collected_at: p.collected_at || (p as any).collectedAt || null,
+      client_name: (p as any).client_name || null,
     });
   }
   for (const op of syncOps) {
     if (!isOpOnDate(op, dateStr)) continue;
+    // Con foto del servidor, las operaciones ya sincronizadas ('synced') ya están reflejadas ahí.
+    // Si el admin corrigió o eliminó ese cobro en el servidor, la copia local quedó con el monto
+    // viejo y NO debe volver a sumarse. La foto del servidor es la fuente de verdad.
+    if (serverPayments && op.status === 'synced') continue;
     const local = paymentFromSyncOp(op);
     if (!local) continue;
+    // El servidor manda: una operación local nunca pisa un cobro que el servidor ya tiene.
+    if (map.has(local.operation_id)) continue;
     map.set(local.operation_id, local);
   }
   return [...map.values()];
