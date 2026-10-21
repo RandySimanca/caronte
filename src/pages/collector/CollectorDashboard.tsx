@@ -262,6 +262,16 @@ export function CollectorDashboard() {
     }));
     const newLoansTodayAmount = newLoansTodayClients.reduce((s, c) => s + c.amount, 0);
 
+    // Clientes con préstamo activo o ganadores del sorteo:
+    // mismo criterio que usa RouteClientList para construir la lista de ruta.
+    const activeClientIds = new Set(loans.map(l => l.client_id));
+    const winnerClientIds = new Set(
+      allLoans.filter(l => isLotteryWinnerLoan(l, draw)).map(l => l.client_id)
+    );
+    const routeClientCount = clients.filter(
+      c => activeClientIds.has(c.id) || winnerClientIds.has(c.id)
+    ).length;
+
     return {
       targetExpected,
       targetTodayOnly,
@@ -271,10 +281,10 @@ export function CollectorDashboard() {
       collectedArrears: totalCollectedArrears,
       collectedAdelantos: totalCollectedAdelantos,
       pending: Math.max(targetExpected - collected, 0),
-      clientsTotal: clients.length,
+      clientsTotal: routeClientCount,
       clientsVisited: visitedCount,
       clientsNew: newCount,
-      clientsPending: clients.length - visitedCount - newCount,
+      clientsPending: routeClientCount - visitedCount - newCount,
       arrearsAmount: currentArrears,
       arrearsClients,
       prepaidTodayCount: prepaidTodayClients.length,
