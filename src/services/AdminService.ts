@@ -749,7 +749,7 @@ export class AdminService {
     // 2. Obtener cierres de caja para esa fecha
     const { data: closings, error: closingsError } = await supabase
       .from('daily_closings')
-      .select('route_id, is_closed, total_collected, total_expenses, expected_delivery, actual_delivery')
+      .select('route_id, is_closed, base_amount, total_collected, total_expenses, expected_delivery, actual_delivery')
       .eq('closing_date', dateStr);
     if (closingsError) throw closingsError;
 
@@ -788,7 +788,7 @@ export class AdminService {
     const [paymentsRes, expensesRes, loansRes, settingsRes, salarySettingRes, assignmentRes] = await Promise.all([
       supabase.from('payments').select('total_amount, collector_id, is_transfer').eq('route_id', routeId).gte('collected_at', startOfDay).lte('collected_at', endOfDay),
       supabase.from('expenses').select('amount, category:expense_categories(name)').eq('route_id', routeId).eq('expense_date', dateStr),
-      supabase.from('loans').select('amount_delivered, collector_id').eq('route_id', routeId).eq('disbursement_date', dateStr),
+      supabase.from('loans').select('amount_delivered, collector_id, client:clients(full_name)').eq('route_id', routeId).eq('disbursement_date', dateStr),
       supabase.from('system_settings').select('value').eq('key', 'default_viaticum').maybeSingle(),
       supabase.from('system_settings').select('value').eq('key', 'default_salary').maybeSingle(),
       // Obtener la asignación activa para leer overrides de viático y salario del cobrador
@@ -808,6 +808,10 @@ export class AdminService {
     const collectorLoans = loansRes.data || [];
     const prestamosNuevos = collectorLoans.length;
     const totalPrestado = collectorLoans.reduce((sum, l: any) => sum + Number(l.amount_delivered), 0);
+    const detallePrestamos = collectorLoans.map((l: any) => ({
+      cliente: l.client?.full_name || 'Cliente',
+      monto: Number(l.amount_delivered),
+    }));
 
     // Viático: primero el override del cobrador, luego el global
     const assignmentData = assignmentRes.data as any;
@@ -837,18 +841,65 @@ export class AdminService {
       viaticoDia,
       salarioCobrador,
       prestamosNuevos,
+      detallePrestamos,
       totalPrestado,
+      numCobros: collectorPayments.length,
       totalEntregar
     };
+  }
+
+  /**
+   * Devuelve el cierre (liquidación) guardado de una ruta para una fecha, o null si no existe.
+   * Incluye la base entregada y el respaldo (snapshot) de lo aprobado.
+   */
+  static async getClosingForDate(routeId: string, dateStr: string) {
+    const { data, error } = await supabase
+      .from('daily_closings')
+      .select('*')
+      .eq('route_id', routeId)
+      .eq('closing_date', dateStr)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as any) || null;
+  }
+
+  /**
+   * Bloquea la corrección o eliminación de un cobro si su día ya fue liquidado.
+   * Hay que reabrir el día primero; así la liquidación aprobada nunca se desfasa en silencio.
+   */
+  private static async assertPaymentDayNotClosed(payment: { route_id?: string | null; collected_at?: string | null }) {
+    if (!payment.route_id || !payment.collected_at) return;
+    const day = colombiaDateFromIso(payment.collected_at);
+    const { data } = await supabase
+      .from('daily_closings')
+      .select('is_closed')
+      .eq('route_id', payment.route_id)
+      .eq('closing_date', day)
+      .maybeSingle();
+    if ((data as any)?.is_closed) {
+      throw new Error(`El día ${day} ya está liquidado. Reábrelo en Liquidaciones antes de corregir o eliminar cobros.`);
+    }
   }
 
   /**
    * Aprueba la liquidación y la guarda en la base de datos
    */
   static async approveLiquidation(payload: any) {
-    const { data, error } = await supabase
-      .from('daily_closings')
-      .upsert({
+    // Respaldo exacto de lo que el admin vio y aprobó (alimenta el modal histórico y el PDF)
+    const snapshot = payload.detail
+      ? {
+          version: 1,
+          generated_at: new Date().toISOString(),
+          route_name: payload.routeName || null,
+          collector_name: payload.collectorName || null,
+          date: payload.date,
+          base_amount: payload.baseAmount || 0,
+          total_entregar: payload.totalEntregar,
+          detail: payload.detail,
+        }
+      : null;
+
+    const row: any = {
         route_id: payload.routeId,
         collector_id: payload.collectorId,
         closing_date: payload.date,
@@ -874,10 +925,25 @@ export class AdminService {
         repair_expenses: 0,
         tire_expenses: 0,
         chain_expenses: 0,
-        other_expenses: payload.totalGastos + (payload.totalPrestado || 0) + (payload.totalTransferencias || 0)
-      } as any, { onConflict: 'route_id,closing_date' })
+        other_expenses: payload.totalGastos + (payload.totalPrestado || 0) + (payload.totalTransferencias || 0),
+        snapshot,
+    };
+
+    let { data, error } = await supabase
+      .from('daily_closings')
+      .upsert(row, { onConflict: 'route_id,closing_date' })
       .select()
       .single();
+
+    // Si la migración 040 aún no se aplicó (no existe la columna snapshot), aprobar igual sin respaldo
+    if (error && /snapshot/i.test(error.message || '')) {
+      delete row.snapshot;
+      ({ data, error } = await supabase
+        .from('daily_closings')
+        .upsert(row, { onConflict: 'route_id,closing_date' })
+        .select()
+        .single());
+    }
 
     if (error) throw error;
     return data as any;
@@ -2151,10 +2217,11 @@ export class AdminService {
     // 1. Obtener el pago original
     const { data: payment, error: pErr } = await supabase
       .from('payments')
-      .select('id, total_amount, loan_id')
+      .select('id, total_amount, loan_id, route_id, collected_at')
       .eq('id', paymentId)
       .single();
     if (pErr) throw pErr;
+    await this.assertPaymentDayNotClosed(payment as any);
 
     const oldAmount = Number(payment.total_amount);
     const loanId = payment.loan_id;
@@ -2340,10 +2407,11 @@ export class AdminService {
     // 1. Obtener el pago original
     const { data: payment, error: pErr } = await supabase
       .from('payments')
-      .select('id, total_amount, loan_id')
+      .select('id, total_amount, loan_id, route_id, collected_at')
       .eq('id', paymentId)
       .single();
     if (pErr) throw pErr;
+    await this.assertPaymentDayNotClosed(payment as any);
 
     const loanId = payment.loan_id;
 

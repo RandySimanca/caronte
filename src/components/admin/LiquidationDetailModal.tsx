@@ -23,27 +23,60 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
   const [isApproving, setIsApproving] = useState(false);
   const [detail, setDetail] = useState<any>(null);
   const [baseAmount, setBaseAmount] = useState<number>(0);
+  // Cierre guardado en la base de datos para esta ruta y fecha (null si aún no existe)
+  const [closing, setClosing] = useState<any | null>(null);
+  // 'live': día abierto, se calcula en vivo | 'snapshot': liquidado con respaldo | 'legacy': liquidado sin respaldo
+  const [source, setSource] = useState<'live' | 'snapshot' | 'legacy'>('live');
   
   const currentUser = useAuthStore(state => state.user);
 
   useEffect(() => {
-    if (isOpen && route) {
-      loadDetail();
-    }
-  }, [isOpen, route]);
+    if (!isOpen || !route) return;
+    let cancelled = false;
 
-  const loadDetail = async () => {
-    setIsLoading(true);
-    try {
-      const data = await AdminService.getRouteLiquidationDetail(route.id, dateStr);
-      setDetail(data);
-    } catch (error) {
-      toast.error('Error al cargar detalle de liquidación');
-      onClose();
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    const load = async () => {
+      // Reiniciar todo para no arrastrar datos de otra ruta o fecha (p. ej. la base)
+      setIsLoading(true);
+      setDetail(null);
+      setBaseAmount(0);
+      setClosing(null);
+      setSource('live');
+      try {
+        const closingRow = await AdminService.getClosingForDate(route.id, dateStr);
+        if (cancelled) return;
+
+        if (closingRow?.is_closed && closingRow.snapshot?.detail) {
+          // Día liquidado con respaldo: mostrar exactamente lo aprobado, sin recalcular
+          setDetail(closingRow.snapshot.detail);
+          setBaseAmount(Number(closingRow.base_amount ?? closingRow.snapshot.base_amount ?? 0));
+          setSource('snapshot');
+        } else {
+          // Día abierto, reabierto, o liquidado antes del respaldo: cálculo en vivo
+          const data = await AdminService.getRouteLiquidationDetail(route.id, dateStr);
+          if (cancelled) return;
+          setDetail(data);
+          // La base ya guardada se precarga (también al reabrir un día)
+          setBaseAmount(Number(closingRow?.base_amount || 0));
+          setSource(closingRow?.is_closed ? 'legacy' : 'live');
+        }
+        setClosing(closingRow);
+      } catch (error) {
+        if (cancelled) return;
+        toast.error('Error al cargar detalle de liquidación');
+        onClose();
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+
+    load();
+    return () => { cancelled = true; };
+  }, [isOpen, route?.id, dateStr]);
+
+  const isClosed = closing ? !!closing.is_closed : route?.estado === 'Liquidado';
+  const approvedAtLabel = closing?.closed_at
+    ? new Date(closing.closed_at).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })
+    : null;
 
   const handleApprove = async () => {
     if (!currentUser || !route || !detail) return;
@@ -70,7 +103,10 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
         totalPrestado: detail.totalPrestado,
         totalTransferencias: detail.totalTransferencias || 0,
         baseAmount: baseAmount,
-        adminId: currentUser.id
+        adminId: currentUser.id,
+        routeName: route.ruta,
+        collectorName: route.cobrador,
+        detail,
       });
       toast.success('Liquidación aprobada exitosamente');
       onSuccess();
@@ -117,6 +153,9 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
         collectorName={route.cobrador}
         detail={detail}
         baseAmount={baseAmount}
+        source={source}
+        approvedAt={closing?.closed_at || null}
+        approvedTotal={closing?.is_closed ? Number(closing.expected_delivery) : null}
       />).toBlob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -144,6 +183,10 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
         { sheetName: 'Detalle Gastos', data: detail.detalleGastos.map((g: any) => ({
           Categoria: g.category?.name || 'Otros',
           Monto: g.amount
+        }))},
+        { sheetName: 'Préstamos Nuevos', data: (detail.detallePrestamos || []).map((l: any) => ({
+          Cliente: l.cliente,
+          Monto: l.monto
         }))}
       ], `Liquidacion_${route.ruta}_${dateStr}`);
     } catch (error) {
@@ -184,6 +227,27 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
             </div>
           ) : detail ? (
             <div className="space-y-5 sm:space-y-6">
+
+              {source === 'snapshot' && (
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-medium rounded-xl p-3 flex gap-2">
+                  <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>
+                    Valores guardados al aprobar{approvedAtLabel ? ` el ${approvedAtLabel}` : ''}. No cambian aunque después se corrijan cobros.
+                  </span>
+                </div>
+              )}
+
+              {source === 'legacy' && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs sm:text-sm font-medium rounded-xl p-3 flex gap-2">
+                  <Info className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>
+                    Liquidación anterior sin respaldo detallado: los valores se recalcularon con los datos actuales.
+                    {closing && Number(closing.expected_delivery) !== detail.totalEntregar + baseAmount && (
+                      <> Total aprobado en su momento: <strong>{formatCurrency(Number(closing.expected_delivery))}</strong>.</>
+                    )}
+                  </span>
+                </div>
+              )}
               
               {/* Resumen Matemático */}
               <div className="bg-slate-50 rounded-2xl p-4 sm:p-5 border border-slate-200 space-y-3 sm:space-y-4">
@@ -191,7 +255,7 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
                   <div className="flex items-center gap-2 text-brand-600 font-bold text-sm sm:text-base">
                     <HandCoins className="w-5 h-5 shrink-0" />
-                    (+) Base Inicial (Mañana)
+                    (+) Base inicial (inicio del día)
                   </div>
                   <div className="relative w-full sm:w-32">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">$</span>
@@ -200,7 +264,9 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                       inputMode="numeric"
                       value={formatNumberInput(baseAmount.toString())} 
                       onChange={(e) => setBaseAmount(Number(parseNumberInput(e.target.value)) || 0)} 
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-7 pr-3 py-1.5 text-right font-bold text-slate-800 focus:ring-2 focus:ring-brand-500 outline-none"
+                      disabled={isClosed}
+                      title={isClosed ? 'Día liquidado: reábrelo para modificar la base' : undefined}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-7 pr-3 py-1.5 text-right font-bold text-slate-800 focus:ring-2 focus:ring-brand-500 outline-none disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                       placeholder="0"
                     />
                   </div>
@@ -286,11 +352,11 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                 )}
               </div>
 
-              {route.estado === 'Liquidado' ? (
+              {isClosed ? (
                 <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded-xl flex flex-col items-center justify-center font-bold space-y-3">
                   <div className="flex items-center text-center text-sm sm:text-base">
                     <CheckCircle className="w-5 h-5 mr-2 shrink-0" />
-                    Esta ruta ya fue liquidada hoy.
+                    Esta ruta ya fue liquidada{approvedAtLabel ? ` (${approvedAtLabel})` : ''}.
                   </div>
                   <button
                     onClick={handleReopen}
