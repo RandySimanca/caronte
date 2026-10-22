@@ -37,7 +37,7 @@ export function RouteClientList() {
   const [isReordering, setIsReordering] = useState(false);
   const [orderedClients, setOrderedClients] = useState<any[]>([]);
   const { isOnline } = useSyncStore();
-  
+
   // Real data from Dexie
   const clients = useLiveQuery(() => db.clients.toArray()) || [];
   const loans = useLiveQuery(() => db.loans.toArray()) || [];
@@ -115,7 +115,7 @@ export function RouteClientList() {
   }, [orderedClients.length, today]);
 
   useEffect(() => {
-    if (lotteryDraw) applyLotteryDrawLocally(lotteryDraw).catch(() => {});
+    if (lotteryDraw) applyLotteryDrawLocally(lotteryDraw).catch(() => { });
   }, [lotterySetting?.value]);
 
   // Compute stats and enrich clients with financial data
@@ -124,7 +124,7 @@ export function RouteClientList() {
       const winnerLoan = loans.find(l => l.client_id === client.id && isLotteryWinnerLoan(l, lotteryDraw));
       const activeLoan = loans.find(l => l.client_id === client.id && l.status === 'ACTIVO' && !isLotteryWinnerLoan(l, lotteryDraw));
       const loan = activeLoan ?? winnerLoan;
-      
+
       let todayQuota = 0;
       let arrears = 0;
       let status = 'AL_DIA';
@@ -173,7 +173,7 @@ export function RouteClientList() {
         todayQuota = loan.start_date > today
           ? 0
           : (todayInstallment ? Number(todayInstallment.balance || 0) : (loanEnded ? 0 : Number(loan.daily_installment || 0)));
-        
+
         isTodayPaid = !!(todayInstallment && (Number(todayInstallment.balance || 0) <= 0 || ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInstallment.status)));
         const isFutureStart = loan.start_date > today;
 
@@ -218,18 +218,18 @@ export function RouteClientList() {
         avatarUrl: client.photo_face_url
       };
     })
-    .filter(c => {
-      // Ocultar clientes que ya no tienen préstamo activo ni son ganadores del sorteo.
-      // Cuando un pago cierra el préstamo (saldo 0 → CANCELADO), el cliente desaparece de
-      // la lista de inmediato, sin esperar la sincronización del día siguiente.
-      const hasActiveLoan = loans.some(
-        l => l.client_id === c.id && l.status === 'ACTIVO'
-      );
-      const isWinner = loans.some(
-        l => l.client_id === c.id && isLotteryWinnerLoan(l, lotteryDraw)
-      );
-      return hasActiveLoan || isWinner;
-    });
+      .filter(c => {
+        // Ocultar clientes que ya no tienen préstamo activo ni son ganadores del sorteo.
+        // Cuando un pago cierra el préstamo (saldo 0 → CANCELADO), el cliente desaparece de
+        // la lista de inmediato, sin esperar la sincronización del día siguiente.
+        const hasActiveLoan = loans.some(
+          l => l.client_id === c.id && l.status === 'ACTIVO'
+        );
+        const isWinner = loans.some(
+          l => l.client_id === c.id && isLotteryWinnerLoan(l, lotteryDraw)
+        );
+        return hasActiveLoan || isWinner;
+      });
   }, [clients, loans, installments, today, lotteryDraw, todayPaidByLoan]);
 
   // Ruta completa en su orden personalizado (usar sortByRouteOrder para lógica consistente)
@@ -312,7 +312,7 @@ export function RouteClientList() {
         for (const update of updates) {
           await db.clients.update(update.id, { route_order: update.route_order });
         }
-        
+
         await db.syncQueue.add({
           operation_id: uuidv4(),
           operation_type: 'UPDATE_CLIENT_ORDERS' as any,
@@ -322,7 +322,7 @@ export function RouteClientList() {
           retry_count: 0
         });
       });
-      
+
       setIsReordering(false);
       toast.success('Orden guardado');
       if (isOnline) {
@@ -333,7 +333,9 @@ export function RouteClientList() {
     }
   }
 
-  const baseVisited = sortedClients.filter(c => c.status === 'VISITADO' || c.status === 'ADELANTADO');
+  // Visitado = el cobrador le cobró algo hoy. Los adelantados (cuota de hoy pagada de días anteriores,
+  // sin cobro hoy) no cuentan como visitados ni como pendientes: tienen su propio botón/modal.
+  const baseVisited = sortedClients.filter(c => c.hasPaymentToday);
   const baseNew = sortedClients.filter(c => c.status === 'NUEVO');
   const arrearsCount = sortedClients.filter(c => c.status === 'ATRASADO').length;
   const winnerCount = sortedClients.filter(c => c.status === 'GANADOR').length;
@@ -341,18 +343,20 @@ export function RouteClientList() {
   const counts = searchTerm
     ? { total: sortedClients.length, visited: baseVisited.length, newCount: baseNew.length }
     : countWithCompleted(
-        { total: sortedClients.length, visited: baseVisited.length, newCount: baseNew.length },
-        completedToday,
-        {
-          route: new Set(sortedClients.map(c => c.id)),
-          visited: new Set(baseVisited.map(c => c.id)),
-          fresh: new Set(baseNew.map(c => c.id)),
-        }
-      );
+      { total: sortedClients.length, visited: baseVisited.length, newCount: baseNew.length },
+      completedToday,
+      {
+        route: new Set(sortedClients.map(c => c.id)),
+        visited: new Set(baseVisited.map(c => c.id)),
+        fresh: new Set(baseNew.map(c => c.id)),
+      }
+    );
   const totalClients = counts.total;
   const visitedCount = counts.visited;
   const newCount = counts.newCount;
-  const pendingCount = totalClients - visitedCount - newCount - winnerCount;
+  const pendingCount = sortedClients.filter(
+    c => !['NUEVO', 'GANADOR', 'ADELANTADO', 'VISITADO'].includes(c.status)
+  ).length;
 
   return (
     <div className="flex flex-col h-full bg-slate-50">
@@ -386,7 +390,7 @@ export function RouteClientList() {
             )}
           </div>
         </div>
-        
+
         {/* Search */}
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -427,9 +431,9 @@ export function RouteClientList() {
 
       {/* Client List */}
       <div className="flex-1 overflow-y-auto">
-        <DndContext 
-          sensors={sensors} 
-          collisionDetection={closestCenter} 
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
           onDragEnd={handleDragEnd}
           modifiers={[restrictToVerticalAxis]}
         >
@@ -439,15 +443,15 @@ export function RouteClientList() {
                 <p>No hay clientes para mostrar</p>
               </div>
             ) : (
-              <SortableContext 
-                items={orderedClients.map(c => c.id)} 
+              <SortableContext
+                items={orderedClients.map(c => c.id)}
                 strategy={verticalListSortingStrategy}
               >
                 {orderedClients.map((client, index) => (
-                  <SortableClientItem 
-                    key={client.id} 
-                    client={client} 
-                    isReordering={isReordering} 
+                  <SortableClientItem
+                    key={client.id}
+                    client={client}
+                    isReordering={isReordering}
                     position={positionById.get(client.id) ?? index + 1}
                     onMoveTo={moveClientTo}
                   />

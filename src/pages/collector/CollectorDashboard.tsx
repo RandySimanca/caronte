@@ -14,6 +14,7 @@ import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
 import { NewLoansTodayModal } from '@/components/admin/NewLoansTodayModal';
 import { PaidTodayModal, type PaidTodayEntry } from '@/components/admin/PaidTodayModal';
 import { CompletedLoansTodayModal } from '@/components/collector/CompletedLoansTodayModal';
+import { VisitedTodayModal, type VisitedClientEntry } from '@/components/collector/VisitedTodayModal';
 import { buildCompletedToday, completedLoansSettingKey, countWithCompleted, type CompletedLoanEntry } from '@/lib/completedLoans';
 import { applyLotteryDrawLocally, isLotteryWinnerLoan, parseLotteryLastDraw } from '@/lib/lottery';
 import { NavLink } from 'react-router-dom';
@@ -58,6 +59,7 @@ export function CollectorDashboard() {
   const [isNewLoansModalOpen, setIsNewLoansModalOpen] = useState(false);
   const [isPaidTodayOpen, setIsPaidTodayOpen] = useState(false);
   const [isCompletedOpen, setIsCompletedOpen] = useState(false);
+  const [isVisitedOpen, setIsVisitedOpen] = useState(false);
 
   const lotteryDraw = parseLotteryLastDraw(lotterySetting?.value);
 
@@ -223,14 +225,15 @@ export function CollectorDashboard() {
 
       if (loanCurrentArrears > 0) arrearsClients++;
 
-      const isTodayPaid = !!(todayInst && (todayInst.balance <= 0 || ['PAGADA', 'PAGADA_ANTICIPADAMENTE'].includes(todayInst.status)));
       const isFutureStart = loan.start_date > today;
       const loanPaidToday = (paidTodayByLoan.get(loan.id) || 0) > 0;
 
       if (isFutureStart && !loanPaidToday) {
         newCount++;
         newClientIds.add(loan.client_id);
-      } else if (isTodayPaid || loanPaidToday) {
+      } else if (loanPaidToday) {
+        // Visitado = el cobrador le cobró algo HOY. Los que tienen la cuota de hoy pagada de días
+        // anteriores (pago adelantado) no cuentan: ya salen en "Cuota de hoy ya pagada".
         visitedCount++;
         visitedClientIds.add(loan.client_id);
       }
@@ -280,7 +283,50 @@ export function CollectorDashboard() {
       { route: routeClientIds, visited: visitedClientIds, fresh: newClientIds }
     );
 
+    // Lista de clientes visitados hoy (misma regla que el contador: cobro de hoy o préstamo terminado hoy)
+    const clientIdByLoan = new Map(allLoans.map(l => [l.id, l.client_id] as [string, string]));
+    const paidByClient = new Map<string, { amount: number; lastAt: string }>();
+    for (const e of paidTodayEntries) {
+      const cid = clientIdByLoan.get(e.loanId);
+      if (!cid) continue;
+      const prev = paidByClient.get(cid) || { amount: 0, lastAt: '' };
+      paidByClient.set(cid, {
+        amount: prev.amount + e.amount,
+        lastAt: (e.collectedAt || '') > prev.lastAt ? (e.collectedAt || '') : prev.lastAt,
+      });
+    }
+    const visitedTodayClients: VisitedClientEntry[] = [];
+    const listedVisited = new Set<string>();
+    for (const cid of visitedClientIds) {
+      const paid = paidByClient.get(cid);
+      const done = completedToday.find(c => c.clientId === cid);
+      listedVisited.add(cid);
+      visitedTodayClients.push({
+        clientId: cid,
+        clientName: clients.find(c => c.id === cid)?.full_name || 'Cliente',
+        amount: paid?.amount || 0,
+        lastAt: paid?.lastAt || done?.completedAt || '',
+        paidAll: !!done && !done.refinanced,
+        refinanced: !!done?.refinanced,
+      });
+    }
+    for (const done of completedToday) {
+      if (listedVisited.has(done.clientId)) continue;
+      listedVisited.add(done.clientId);
+      const paid = paidByClient.get(done.clientId);
+      visitedTodayClients.push({
+        clientId: done.clientId,
+        clientName: done.clientName,
+        amount: paid?.amount || 0,
+        lastAt: paid?.lastAt || done.completedAt || '',
+        paidAll: !done.refinanced,
+        refinanced: !!done.refinanced,
+      });
+    }
+    visitedTodayClients.sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || ''));
+
     return {
+      visitedTodayClients,
       targetExpected,
       targetTodayOnly,
       targetArrears,
@@ -452,13 +498,19 @@ export function CollectorDashboard() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col justify-between">
-          <p className="text-slate-500 text-xs font-medium">Clientes visitados</p>
+        <button
+          onClick={() => setIsVisitedOpen(true)}
+          className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col justify-between text-left active:scale-[0.98] transition-transform"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-slate-500 text-xs font-medium">Clientes visitados</p>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-300 -mr-0.5" />
+          </div>
           <p className="text-2xl font-bold text-slate-800 mt-2">
             <span className="text-brand-600">{stats.clientsVisited}</span>
             <span className="text-slate-300 text-xl font-medium"> / {stats.clientsTotal - stats.clientsNew}</span>
           </p>
-        </div>
+        </button>
 
         <button
           onClick={() => setIsCompletedOpen(true)}
@@ -596,6 +648,12 @@ export function CollectorDashboard() {
         isOpen={isCompletedOpen}
         onClose={() => setIsCompletedOpen(false)}
         loans={stats.completedToday}
+      />
+
+      <VisitedTodayModal
+        isOpen={isVisitedOpen}
+        onClose={() => setIsVisitedOpen(false)}
+        clients={stats.visitedTodayClients}
       />
 
       <PaidTodayModal
