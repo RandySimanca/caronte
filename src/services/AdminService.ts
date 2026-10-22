@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import type { User, Role } from '@/lib/database.types';
 import { dayRangeIso, colombiaDateFromIso, colombiaToday } from '@/lib/dailyCollection';
 import { parseLotteryLastDraw, isLotteryWinnerLoan } from '@/lib/lottery';
+import { isLoanClavo } from '@/lib/clavo';
 import { useAuthStore } from '@/stores/authStore';
 
 export interface UserWithRole extends User {
@@ -1675,6 +1676,23 @@ export class AdminService {
     }
 
     if (!clientId) throw new Error("Cliente no especificado");
+
+    // Cliente CLAVO: tiene un préstamo ACTIVO vencido (end_date + 7 días de gracia) con saldo → no se le puede
+    // crear un préstamo nuevo desde aquí (la refinanciación se hace desde el cobrador)
+    {
+      const refDate = payload.disbursementDate || colombiaToday();
+      const { data: overdueLoans } = await supabase
+        .from('loans')
+        .select('id, status, end_date, current_balance')
+        .eq('client_id', clientId)
+        .eq('status', 'ACTIVO');
+      const clavoLoan = (overdueLoans || []).find((l: any) => isLoanClavo(l, refDate));
+      if (clavoLoan) {
+        throw new Error(
+          `El cliente es CLAVO: su préstamo venció el ${String((clavoLoan as any).end_date).slice(0, 10)} (más 7 días de gracia) y aún tiene saldo pendiente. No se le puede crear un préstamo nuevo hasta que salde su deuda; puede refinanciar.`
+        );
+      }
+    }
 
     // 2. Calculations
     const numAmount = payload.amountRequested;

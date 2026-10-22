@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { isLoanClavo } from '@/lib/clavo';
 import { ArrowLeft, Camera, Image, CheckCircle2, X, UserCheck, AlertCircle, Search } from 'lucide-react';
 import type { LocalClient } from '@/db/schema';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -41,6 +42,9 @@ export function NewLoanWizard() {
     loanId: string; pendingBalance: number; pendingCount: number; arrears: number;
   } | null>(null);
   const [refinancing, setRefinancing] = useState(false);
+  // Cliente CLAVO: préstamo vencido (end_date + 7 días de gracia) sin saldar → no puede recibir un préstamo
+  // nuevo normal; sí puede refinanciar (así salda su deuda y adquiere una nueva obligación)
+  const [clavoInfo, setClavoInfo] = useState<{ endDate: string; balance: number } | null>(null);
 
   // Aplica un cliente existente al formulario (pre-llena datos y revisa si tiene préstamo activo)
   const applyExistingClient = useCallback(async (found: LocalClient, hasActiveLoan: boolean) => {
@@ -57,6 +61,7 @@ export function NewLoanWizard() {
   const lookupClientByDocument = useCallback(async (docValue: string) => {
     const trimmed = docValue.trim();
     setActiveLoanInfo(null);
+    setClavoInfo(null);
     setRefinancing(false);
     if (!trimmed) {
       setExistingClient(null);
@@ -90,6 +95,11 @@ export function NewLoanWizard() {
         };
       }
       setActiveLoanInfo(info);
+      setClavoInfo(
+        activeLoan && isLoanClavo(activeLoan as any)
+          ? { endDate: String(activeLoan.end_date), balance: Number(activeLoan.current_balance || 0) }
+          : null,
+      );
       setRefinancing(false);
       await applyExistingClient(found, !!activeLoan);
       return;
@@ -111,10 +121,15 @@ export function NewLoanWizard() {
           }
           const { data: remoteActive } = await supabase
             .from('loans')
-            .select('id')
+            .select('id, status, end_date, current_balance')
             .eq('client_id', (remote as any).id)
-            .eq('status', 'ACTIVO')
-            .limit(1);
+            .eq('status', 'ACTIVO');
+          const remoteClavo = (remoteActive || []).find((l: any) => isLoanClavo(l));
+          setClavoInfo(
+            remoteClavo
+              ? { endDate: String((remoteClavo as any).end_date), balance: Number((remoteClavo as any).current_balance || 0) }
+              : null,
+          );
           await applyExistingClient(
             { ...(remote as any), sync_status: 'synced' } as LocalClient,
             !!(remoteActive && remoteActive.length > 0),
@@ -180,6 +195,7 @@ export function NewLoanWizard() {
       setExistingClient(null);
       setExistingClientHasActiveLoan(false);
       setActiveLoanInfo(null);
+      setClavoInfo(null);
       setRefinancing(false);
       setClientName('');
       setPhone('');
@@ -255,6 +271,9 @@ export function NewLoanWizard() {
   const refinanceDiscount = refinancing && activeLoanInfo ? round6(activeLoanInfo.pendingBalance) : 0;
   const delivered = numAmount - totalSundaysDiscount - receiptFee - refinanceDiscount;
   const refinanceNotEnough = refinancing && numAmount > 0 && delivered < 0;
+  // Un cliente clavo siempre tiene un préstamo activo, así que ya queda bloqueado para un préstamo
+  // nuevo normal; la única salida es refinanciar (descuenta el saldo pendiente)
+  const blockedByClavo = !!clavoInfo;
   const blockedByActiveLoan = existingClientHasActiveLoan && !refinancing;
   const lockClientFields = !!existingClient && (!existingClientHasActiveLoan || refinancing);
 
@@ -266,6 +285,10 @@ export function NewLoanWizard() {
 
   const handleCreate = async () => {
     if (!confirmed || numAmount <= 0 || refinanceNotEnough) return;
+    if (blockedByClavo && !refinancing) {
+      toast.error('Este cliente es CLAVO: solo puede refinanciar para saldar su deuda.');
+      return;
+    }
 
     const swalConfirmed = await confirmAction({
       title: '¿Crear este préstamo?',
@@ -584,6 +607,12 @@ export function NewLoanWizard() {
                   <div className="flex-1">
                     <p className="text-sm font-bold text-rose-700">{existingClient.full_name}</p>
                     <p className="text-xs text-rose-600 mt-0.5">Ya tiene un préstamo activo.</p>
+                    {clavoInfo && (
+                      <p className="text-xs font-bold text-rose-700 mt-1">
+                        Es CLAVO: su préstamo venció el {clavoInfo.endDate.slice(0, 10)} (más 7 días de gracia) y aún debe {formatCurrency(clavoInfo.balance)}.
+                        No se le puede dar un préstamo nuevo normal; puede refinanciar para saldar su deuda y adquirir una nueva obligación.
+                      </p>
+                    )}
                     {activeLoanInfo && activeLoanInfo.pendingBalance > 0 && (
                       <>
                         <p className="text-xs text-rose-700 mt-1">
