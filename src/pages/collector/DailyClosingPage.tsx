@@ -3,6 +3,7 @@ import { ArrowLeft, CheckCircle, HandCoins, TrendingDown, TrendingUp, Smartphone
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import { mergeTodayPayments, paymentsTodaySettingKey, sumTodayPayments, colombiaDateFromIso } from '@/lib/dailyCollection';
+import { loanValueOf, sumRefinancedBalance } from '@/lib/refinance';
 import { motion } from 'framer-motion';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
@@ -68,7 +69,7 @@ export function DailyClosingPage() {
   
   const totalOfficePayments = officeCash + officeTransfers;
 
-  const { expected, collected, newLoansDelivered, newLoansCount, totalTransfersFromPayments } = useMemo(() => {
+  const { expected, collected, refinanceCollected, newLoansDelivered, newLoansCount, totalTransfersFromPayments } = useMemo(() => {
     let exp = 0;
 
     for (const loan of loans) {
@@ -95,7 +96,10 @@ export function DailyClosingPage() {
     }
 
     const todayLoans = allLoans.filter(l => l.disbursement_date === today);
-    const newLoansDelivered = todayLoans.reduce((s, l) => s + (l.amount_delivered || 0), 0);
+    // Préstamo nuevo por su valor completo (entregado + saldo recogido si es refinanciación);
+    // lo recogido suma al total cobrado, así el efectivo a entregar no cambia.
+    const newLoansDelivered = todayLoans.reduce((s, l) => s + loanValueOf(l), 0);
+    const refinanceCollected = sumRefinancedBalance(todayLoans);
     const newLoansCount = todayLoans.length;
 
     const serverPayments = allSettings.find(s => s.key === paymentsTodaySettingKey(today))?.value as any[] | undefined;
@@ -110,7 +114,8 @@ export function DailyClosingPage() {
 
     return {
       expected: exp,
-      collected: sums.collected,
+      collected: sums.collected + refinanceCollected,
+      refinanceCollected,
       newLoansDelivered,
       newLoansCount,
       totalTransfersFromPayments: sums.transfers,
@@ -231,6 +236,12 @@ export function DailyClosingPage() {
               </div>
               <span className="font-bold text-slate-800">{formatCurrency(collected)}</span>
             </div>
+            {refinanceCollected > 0 && (
+              <div className="flex justify-between text-xs text-amber-600 pl-5">
+                <span>Incluye refinanciación</span>
+                <span>{formatCurrency(refinanceCollected)}</span>
+              </div>
+            )}
 
             {/* Separador esperado */}
             <div className="flex justify-between text-xs text-slate-400 pl-5">

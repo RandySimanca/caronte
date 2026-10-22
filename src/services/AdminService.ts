@@ -3,6 +3,7 @@ import type { User, Role } from '@/lib/database.types';
 import { dayRangeIso, colombiaDateFromIso, colombiaToday } from '@/lib/dailyCollection';
 import { parseLotteryLastDraw, isLotteryWinnerLoan } from '@/lib/lottery';
 import { isLoanClavo } from '@/lib/clavo';
+import { loanValueOf, refinancedBalanceOf } from '@/lib/refinance';
 import { useAuthStore } from '@/stores/authStore';
 
 export interface UserWithRole extends User {
@@ -381,7 +382,7 @@ export class AdminService {
     let loansQuery = supabase.from('loans').select('*', { count: 'exact', head: true }).gte('start_date', startOfWeekStr);
     let newLoansTodayQuery = supabase
       .from('loans')
-      .select('id, client_id, amount_delivered, client:clients(full_name)')
+      .select('id, client_id, amount_delivered, refinanced_balance, created_at, client:clients(full_name)')
       .eq('disbursement_date', todayStr);
     // ── Esperado (hoy) & Cuotas del Día ─────────────────────────────────────
     // Fetch all active loans to perfectly match collector's logic (including missing installments and lottery)
@@ -580,9 +581,25 @@ export class AdminService {
       loanId: l.id,
       clientId: l.client_id,
       clientName: l.client?.full_name || 'Cliente',
-      amount: Number(l.amount_delivered || 0),
+      // Valor completo del préstamo (efectivo entregado + saldo recogido si es refinanciación)
+      amount: loanValueOf(l),
+      delivered: Number(l.amount_delivered || 0),
+      refinancedBalance: refinancedBalanceOf(l),
     }));
     const newLoansTodayAmount = newLoansTodayClients.reduce((s, c) => s + c.amount, 0);
+
+    // Dinero recogido por refinanciaciones: cuenta como recaudo del cobrador (el cliente "paga" su
+    // saldo y recibe un préstamo nuevo por el valor completo)
+    const refinanciacionHoy = (newLoansTodayRes.data || []).reduce((s: number, l: any) => s + refinancedBalanceOf(l), 0);
+    const refinanciacionEntries = (newLoansTodayRes.data || [])
+      .filter((l: any) => refinancedBalanceOf(l) > 0)
+      .map((l: any) => ({
+        loanId: l.id,
+        clientName: l.client?.full_name || 'Cliente',
+        amount: refinancedBalanceOf(l),
+        collectedAt: l.created_at || new Date().toISOString(),
+        isRefinance: true,
+      }));
 
     // Calcular recaudo en oficina (Admin)
     const recaudoOficina = alertsData
@@ -595,7 +612,7 @@ export class AdminService {
       .reduce((sum: number, p: any) => sum + Number(p.total_amount), 0);
 
     // Calcular efectivo físico del cobrador
-    const recaudoCobrador = recaudoHoy - recaudoOficina - recaudoTransferencias;
+    const recaudoCobrador = recaudoHoy + refinanciacionHoy - recaudoOficina - recaudoTransferencias;
 
     const enrichedAlerts = alertsData
       .filter((alert: any) => alert.is_above_expected || alert.advance_amount > 0 || (alert.collector_observation && alert.collector_observation.trim() !== ''))
@@ -612,15 +629,19 @@ export class AdminService {
         is_transfer: !!alert.is_transfer,
       }));
 
-    const pagosHoy = alertsData.map((p: any) => ({
-      loanId: p.loan_id,
-      clientName: p.loan?.client?.full_name || 'Cliente desconocido',
-      amount: Number(p.total_amount),
-      collectedAt: p.collected_at,
-      isTransfer: !!p.is_transfer,
-      isOffice: p.collector?.role_id === adminRoleId,
-      collectorName: p.collector?.full_name || undefined,
-    }));
+    const pagosHoy = [
+      ...alertsData.map((p: any) => ({
+        loanId: p.loan_id,
+        clientName: p.loan?.client?.full_name || 'Cliente desconocido',
+        amount: Number(p.total_amount),
+        collectedAt: p.collected_at,
+        isTransfer: !!p.is_transfer,
+        isOffice: p.collector?.role_id === adminRoleId,
+        isRefinance: false,
+        collectorName: p.collector?.full_name || undefined,
+      })),
+      ...refinanciacionEntries,
+    ];
 
     // Split collected amount into "today installments", "arrears", and "advances"
     // using the authoritative fields stored in each payment record
@@ -635,7 +656,8 @@ export class AdminService {
       // activeLoans ya viene filtrado por ruta cuando se elige una.
       clientes: new Set(activeLoans.map((l: any) => l.client_id).filter(Boolean)).size,
       nuevos: loansRes.count || 0,
-      recaudo: recaudoHoy,
+      recaudo: recaudoHoy + refinanciacionHoy,
+      recaudoRefinanciacion: refinanciacionHoy,
       recaudoCuotasHoy,
       recaudoAtrasos,
       recaudoAdelantos,
@@ -789,7 +811,7 @@ export class AdminService {
     const [paymentsRes, expensesRes, loansRes, settingsRes, salarySettingRes, assignmentRes] = await Promise.all([
       supabase.from('payments').select('total_amount, collector_id, is_transfer').eq('route_id', routeId).gte('collected_at', startOfDay).lte('collected_at', endOfDay),
       supabase.from('expenses').select('amount, category:expense_categories(name)').eq('route_id', routeId).eq('expense_date', dateStr),
-      supabase.from('loans').select('amount_delivered, collector_id, client:clients(full_name)').eq('route_id', routeId).eq('disbursement_date', dateStr),
+      supabase.from('loans').select('amount_delivered, refinanced_balance, collector_id, client:clients(full_name)').eq('route_id', routeId).eq('disbursement_date', dateStr),
       supabase.from('system_settings').select('value').eq('key', 'default_viaticum').maybeSingle(),
       supabase.from('system_settings').select('value').eq('key', 'default_salary').maybeSingle(),
       // Obtener la asignación activa para leer overrides de viático y salario del cobrador
@@ -798,7 +820,7 @@ export class AdminService {
 
     // Solo procesar pagos que no fueron hechos por el administrador
     const collectorPayments = paymentsRes.data?.filter(p => !adminUserIds.has(p.collector_id)) || [];
-    const totalCobrado = collectorPayments.reduce((sum, p: any) => sum + Number(p.total_amount), 0);
+    const cobradoPagos = collectorPayments.reduce((sum, p: any) => sum + Number(p.total_amount), 0);
     const totalTransferencias = collectorPayments.filter(p => p.is_transfer).reduce((sum, p: any) => sum + Number(p.total_amount), 0);
 
     const totalGastos = expensesRes.data?.reduce((sum, e: any) => sum + Number(e.amount), 0) || 0;
@@ -808,10 +830,16 @@ export class AdminService {
     // coincide con el modal "Préstamos nuevos" del dashboard.
     const collectorLoans = loansRes.data || [];
     const prestamosNuevos = collectorLoans.length;
-    const totalPrestado = collectorLoans.reduce((sum, l: any) => sum + Number(l.amount_delivered), 0);
+    // Refinanciación: lo recogido (saldo anterior) suma al recaudo y el préstamo nuevo se cuenta por
+    // su valor completo (entregado + recogido). El efectivo a entregar no cambia.
+    const totalRefinanciacion = collectorLoans.reduce((sum, l: any) => sum + refinancedBalanceOf(l), 0);
+    const totalCobrado = cobradoPagos + totalRefinanciacion;
+    const totalPrestado = collectorLoans.reduce((sum, l: any) => sum + loanValueOf(l), 0);
     const detallePrestamos = collectorLoans.map((l: any) => ({
       cliente: l.client?.full_name || 'Cliente',
-      monto: Number(l.amount_delivered),
+      monto: loanValueOf(l),
+      entregado: Number(l.amount_delivered || 0),
+      refinanciado: refinancedBalanceOf(l),
     }));
 
     // Viático: primero el override del cobrador, luego el global
@@ -836,6 +864,8 @@ export class AdminService {
 
     return {
       totalCobrado,
+      cobradoPagos,
+      totalRefinanciacion,
       totalTransferencias,
       totalGastos,
       detalleGastos: expensesRes.data || [],
@@ -1054,7 +1084,7 @@ export class AdminService {
   static async getNewLoansByDate(dateStr: string, routeId?: string) {
     let query = supabase
       .from('loans')
-      .select('id, client_id, amount_delivered, client:clients(full_name)')
+      .select('id, client_id, amount_delivered, refinanced_balance, client:clients(full_name)')
       .eq('disbursement_date', dateStr);
 
     if (routeId && routeId !== 'all') {
@@ -1067,7 +1097,9 @@ export class AdminService {
       loanId: l.id,
       clientId: l.client_id,
       clientName: l.client?.full_name || 'Sin nombre',
-      amount: l.amount_delivered || 0
+      amount: loanValueOf(l),
+      delivered: Number(l.amount_delivered || 0),
+      refinancedBalance: refinancedBalanceOf(l),
     }));
   }
 

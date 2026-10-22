@@ -1,6 +1,7 @@
 import { Bell, ChevronRight, RefreshCw, WifiOff, CalendarCheck, Trophy } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { colombiaDateFromIso, mergeTodayPayments, paymentsTodaySettingKey, sumTodayPayments } from '@/lib/dailyCollection';
+import { loanValueOf, refinancedBalanceOf, sumRefinancedBalance } from '@/lib/refinance';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -257,13 +258,30 @@ export function CollectorDashboard() {
     const targetExpected = targetTodayOnly + targetArrears;
 
     const todayNewLoans = allLoans.filter(l => l.disbursement_date === today);
+    // Préstamos nuevos: valor completo del préstamo (efectivo entregado + saldo recogido si es
+    // refinanciación). Ej.: debía 300.000 y le prestan 500.000 → se entregan 200.000, aparece 500.000.
     const newLoansTodayClients = todayNewLoans.map(l => ({
       loanId: l.id,
       clientId: l.client_id,
       clientName: clients.find(c => c.id === l.client_id)?.full_name || 'Cliente',
-      amount: Number(l.amount_delivered || 0),
+      amount: loanValueOf(l),
+      delivered: Number(l.amount_delivered || 0),
+      refinancedBalance: refinancedBalanceOf(l),
     }));
     const newLoansTodayAmount = newLoansTodayClients.reduce((s, c) => s + c.amount, 0);
+
+    // Dinero recogido por refinanciaciones: es como si el cliente pagara su saldo en efectivo y
+    // pidiera un préstamo nuevo; suma al total recaudado y aparece en "Cobros del día".
+    const collectedRefinance = sumRefinancedBalance(todayNewLoans);
+    const refinanceEntries: PaidTodayEntry[] = todayNewLoans
+      .filter(l => refinancedBalanceOf(l) > 0)
+      .map(l => ({
+        loanId: l.id,
+        clientName: clients.find(c => c.id === l.client_id)?.full_name || 'Cliente',
+        amount: refinancedBalanceOf(l),
+        collectedAt: l.created_at || new Date().toISOString(),
+        isRefinance: true,
+      }));
 
     // Clientes con préstamo activo o ganadores del sorteo:
     // mismo criterio que usa RouteClientList para construir la lista de ruta.
@@ -331,6 +349,8 @@ export function CollectorDashboard() {
       targetTodayOnly,
       targetArrears,
       collected,
+      collectedRefinance,
+      collectedTotal: collected + collectedRefinance,
       collectedTodayOnly: totalCollectedTodayOnly,
       collectedArrears: totalCollectedArrears,
       collectedAdelantos: totalCollectedAdelantos,
@@ -346,7 +366,7 @@ export function CollectorDashboard() {
       newLoansTodayCount: newLoansTodayClients.length,
       newLoansTodayAmount,
       newLoansTodayClients,
-      paidTodayEntries,
+      paidTodayEntries: [...paidTodayEntries, ...refinanceEntries],
       completedToday,
     };
   }, [loans, allLoans, installments, clients, today, lotterySetting?.value, allSettings, syncQueue]);
@@ -464,7 +484,7 @@ export function CollectorDashboard() {
             <p className="text-emerald-50 text-[11px] font-medium uppercase tracking-wider">Total recaudado (Hoy)</p>
             <ChevronRight className="w-3.5 h-3.5 text-emerald-200 -mr-0.5" />
           </div>
-          <p className="text-2xl font-black mt-1 mb-1 leading-none">{formatCurrency(stats.collected)}</p>
+          <p className="text-2xl font-black mt-1 mb-1 leading-none">{formatCurrency(stats.collectedTotal)}</p>
           <div className="pt-2 border-t border-emerald-400/40 mt-3">
             <div className="flex justify-between items-center text-[10px] text-emerald-100 mb-0.5">
               <span>Cuotas de hoy:</span>
@@ -478,6 +498,12 @@ export function CollectorDashboard() {
               <span>Adelantos:</span>
               <span className="font-bold text-emerald-50">{formatCurrency(stats.collectedAdelantos)}</span>
             </div>
+            {stats.collectedRefinance > 0 && (
+              <div className="flex justify-between items-center text-[10px] text-emerald-100 mt-0.5">
+                <span>Refinanciación:</span>
+                <span className="font-bold text-emerald-50">{formatCurrency(stats.collectedRefinance)}</span>
+              </div>
+            )}
           </div>
         </button>
 

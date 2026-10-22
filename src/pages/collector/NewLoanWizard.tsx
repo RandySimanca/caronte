@@ -432,6 +432,8 @@ export function NewLoanWizard() {
           grace_end_date: graceEndDate,
           status: 'ACTIVO',
           refinanced_from_loan_id: refinanceOriginalId,
+          // Saldo anterior recogido: suma al recaudo y el valor del préstamo = entregado + recogido
+          refinanced_balance: refinanceOriginalId ? refinanceDiscount : 0,
           wants_raffle: wantsRaffle,
           raffle_number: generatedRaffleNumber,
           created_at: new Date().toISOString(),

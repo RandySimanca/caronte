@@ -139,6 +139,8 @@ export interface Loan {
   // Estado
   status: LoanStatus
   refinanced_from_loan_id: string | null
+  /** Saldo del préstamo anterior descontado al refinanciar (dinero recogido). 0 si no es refinanciación */
+  refinanced_balance?: number | null
   created_by: string | null
   created_at: string
   // Relations

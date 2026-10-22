@@ -10,7 +10,12 @@ export interface NewLoanTodayClient {
   loanId: string;
   clientId: string;
   clientName: string;
+  /** Valor del préstamo nuevo (entregado + saldo recogido si es refinanciación) */
   amount: number;
+  /** Efectivo realmente entregado al cliente */
+  delivered?: number;
+  /** Saldo del préstamo anterior descontado (solo refinanciaciones) */
+  refinancedBalance?: number;
 }
 
 interface Props {
@@ -130,7 +135,7 @@ export function NewLoansTodayModal({ isOpen, onClose, clients, routeId = 'all', 
                 <p className="text-white text-xl font-black">{isLoading ? '...' : list.length}</p>
               </div>
               <div className="bg-white/15 rounded-xl px-3 py-1.5 flex-1">
-                <p className="text-emerald-100 text-[10px] uppercase font-bold tracking-wider">Valor entregado</p>
+                <p className="text-emerald-100 text-[10px] uppercase font-bold tracking-wider">Valor prestado</p>
                 <p className="text-white text-xl font-black">{isLoading ? '...' : formatCurrency(totalDelivered)}</p>
               </div>
             </div>
@@ -166,12 +171,20 @@ export function NewLoansTodayModal({ isOpen, onClose, clients, routeId = 'all', 
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-slate-800 text-sm truncate">{client.clientName}</p>
-                    <p className="text-xs text-slate-400">Préstamo nuevo</p>
+                    <p className="text-xs text-slate-400">
+                      {client.refinancedBalance && client.refinancedBalance > 0
+                        ? `Refinanciación · saldo anterior ${formatCurrency(client.refinancedBalance)} · entregado ${formatCurrency(client.delivered ?? 0)}`
+                        : 'Préstamo nuevo'}
+                    </p>
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="text-sm font-black text-emerald-600">{formatCurrency(client.amount)}</p>
-                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
-                      Nuevo
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                      client.refinancedBalance && client.refinancedBalance > 0
+                        ? 'text-amber-700 bg-amber-50 border-amber-200'
+                        : 'text-emerald-600 bg-emerald-50 border-emerald-200'
+                    }`}>
+                      {client.refinancedBalance && client.refinancedBalance > 0 ? 'Refinanciado' : 'Nuevo'}
                     </span>
                   </div>
                 </button>

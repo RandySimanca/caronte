@@ -13,6 +13,7 @@ export interface PaidTodayEntry {
   collectedAt: string; // ISO timestamp
   isTransfer?: boolean;
   isOffice?: boolean;     // cobrado desde panel admin
+  isRefinance?: boolean;  // saldo recogido al refinanciar (cuenta como cobro)
   collectorName?: string;
 }
 
@@ -154,6 +155,9 @@ export function PaidTodayModal({ isOpen, onClose, entries, routeLabel }: Props) 
                           <span className="text-xs text-slate-400">{formatTime(entry.collectedAt)}</span>
                           {entry.isOffice && (
                             <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">Oficina</span>
+                          )}
+                          {entry.isRefinance && (
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">Refinanciación</span>
                           )}
                           {entry.isTransfer && !entry.isOffice && (
                             <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-full">Transferencia</span>
