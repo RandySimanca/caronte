@@ -889,45 +889,45 @@ export class AdminService {
     // Respaldo exacto de lo que el admin vio y aprobó (alimenta el modal histórico y el PDF)
     const snapshot = payload.detail
       ? {
-          version: 1,
-          generated_at: new Date().toISOString(),
-          route_name: payload.routeName || null,
-          collector_name: payload.collectorName || null,
-          date: payload.date,
-          base_amount: payload.baseAmount || 0,
-          total_entregar: payload.totalEntregar,
-          detail: payload.detail,
-        }
+        version: 1,
+        generated_at: new Date().toISOString(),
+        route_name: payload.routeName || null,
+        collector_name: payload.collectorName || null,
+        date: payload.date,
+        base_amount: payload.baseAmount || 0,
+        total_entregar: payload.totalEntregar,
+        detail: payload.detail,
+      }
       : null;
 
     const row: any = {
-        route_id: payload.routeId,
-        collector_id: payload.collectorId,
-        closing_date: payload.date,
-        base_amount: payload.baseAmount || 0,
-        total_collected: payload.totalCobrado,
-        total_expenses: payload.totalGastos + (payload.totalPrestado || 0) + (payload.totalTransferencias || 0),
-        viaticum_assigned: payload.viaticoDia,
-        expected_delivery: payload.totalEntregar,
-        actual_delivery: payload.totalEntregar,
-        difference: 0,
-        is_closed: true,
-        has_pending_sync: false,
-        closed_by: payload.adminId,
-        closed_at: new Date().toISOString(),
-        expected_amount: payload.totalCobrado,
-        arrears_amount: 0,
-        arrears_recovered: 0,
-        partial_payments: 0,
-        advance_payments: 0,
-        above_expected_payments: 0,
-        fuel_expenses: 0,
-        oil_expenses: 0,
-        repair_expenses: 0,
-        tire_expenses: 0,
-        chain_expenses: 0,
-        other_expenses: payload.totalGastos + (payload.totalPrestado || 0) + (payload.totalTransferencias || 0),
-        snapshot,
+      route_id: payload.routeId,
+      collector_id: payload.collectorId,
+      closing_date: payload.date,
+      base_amount: payload.baseAmount || 0,
+      total_collected: payload.totalCobrado,
+      total_expenses: payload.totalGastos + (payload.totalPrestado || 0) + (payload.totalTransferencias || 0),
+      viaticum_assigned: payload.viaticoDia,
+      expected_delivery: payload.totalEntregar,
+      actual_delivery: payload.totalEntregar,
+      difference: 0,
+      is_closed: true,
+      has_pending_sync: false,
+      closed_by: payload.adminId,
+      closed_at: new Date().toISOString(),
+      expected_amount: payload.totalCobrado,
+      arrears_amount: 0,
+      arrears_recovered: 0,
+      partial_payments: 0,
+      advance_payments: 0,
+      above_expected_payments: 0,
+      fuel_expenses: 0,
+      oil_expenses: 0,
+      repair_expenses: 0,
+      tire_expenses: 0,
+      chain_expenses: 0,
+      other_expenses: payload.totalGastos + (payload.totalPrestado || 0) + (payload.totalTransferencias || 0),
+      snapshot,
     };
 
     let { data, error } = await supabase
@@ -2450,7 +2450,7 @@ export class AdminService {
    * fue refinanciado. `routeId` puede ser una ruta específica o "all".
    *
    * @param routeId  Ruta a filtrar o "all" para todas.
-   * @param onlyToday  Si es true, solo devuelve los que tienen end_date igual a hoy (Colombia).
+   * @param onlyToday  Si es true, solo devuelve los que terminaron hoy (último cobro o refinanciación de hoy, Colombia).
    * @param searchTerm  Texto libre para filtrar por nombre, documento o teléfono del cliente.
    * @param fromDate  Fecha inicio (YYYY-MM-DD) del rango de búsqueda histórica.
    * @param toDate    Fecha fin (YYYY-MM-DD) del rango de búsqueda histórica.
@@ -2463,10 +2463,11 @@ export class AdminService {
     toDate?: string
   ) {
     const todayStr = colombiaToday();
+    const from = onlyToday ? todayStr : fromDate;
+    const to = onlyToday ? todayStr : toDate;
+    const hasRange = !!(from || to);
 
-    let query = supabase
-      .from('loans')
-      .select(`
+    const loanSelect = `
         id,
         client_id,
         route_id,
@@ -2480,30 +2481,69 @@ export class AdminService {
         created_at,
         refinanced_from_loan_id,
         client:clients(full_name, document_id, phone)
-      `)
-      .in('status', ['CANCELADO', 'REFINANCIADO'])
-      .order('end_date', { ascending: false })
-      .limit(500);
+      `;
+    const chunk = <T,>(arr: T[], n = 200) => {
+      const out: T[][] = [];
+      for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+      return out;
+    };
 
-    if (routeId && routeId !== 'all') {
-      query = query.eq('route_id', routeId);
-    }
+    // 1) Candidatos. "Terminado" NO depende de end_date (fecha programada del préstamo): un préstamo se
+    //    termina el día del último cobro (CANCELADO) o el día que se abre el préstamo nuevo (REFINANCIADO),
+    //    el mismo criterio que usa el cobrador en su tarjeta "Préstamos terminados".
+    const candidates = new Map<string, any>();
 
-    if (onlyToday) {
-      // Solo los que terminaron hoy: end_date == todayStr
-      query = query.eq('end_date', todayStr);
+    if (hasRange) {
+      const startIso = from ? dayRangeIso(from).start : undefined;
+      const endIso = to ? dayRangeIso(to).end : undefined;
+
+      // a) Pagados: préstamos CANCELADO con algún cobro dentro del rango
+      let pq = supabase.from('payments').select('loan_id').not('loan_id', 'is', null).limit(10000);
+      if (routeId && routeId !== 'all') pq = pq.eq('route_id', routeId);
+      if (startIso) pq = pq.gte('collected_at', startIso);
+      if (endIso) pq = pq.lte('collected_at', endIso);
+      const { data: pays, error: pErr } = await pq;
+      if (pErr) throw pErr;
+      const paidLoanIds = [...new Set((pays || []).map((p: any) => p.loan_id as string))];
+      for (const ids of chunk(paidLoanIds)) {
+        const { data, error } = await supabase
+          .from('loans').select(loanSelect).eq('status', 'CANCELADO').in('id', ids);
+        if (error) throw error;
+        for (const l of (data || []) as any[]) candidates.set(l.id, l);
+      }
+
+      // b) Refinanciados: préstamo nuevo con disbursement_date dentro del rango que apunta al anterior
+      let rq = supabase
+        .from('loans').select('refinanced_from_loan_id')
+        .not('refinanced_from_loan_id', 'is', null).limit(10000);
+      if (routeId && routeId !== 'all') rq = rq.eq('route_id', routeId);
+      if (from) rq = rq.gte('disbursement_date', from);
+      if (to) rq = rq.lte('disbursement_date', to);
+      const { data: refNew, error: rErr } = await rq;
+      if (rErr) throw rErr;
+      const origIds = [...new Set((refNew || []).map((l: any) => l.refinanced_from_loan_id as string))];
+      for (const ids of chunk(origIds)) {
+        const { data, error } = await supabase
+          .from('loans').select(loanSelect).eq('status', 'REFINANCIADO').in('id', ids);
+        if (error) throw error;
+        for (const l of (data || []) as any[]) candidates.set(l.id, l);
+      }
     } else {
-      // Rango de fechas opcional para búsqueda histórica
-      if (fromDate) query = query.gte('end_date', fromDate);
-      if (toDate)   query = query.lte('end_date', toDate);
+      // Historial sin fechas: los últimos préstamos cerrados
+      let q = supabase
+        .from('loans').select(loanSelect)
+        .in('status', ['CANCELADO', 'REFINANCIADO'])
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (routeId && routeId !== 'all') q = q.eq('route_id', routeId);
+      const { data, error } = await q;
+      if (error) throw error;
+      for (const l of (data || []) as any[]) candidates.set(l.id, l);
     }
 
-    const { data, error } = await query;
-    if (error) throw error;
+    let loans = [...candidates.values()];
 
-    let loans = (data || []) as any[];
-
-    // Filtro de texto del lado del cliente (nombre, documento, teléfono)
+    // 2) Filtro de texto (nombre, documento, teléfono)
     if (searchTerm && searchTerm.trim() !== '') {
       const term = searchTerm.toLowerCase();
       loans = loans.filter((loan: any) => {
@@ -2516,26 +2556,49 @@ export class AdminService {
       });
     }
 
-    const refinancedIds = loans
-      .filter((loan) => loan.status === 'REFINANCIADO')
-      .map((loan) => loan.id);
-
+    // 3) Préstamos nuevos enlazados a los refinanciados
+    const refinancedIds = loans.filter((l) => l.status === 'REFINANCIADO').map((l) => l.id);
     let newLoans: any[] = [];
-    if (refinancedIds.length > 0) {
-      const { data: linkedLoans, error: linkedError } = await supabase
+    for (const ids of chunk(refinancedIds)) {
+      const { data: linked, error: linkedError } = await supabase
         .from('loans')
         .select('id, client_id, status, amount_requested, amount_delivered, disbursement_date, created_at, refinanced_from_loan_id')
-        .in('refinanced_from_loan_id', refinancedIds)
+        .in('refinanced_from_loan_id', ids)
         .order('created_at', { ascending: false });
       if (linkedError) throw linkedError;
-      newLoans = linkedLoans || [];
+      newLoans = newLoans.concat(linked || []);
     }
 
-    return loans.map((loan) => ({
-      ...loan,
-      newLoan: newLoans.find((next) => next.refinanced_from_loan_id === loan.id) || null,
-    }));
+    // 4) Último cobro de cada préstamo pagado → fecha real en que terminó
+    const paidIds = loans.filter((l) => l.status === 'CANCELADO').map((l) => l.id);
+    const lastPayment = new Map<string, string>();
+    for (const ids of chunk(paidIds)) {
+      const { data: lp, error: lpErr } = await supabase
+        .from('payments').select('loan_id, collected_at')
+        .in('loan_id', ids).order('collected_at', { ascending: false }).limit(5000);
+      if (lpErr) throw lpErr;
+      for (const p of (lp || []) as any[]) {
+        if (p.loan_id && !lastPayment.has(p.loan_id)) lastPayment.set(p.loan_id, p.collected_at);
+      }
+    }
+
+    const result = loans.map((loan) => {
+      const newLoan = newLoans.find((next) => next.refinanced_from_loan_id === loan.id) || null;
+      const completedAt: string | null = loan.status === 'REFINANCIADO'
+        ? (newLoan?.created_at || null)
+        : (lastPayment.get(loan.id) || null);
+      const completedOn = completedAt
+        ? colombiaDateFromIso(completedAt)
+        : (loan.status === 'REFINANCIADO' ? (newLoan?.disbursement_date || null) : null);
+      return { ...loan, newLoan, completed_at: completedAt, completed_on: completedOn };
+    });
+
+    // 5) Recorte exacto por la fecha real de cierre (los cobros pudieron ser anteriores/posteriores al rango)
+    return result
+      .filter((l) => !hasRange || (l.completed_on && (!from || l.completed_on >= from) && (!to || l.completed_on <= to)))
+      .sort((a, b) => (b.completed_at || '').localeCompare(a.completed_at || ''));
   }
+
 }
 
 

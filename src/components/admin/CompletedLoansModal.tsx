@@ -58,10 +58,10 @@ export function CompletedLoansModal({
   const dateLabel = (value?: string | null) =>
     value
       ? new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('es-CO', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric',
-        })
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
       : 'No registrada';
 
   const handleHistSearch = useCallback(async () => {
@@ -122,29 +122,26 @@ export function CompletedLoansModal({
         <div className="flex border-b border-slate-100 shrink-0 bg-white">
           <button
             onClick={() => setTab('today')}
-            className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors border-b-2 ${
-              tab === 'today'
+            className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors border-b-2 ${tab === 'today'
                 ? 'border-emerald-500 text-emerald-700 bg-emerald-50'
                 : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-            }`}
+              }`}
           >
             <CalendarDays className="w-4 h-4" />
             Terminados hoy
             {!isLoading && (
-              <span className={`ml-1 text-xs font-black px-2 py-0.5 rounded-full ${
-                tab === 'today' ? 'bg-emerald-200 text-emerald-800' : 'bg-slate-100 text-slate-600'
-              }`}>
+              <span className={`ml-1 text-xs font-black px-2 py-0.5 rounded-full ${tab === 'today' ? 'bg-emerald-200 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                }`}>
                 {loans.length}
               </span>
             )}
           </button>
           <button
             onClick={() => setTab('history')}
-            className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors border-b-2 ${
-              tab === 'history'
+            className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors border-b-2 ${tab === 'history'
                 ? 'border-indigo-500 text-indigo-700 bg-indigo-50'
                 : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-            }`}
+              }`}
           >
             <History className="w-4 h-4" />
             Buscar historial
@@ -350,7 +347,7 @@ function LoanCard({
           <p className="text-xs text-slate-500">Fecha de cierre</p>
           <p className="font-bold text-slate-800 flex items-center gap-1">
             <CalendarDays className="w-3.5 h-3.5" />
-            {dateLabel(loan.end_date || loan.created_at)}
+            {dateLabel(loan.completed_on || loan.completed_at || loan.end_date || loan.created_at)}
           </p>
         </div>
       </div>
