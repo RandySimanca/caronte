@@ -106,14 +106,30 @@ export function VisitedTodayModal({ isOpen, onClose, clients }: Props) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-slate-800 text-sm truncate">{c.clientName}</p>
-                    <p className="text-xs text-slate-400">
-                      {timeLabel(c.lastAt) || 'Hoy'}
-                      {c.paidAll ? ' · Pagó todo' : c.refinanced ? ' · Refinanciación' : ''}
+                    <p className="text-xs text-slate-400 flex items-center gap-1.5 flex-wrap">
+                      <span>{timeLabel(c.lastAt) || 'Hoy'}</span>
+                      {c.paidAll && (
+                        <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-700 font-bold text-[10px] uppercase tracking-wide">
+                          Pagó todo
+                        </span>
+                      )}
+                      {c.refinanced && (
+                        <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 font-bold text-[10px] uppercase tracking-wide">
+                          Refinanciación
+                        </span>
+                      )}
                     </p>
                   </div>
-                  <p className="shrink-0 text-sm font-black text-brand-600">
-                    {c.amount > 0 ? formatCurrency(c.amount) : '—'}
-                  </p>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-black text-brand-600">
+                      {c.amount > 0 ? formatCurrency(c.amount) : '—'}
+                    </p>
+                    {!!c.refinancedAmount && c.refinancedAmount > 0 && (
+                      <p className="text-[10px] font-bold text-amber-600">
+                        Debía {formatCurrency(c.refinancedAmount)}
+                      </p>
+                    )}
+                  </div>
                 </NavLink>
               ))
             )}
