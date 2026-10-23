@@ -38,7 +38,7 @@ export type TodayPayment = {
   client_name?: string | null;
 };
 
-function paymentFromSyncOp(op: { operation_type?: string; payload?: any; local_timestamp?: string }): TodayPayment | null {
+export function paymentFromSyncOp(op: { operation_type?: string; payload?: any; local_timestamp?: string }): TodayPayment | null {
   const type = op.operation_type;
   if (type !== 'PAYMENT' && type !== 'PAYMENT_BUNDLE') return null;
   const p = op.payload?.payment ?? op.payload;

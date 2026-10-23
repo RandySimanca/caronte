@@ -9,7 +9,7 @@ import {
   parseLotteryLastDraw,
 } from '@/lib/lottery';
 import { LAST_COLLECTED_KEY } from '@/lib/routeOrder';
-import { dayRangeIso, paymentsTodaySettingKey } from '@/lib/dailyCollection';
+import { colombiaDateFromIso, dayRangeIso, paymentFromSyncOp, paymentsTodaySettingKey } from '@/lib/dailyCollection';
 import { completedLoansSettingKey, type CompletedLoanEntry } from '@/lib/completedLoans';
 
 /** Usuario de la sesión local (no hace request de red, funciona con conexión inestable). */
@@ -97,6 +97,24 @@ export class SyncService {
       await this.pushPendingOperationsInternal();
       await this.pullInitialDataInternal(collectorId);
     });
+  }
+
+  /**
+   * Agrega un cobro recién sincronizado a la foto local de cobros de hoy (si esa foto ya existe).
+   * Si la foto no existe no se crea: una foto parcial haría desaparecer los demás cobros ya sincronizados.
+   */
+  private static async addPaymentToTodaySnapshot(op: { operation_type: string; payload: any; local_timestamp?: string }) {
+    try {
+      const payment = paymentFromSyncOp(op);
+      if (!payment || !payment.collected_at) return;
+      const key = paymentsTodaySettingKey(colombiaDateFromIso(String(payment.collected_at)));
+      const setting = await db.settings.get(key);
+      if (!setting || !Array.isArray(setting.value)) return;
+      if ((setting.value as any[]).some(p => p.operation_id === payment.operation_id)) return;
+      await db.settings.put({ key, value: [...(setting.value as any[]), payment] });
+    } catch (e) {
+      console.warn('[SyncService] No se pudo agregar el cobro a la foto de hoy:', e);
+    }
   }
 
   /**
@@ -453,6 +471,12 @@ export class SyncService {
 
           // Mark as synced
           await db.syncQueue.update(op.id!, { status: 'synced' });
+
+          // El cobro ya está en el servidor, pero la "foto" de cobros de hoy del celular se actualiza
+          // recién en la siguiente descarga (varios segundos). Mientras tanto la lista de ruta no veía
+          // el cobro (ni en la foto ni en la cola, porque las 'synced' se ignoran) y el cliente perdía
+          // el resaltado verde. Se agrega aquí a la foto; la próxima descarga la reemplaza con la verdad.
+          await SyncService.addPaymentToTodaySnapshot(op);
         } catch (error: any) {
           console.error(`Failed to sync operation ${op.operation_id}:`, error);
 
