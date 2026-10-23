@@ -27,6 +27,8 @@ interface FinancialState {
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  /** Se llama al cerrar el modal DESPUÉS de haber guardado un cobro. */
+  onPaymentSaved?: () => void;
   clientId: string;
   clientName: string;
   clientDocument: string;
@@ -39,6 +41,7 @@ interface Props {
 export function PaymentConfirmationModal({
   isOpen,
   onClose,
+  onPaymentSaved,
   clientName,
   clientDocument,
   clientAvatarUrl,
@@ -169,7 +172,7 @@ export function PaymentConfirmationModal({
       setShowDuplicateWarning(true);
       return;
     }
-    
+
     handleConfirmSave();
   };
 
@@ -331,13 +334,20 @@ export function PaymentConfirmationModal({
     }
   };
 
+  // Si ya se guardó el cobro (panel de WhatsApp visible), al cerrar avisamos al padre
+  const handleClose = () => {
+    const paymentWasSaved = !!whatsappData;
+    onClose();
+    if (paymentWasSaved) onPaymentSaved?.();
+  };
+
   const handleSendWhatsApp = () => {
     if (!whatsappData) return;
     const sent = openWhatsAppWithMessage(whatsappData.phone, whatsappData.message);
     if (!sent) {
       toast.error('El cliente no tiene un teléfono válido registrado.');
     }
-    onClose();
+    handleClose();
   };
 
   if (!isOpen) return null;
@@ -349,7 +359,7 @@ export function PaymentConfirmationModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
         />
 
@@ -363,7 +373,7 @@ export function PaymentConfirmationModal({
           {/* Header */}
           <div className="flex justify-between items-center p-4 border-b border-slate-100 sticky top-0 bg-white/80 backdrop-blur-md z-20">
             <h2 className="text-lg font-bold text-slate-800">Registrar Cobro</h2>
-            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 bg-slate-50 rounded-full">
+            <button onClick={handleClose} className="p-2 text-slate-400 hover:text-slate-600 bg-slate-50 rounded-full">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -429,197 +439,197 @@ export function PaymentConfirmationModal({
                 Entendido — no cobrar
               </button>
             ) : (
-            <>
-            {/* Financial Summary boxes */}
-            <div className="grid grid-cols-3 gap-2">
-              <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center">
-                <p className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Cuota de hoy</p>
-                <p className="font-bold text-slate-800">{formatCurrency(financialState.todayQuota)}</p>
-              </div>
-              <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center">
-                <p className="text-[10px] uppercase font-semibold text-rose-500 mb-1">Días atrasados</p>
-                <p className="text-xs font-semibold text-rose-600 mb-0.5">
-                  {loan.daily_installment > 0 ? Math.round(financialState.arrears / loan.daily_installment) : 0}
-                </p>
-                <p className="font-bold text-rose-700">{formatCurrency(financialState.arrears)}</p>
-              </div>
-              <div className="bg-brand-50 border border-brand-100 rounded-xl p-3 text-center">
-                <p className="text-[10px] uppercase font-semibold text-brand-600 mb-1">Total esperado</p>
-                <p className="font-bold text-brand-700">{formatCurrency(financialState.expectedTotal)}</p>
-              </div>
-            </div>
-
-            {/* Amount Input */}
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Monto recibido</label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium text-lg">$</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={formatNumberInput(amount)}
-                  onChange={(e) => setAmount(parseNumberInput(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-2xl py-4 pl-8 pr-4 text-2xl font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition-all"
-                  placeholder="0"
-                />
-              </div>
-              <div className="flex space-x-2 mt-3">
-                <button onClick={() => setAmount(Math.round(financialState.expectedTotal).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">Pago exacto</button>
-                <button onClick={() => setAmount(Math.round(financialState.todayQuota).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">Solo hoy</button>
-                <button onClick={() => setAmount(Math.round(financialState.expectedTotal + loan.daily_installment).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">+1 Adelanto</button>
-              </div>
-            </div>
-
-            {/* Distribution Breakdown */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-              <p className="text-sm font-bold text-slate-800 mb-3">¿Qué incluye este pago?</p>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    {distribution.coverToday >= financialState.todayQuota ? (
-                      <CheckSquare className="w-5 h-5 text-brand-600 mr-2" />
-                    ) : distribution.coverToday > 0 ? (
-                      <CheckSquare className="w-5 h-5 text-amber-500 mr-2" />
-                    ) : (
-                      <Square className="w-5 h-5 text-slate-300 mr-2" />
-                    )}
-                    <span className="text-sm text-slate-700 font-medium">Día de hoy</span>
+              <>
+                {/* Financial Summary boxes */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center">
+                    <p className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Cuota de hoy</p>
+                    <p className="font-bold text-slate-800">{formatCurrency(financialState.todayQuota)}</p>
                   </div>
-                  <span className={cn("font-bold text-sm", distribution.coverToday > 0 ? "text-slate-900" : "text-slate-400")}>
-                    {formatCurrency(distribution.coverToday)}
-                  </span>
+                  <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center">
+                    <p className="text-[10px] uppercase font-semibold text-rose-500 mb-1">Días atrasados</p>
+                    <p className="text-xs font-semibold text-rose-600 mb-0.5">
+                      {loan.daily_installment > 0 ? Math.round(financialState.arrears / loan.daily_installment) : 0}
+                    </p>
+                    <p className="font-bold text-rose-700">{formatCurrency(financialState.arrears)}</p>
+                  </div>
+                  <div className="bg-brand-50 border border-brand-100 rounded-xl p-3 text-center">
+                    <p className="text-[10px] uppercase font-semibold text-brand-600 mb-1">Total esperado</p>
+                    <p className="font-bold text-brand-700">{formatCurrency(financialState.expectedTotal)}</p>
+                  </div>
                 </div>
 
-                {financialState.arrears > 0 && (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      {distribution.coverArrears >= financialState.arrears ? (
-                        <CheckSquare className="w-5 h-5 text-brand-600 mr-2" />
-                      ) : distribution.coverArrears > 0 ? (
-                        <CheckSquare className="w-5 h-5 text-amber-500 mr-2" />
-                      ) : (
-                        <Square className="w-5 h-5 text-slate-300 mr-2" />
-                      )}
-                      <span className="text-sm text-slate-700 font-medium">Atrasado ({Math.round(financialState.arrears / loan.daily_installment)} días)</span>
-                    </div>
-                    <span className={cn("font-bold text-sm", distribution.coverArrears > 0 ? "text-slate-900" : "text-slate-400")}>
-                      {formatCurrency(distribution.coverArrears)}
-                    </span>
+                {/* Amount Input */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Monto recibido</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium text-lg">$</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={formatNumberInput(amount)}
+                      onChange={(e) => setAmount(parseNumberInput(e.target.value))}
+                      className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-2xl py-4 pl-8 pr-4 text-2xl font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition-all"
+                      placeholder="0"
+                    />
                   </div>
-                )}
+                  <div className="flex space-x-2 mt-3">
+                    <button onClick={() => setAmount(Math.round(financialState.expectedTotal).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">Pago exacto</button>
+                    <button onClick={() => setAmount(Math.round(financialState.todayQuota).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">Solo hoy</button>
+                    <button onClick={() => setAmount(Math.round(financialState.expectedTotal + loan.daily_installment).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">+1 Adelanto</button>
+                  </div>
+                </div>
 
-                {distribution.advanceAmount > 0 && (
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                    <div className="flex items-center">
-                      <div className="bg-emerald-100 text-emerald-600 rounded p-0.5 mr-2">
-                        <CheckSquare className="w-4 h-4" />
+                {/* Distribution Breakdown */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  <p className="text-sm font-bold text-slate-800 mb-3">¿Qué incluye este pago?</p>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        {distribution.coverToday >= financialState.todayQuota ? (
+                          <CheckSquare className="w-5 h-5 text-brand-600 mr-2" />
+                        ) : distribution.coverToday > 0 ? (
+                          <CheckSquare className="w-5 h-5 text-amber-500 mr-2" />
+                        ) : (
+                          <Square className="w-5 h-5 text-slate-300 mr-2" />
+                        )}
+                        <span className="text-sm text-slate-700 font-medium">Día de hoy</span>
                       </div>
-                      <span className="text-sm text-emerald-700 font-bold">Adelanto (días futuros)</span>
+                      <span className={cn("font-bold text-sm", distribution.coverToday > 0 ? "text-slate-900" : "text-slate-400")}>
+                        {formatCurrency(distribution.coverToday)}
+                      </span>
                     </div>
-                    <span className="font-bold text-emerald-700 text-sm">{formatCurrency(distribution.advanceAmount)}</span>
+
+                    {financialState.arrears > 0 && (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          {distribution.coverArrears >= financialState.arrears ? (
+                            <CheckSquare className="w-5 h-5 text-brand-600 mr-2" />
+                          ) : distribution.coverArrears > 0 ? (
+                            <CheckSquare className="w-5 h-5 text-amber-500 mr-2" />
+                          ) : (
+                            <Square className="w-5 h-5 text-slate-300 mr-2" />
+                          )}
+                          <span className="text-sm text-slate-700 font-medium">Atrasado ({Math.round(financialState.arrears / loan.daily_installment)} días)</span>
+                        </div>
+                        <span className={cn("font-bold text-sm", distribution.coverArrears > 0 ? "text-slate-900" : "text-slate-400")}>
+                          {formatCurrency(distribution.coverArrears)}
+                        </span>
+                      </div>
+                    )}
+
+                    {distribution.advanceAmount > 0 && (
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                        <div className="flex items-center">
+                          <div className="bg-emerald-100 text-emerald-600 rounded p-0.5 mr-2">
+                            <CheckSquare className="w-4 h-4" />
+                          </div>
+                          <span className="text-sm text-emerald-700 font-bold">Adelanto (días futuros)</span>
+                        </div>
+                        <span className="font-bold text-emerald-700 text-sm">{formatCurrency(distribution.advanceAmount)}</span>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              {distribution.isSurplus && (
-                <div className="mt-4 bg-emerald-50 border border-emerald-100 rounded-lg p-3 flex items-start">
-                  <Info className="w-4 h-4 text-emerald-600 mt-0.5 mr-2 flex-shrink-0" />
-                  <p className="text-[11px] text-emerald-700 font-medium">
-                    El excedente de {formatCurrency(distribution.advanceAmount)} se aplicará a las cuotas de los días siguientes.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Transfer Toggle */}
-            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
-              <button
-                type="button"
-                onClick={() => { setIsTransfer(v => !v); setVoucherBase64(null); }}
-                className={cn(
-                  'w-full flex items-center justify-between px-4 py-3 rounded-xl font-bold text-sm transition-all border',
-                  isTransfer
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20'
-                    : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300'
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Smartphone className="w-4 h-4" />
-                  Pago por Transferencia
-                </div>
-                <div className={cn(
-                  'w-10 h-6 rounded-full transition-colors relative',
-                  isTransfer ? 'bg-white/30' : 'bg-slate-200'
-                )}>
-                  <div className={cn(
-                    'absolute top-1 w-4 h-4 rounded-full transition-all shadow-sm',
-                    isTransfer ? 'left-5 bg-white' : 'left-1 bg-white'
-                  )} />
-                </div>
-              </button>
-
-              {isTransfer && (
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-blue-700">Adjunta el comprobante de transferencia *</p>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={handleVoucherChange}
-                  />
-                  {voucherBase64 ? (
-                    <div className="relative rounded-xl overflow-hidden border-2 border-blue-300">
-                      <img src={voucherBase64} alt="Voucher" className="w-full max-h-48 object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => { setVoucherBase64(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
-                        className="absolute top-2 right-2 bg-rose-500 text-white rounded-full p-1.5 shadow-lg"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                  {distribution.isSurplus && (
+                    <div className="mt-4 bg-emerald-50 border border-emerald-100 rounded-lg p-3 flex items-start">
+                      <Info className="w-4 h-4 text-emerald-600 mt-0.5 mr-2 flex-shrink-0" />
+                      <p className="text-[11px] text-emerald-700 font-medium">
+                        El excedente de {formatCurrency(distribution.advanceAmount)} se aplicará a las cuotas de los días siguientes.
+                      </p>
                     </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full flex flex-col items-center justify-center gap-2 py-5 border-2 border-dashed border-blue-300 rounded-xl bg-white text-blue-500 hover:bg-blue-50 transition-colors"
-                    >
-                      <Image className="w-6 h-6" />
-                      <span className="text-xs font-bold">Tomar foto o seleccionar imagen</span>
-                    </button>
                   )}
                 </div>
-              )}
-            </div>
 
-            {/* Observation */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Observación (opcional)</label>
-              <input
-                type="text"
-                value={observation}
-                onChange={(e) => setObservation(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                placeholder="Ej: Cliente pagó 1 día y promete mañana..."
-              />
-            </div>
+                {/* Transfer Toggle */}
+                <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => { setIsTransfer(v => !v); setVoucherBase64(null); }}
+                    className={cn(
+                      'w-full flex items-center justify-between px-4 py-3 rounded-xl font-bold text-sm transition-all border',
+                      isTransfer
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300'
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Smartphone className="w-4 h-4" />
+                      Pago por Transferencia
+                    </div>
+                    <div className={cn(
+                      'w-10 h-6 rounded-full transition-colors relative',
+                      isTransfer ? 'bg-white/30' : 'bg-slate-200'
+                    )}>
+                      <div className={cn(
+                        'absolute top-1 w-4 h-4 rounded-full transition-all shadow-sm',
+                        isTransfer ? 'left-5 bg-white' : 'left-1 bg-white'
+                      )} />
+                    </div>
+                  </button>
 
-            {/* Save Button */}
-            <button
-              onClick={handleSaveClick}
-              disabled={distribution.numAmount <= 0 || isSaving}
-              className={cn(
-                "w-full font-bold py-4 rounded-xl shadow-md transition-all active:scale-[0.98]",
-                distribution.numAmount > 0 && !isSaving
-                  ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/30"
-                  : "bg-slate-100 text-slate-400 cursor-not-allowed"
-              )}
-            >
-              {isSaving ? 'Guardando...' : 'Guardar Cobro'}
-            </button>
-            </>
+                  {isTransfer && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-blue-700">Adjunta el comprobante de transferencia *</p>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={handleVoucherChange}
+                      />
+                      {voucherBase64 ? (
+                        <div className="relative rounded-xl overflow-hidden border-2 border-blue-300">
+                          <img src={voucherBase64} alt="Voucher" className="w-full max-h-48 object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => { setVoucherBase64(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                            className="absolute top-2 right-2 bg-rose-500 text-white rounded-full p-1.5 shadow-lg"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-full flex flex-col items-center justify-center gap-2 py-5 border-2 border-dashed border-blue-300 rounded-xl bg-white text-blue-500 hover:bg-blue-50 transition-colors"
+                        >
+                          <Image className="w-6 h-6" />
+                          <span className="text-xs font-bold">Tomar foto o seleccionar imagen</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Observation */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Observación (opcional)</label>
+                  <input
+                    type="text"
+                    value={observation}
+                    onChange={(e) => setObservation(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    placeholder="Ej: Cliente pagó 1 día y promete mañana..."
+                  />
+                </div>
+
+                {/* Save Button */}
+                <button
+                  onClick={handleSaveClick}
+                  disabled={distribution.numAmount <= 0 || isSaving}
+                  className={cn(
+                    "w-full font-bold py-4 rounded-xl shadow-md transition-all active:scale-[0.98]",
+                    distribution.numAmount > 0 && !isSaving
+                      ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/30"
+                      : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                  )}
+                >
+                  {isSaving ? 'Guardando...' : 'Guardar Cobro'}
+                </button>
+              </>
             )}
           </div>
 
@@ -677,7 +687,7 @@ export function PaymentConfirmationModal({
                     Enviar por WhatsApp
                   </button>
                   <button
-                    onClick={onClose}
+                    onClick={handleClose}
                     className="w-full py-3 font-semibold text-slate-500 hover:text-slate-700 text-sm transition-colors"
                   >
                     No, cerrar

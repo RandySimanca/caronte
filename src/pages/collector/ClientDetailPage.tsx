@@ -54,7 +54,7 @@ export function ClientDetailPage() {
   useEffect(() => {
     const draw = parseLotteryLastDraw(lotterySetting?.value);
     setLotteryDraw(draw);
-    if (draw) applyLotteryDrawLocally(draw).catch(() => {});
+    if (draw) applyLotteryDrawLocally(draw).catch(() => { });
   }, [lotterySetting?.value]);
 
   const isLotteryWinner = !!(
@@ -316,72 +316,72 @@ export function ClientDetailPage() {
         </div>
 
         {loan && (
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <h3 className="font-bold text-slate-800">
-                {isLotteryWinner ? 'Préstamo cancelado por boleta' : 'Préstamo Activo'}
-              </h3>
-              <p className="text-xs text-slate-500">Iniciado: {loan.start_date}</p>
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="font-bold text-slate-800">
+                  {isLotteryWinner ? 'Préstamo cancelado por boleta' : 'Préstamo Activo'}
+                </h3>
+                <p className="text-xs text-slate-500">Iniciado: {loan.start_date}</p>
+              </div>
+              {isLotteryWinner ? (
+                <div className="flex items-center text-xs font-medium text-amber-800 bg-amber-100 px-2 py-1 rounded-full">
+                  <Trophy className="w-3 h-3 mr-1" />
+                  GANADOR
+                </div>
+              ) : (
+                <div className="flex items-center text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  {loan.status}
+                </div>
+              )}
             </div>
-            {isLotteryWinner ? (
-              <div className="flex items-center text-xs font-medium text-amber-800 bg-amber-100 px-2 py-1 rounded-full">
-                <Trophy className="w-3 h-3 mr-1" />
-                GANADOR
-              </div>
-            ) : (
-              <div className="flex items-center text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
-                <CheckCircle2 className="w-3 h-3 mr-1" />
-                {loan.status}
-              </div>
-            )}
-          </div>
 
-          <div className="space-y-2.5 text-sm">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Monto solicitado</span>
-              <span className="font-semibold text-slate-900">{formatCurrency(loan.amount_requested)}</span>
+            <div className="space-y-2.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Monto solicitado</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(loan.amount_requested)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Obligación total (+20%)</span>
+                <span className="font-bold text-slate-900">{formatCurrency(loan.initial_obligation)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Plazo</span>
+                <span className="font-semibold text-slate-900">{loan.term_days} días</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Cuota diaria</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(loan.daily_installment)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Domingos descontados</span>
+                <span className="font-semibold text-slate-900">
+                  {loan.sundays_prepaid_count} ({formatCurrency(loan.sundays_prepaid_amount)})
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">
+                  Boleta{loan.raffle_number && (
+                    <span className="ml-1 font-bold text-purple-600">No. {loan.raffle_number}</span>
+                  )}
+                </span>
+                <span className="font-semibold text-slate-900">{formatCurrency(loan.receipt_fee)}</span>
+              </div>
+              <div className="pt-2 mt-2 border-t border-slate-100 flex justify-between items-center">
+                <span className="text-slate-600 font-medium">Dinero entregado</span>
+                <span className="font-bold text-emerald-600 text-lg">{formatCurrency(loan.amount_delivered)}</span>
+              </div>
+
+              <button
+                onClick={() => setIsCardModalOpen(true)}
+                className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold rounded-xl transition-colors text-sm"
+              >
+                <Calendar className="w-4 h-4" />
+                Ver Tarjeta de Cobros
+              </button>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Obligación total (+20%)</span>
-              <span className="font-bold text-slate-900">{formatCurrency(loan.initial_obligation)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Plazo</span>
-              <span className="font-semibold text-slate-900">{loan.term_days} días</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Cuota diaria</span>
-              <span className="font-semibold text-slate-900">{formatCurrency(loan.daily_installment)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Domingos descontados</span>
-              <span className="font-semibold text-slate-900">
-                {loan.sundays_prepaid_count} ({formatCurrency(loan.sundays_prepaid_amount)})
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">
-                Boleta{loan.raffle_number && (
-                  <span className="ml-1 font-bold text-purple-600">No. {loan.raffle_number}</span>
-                )}
-              </span>
-              <span className="font-semibold text-slate-900">{formatCurrency(loan.receipt_fee)}</span>
-            </div>
-            <div className="pt-2 mt-2 border-t border-slate-100 flex justify-between items-center">
-              <span className="text-slate-600 font-medium">Dinero entregado</span>
-              <span className="font-bold text-emerald-600 text-lg">{formatCurrency(loan.amount_delivered)}</span>
-            </div>
-            
-            <button
-              onClick={() => setIsCardModalOpen(true)}
-              className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold rounded-xl transition-colors text-sm"
-            >
-              <Calendar className="w-4 h-4" />
-              Ver Tarjeta de Cobros
-            </button>
           </div>
-        </div>
         )}
 
         {financialState && !isLotteryWinner && (
@@ -440,15 +440,12 @@ export function ClientDetailPage() {
             </div>
 
             {/* Saldo que debe el cliente */}
-            <div className={`flex justify-between items-center py-2.5 px-3 rounded-xl border mb-3 ${
-              financialState.remainingBalance > 0 ? 'bg-rose-50 border-rose-100' : 'bg-emerald-50 border-emerald-100'
-            }`}>
-              <span className={`text-xs font-semibold uppercase tracking-wide ${
-                financialState.remainingBalance > 0 ? 'text-rose-600' : 'text-emerald-600'
-              }`}>Saldo que debe el cliente</span>
-              <span className={`font-bold text-sm ${
-                financialState.remainingBalance > 0 ? 'text-rose-700' : 'text-emerald-700'
-              }`}>{formatCurrency(financialState.remainingBalance)}</span>
+            <div className={`flex justify-between items-center py-2.5 px-3 rounded-xl border mb-3 ${financialState.remainingBalance > 0 ? 'bg-rose-50 border-rose-100' : 'bg-emerald-50 border-emerald-100'
+              }`}>
+              <span className={`text-xs font-semibold uppercase tracking-wide ${financialState.remainingBalance > 0 ? 'text-rose-600' : 'text-emerald-600'
+                }`}>Saldo que debe el cliente</span>
+              <span className={`font-bold text-sm ${financialState.remainingBalance > 0 ? 'text-rose-700' : 'text-emerald-700'
+                }`}>{formatCurrency(financialState.remainingBalance)}</span>
             </div>
 
             <button
@@ -495,6 +492,7 @@ export function ClientDetailPage() {
         <PaymentConfirmationModal
           isOpen={isPaymentModalOpen}
           onClose={() => setIsPaymentModalOpen(false)}
+          onPaymentSaved={() => navigate('/route', { replace: true })}
           clientId={client.id}
           clientName={client.full_name}
           clientDocument={client.document_id}
