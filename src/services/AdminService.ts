@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type { User, Role } from '@/lib/database.types';
 import { dayRangeIso, colombiaDateFromIso, colombiaToday } from '@/lib/dailyCollection';
+import { daysExpired } from '@/lib/expiredLoan';
 import { parseLotteryLastDraw, isLotteryWinnerLoan } from '@/lib/lottery';
 import { isLoanClavo } from '@/lib/clavo';
 import { loanValueOf, refinancedBalanceOf } from '@/lib/refinance';
@@ -2488,6 +2489,44 @@ export class AdminService {
     await this.reconcileLoanInstallments(loanId);
   }
 
+
+  /**
+   * Préstamos VENCIDOS: siguen ACTIVOS y su fecha final (end_date) ya pasó. Mismo criterio que la lista
+   * del cobrador (préstamo activo, sin contar ganadores del sorteo). Ordenados del más vencido al menos.
+   */
+  static async getExpiredLoans(routeId?: string) {
+    const todayStr = colombiaToday();
+    let q = supabase
+      .from('loans')
+      .select('id, client_id, route_id, status, end_date, current_balance, daily_installment, raffle_number, client:clients(full_name, phone)')
+      .eq('status', 'ACTIVO')
+      .lt('end_date', todayStr)
+      .order('end_date', { ascending: true })
+      .limit(5000);
+    if (routeId && routeId !== 'all') q = q.eq('route_id', routeId);
+
+    const [loansRes, lotteryRes] = await Promise.all([
+      q,
+      supabase.from('system_settings').select('value').eq('key', 'lottery_last_draw').maybeSingle(),
+    ]);
+    if (loansRes.error) throw loansRes.error;
+    const draw = lotteryRes.data ? parseLotteryLastDraw(lotteryRes.data.value) : null;
+
+    return ((loansRes.data || []) as any[])
+      .filter(l => !isLotteryWinnerLoan(l, draw))
+      .map(l => ({
+        loanId: l.id as string,
+        clientId: l.client_id as string,
+        clientName: (l.client?.full_name as string) || 'Cliente',
+        phone: (l.client?.phone as string) || null,
+        routeId: l.route_id as string,
+        endDate: String(l.end_date).slice(0, 10),
+        daysExpired: daysExpired(l.end_date, todayStr),
+        balance: Number(l.current_balance || 0),
+        dailyInstallment: Number(l.daily_installment || 0),
+      }))
+      .sort((a, b) => b.daysExpired - a.daysExpired);
+  }
 
   /**
    * Obtiene préstamos finalizados y relaciona el préstamo nuevo cuando el anterior

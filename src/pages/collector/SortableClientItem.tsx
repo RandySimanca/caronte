@@ -3,6 +3,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { NavLink } from 'react-router-dom';
 import { User, MapPin, Trophy, GripVertical, CalendarCheck } from 'lucide-react';
 import { formatCurrency, cn } from '@/lib/utils';
+import { expiredLabel } from '@/lib/expiredLoan';
 
 export function SortableClientItem({ client, isReordering, position, onMoveTo }: { client: any, isReordering: boolean, position?: number, onMoveTo?: (clientId: string) => void }) {
   const {
@@ -161,6 +162,11 @@ export function SortableClientItem({ client, isReordering, position, onMoveTo }:
                     Adelantado
                   </span>
                 ) : null}
+                {client.daysExpired > 0 && (
+                  <span className="text-[10px] text-white bg-rose-600 px-1.5 py-0.5 rounded font-bold leading-none">
+                    {expiredLabel(client.daysExpired)}
+                  </span>
+                )}
                 {client.arrears > 0 ? (
                   <p className="text-[10px] text-rose-500 font-semibold bg-rose-50 px-1.5 py-0.5 rounded leading-none">
                     Atraso: {formatCurrency(client.arrears)}

@@ -16,6 +16,7 @@ import { useSyncStore } from '@/stores/syncStore';
 import { SyncService } from '@/services/SyncService';
 import { sortByRouteOrder } from '@/lib/routeOrder';
 import { colombiaDateFromIso, mergeTodayPayments, paymentsTodaySettingKey } from '@/lib/dailyCollection';
+import { daysExpired as calcDaysExpired } from '@/lib/expiredLoan';
 import { buildCompletedToday, completedLoansSettingKey, countWithCompleted, type CompletedLoanEntry } from '@/lib/completedLoans';
 
 // Posición del scroll de la lista: se guarda por día para volver "por donde vas" después de cobrar
@@ -135,6 +136,7 @@ export function RouteClientList() {
       let isPrepaidToday = false;
       let isAdelantado = false;
       let hasPaymentToday = false;
+      let daysExpired = 0;
 
       if (winnerLoan && !activeLoan) {
         status = 'GANADOR';
@@ -169,6 +171,8 @@ export function RouteClientList() {
 
         const todayInstallment = loanInstallments.find(i => i.scheduled_date === today);
         const loanEnded = loan.end_date && loan.end_date < today;
+        // Préstamo vencido: ya pasó su fecha final y el cliente sigue debiendo (activo)
+        if (activeLoan) daysExpired = calcDaysExpired(loan.end_date, today);
         // Usar el balance real de la cuota; si no hay cuota y el préstamo ya terminó, mostrar 0.
         todayQuota = loan.start_date > today
           ? 0
@@ -209,6 +213,7 @@ export function RouteClientList() {
         advances,
         isPrepaidToday,
         isAdelantado,
+        daysExpired,
         status,
         isTodayPaid,
         hasPaymentToday,

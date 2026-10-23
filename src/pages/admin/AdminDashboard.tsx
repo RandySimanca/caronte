@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck, Plus, Building2, Smartphone, PencilLine, FileSpreadsheet, FastForward } from 'lucide-react';
+import { Users, UserPlus, DollarSign, UserCheck, Map, Activity, CheckCircle, AlertCircle, ChevronRight, Bell, Trophy, CalendarCheck, Plus, Building2, Smartphone, PencilLine, FileSpreadsheet, FastForward, AlertTriangle } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { ClientsModal } from '@/components/admin/ClientsModal';
@@ -8,6 +8,7 @@ import { ObservationsModal } from '@/components/admin/ObservationsModal';
 import { PrepaidTodayModal } from '@/components/admin/PrepaidTodayModal';
 import { PaidTodayModal } from '@/components/admin/PaidTodayModal';
 import { CompletedLoansModal } from '@/components/admin/CompletedLoansModal';
+import { ExpiredLoansModal, type ExpiredLoanRow } from '@/components/admin/ExpiredLoansModal';
 import { AdminCreateLoanModal } from '@/components/admin/AdminCreateLoanModal';
 import { TransferVouchersModal } from '@/components/admin/TransferVouchersModal';
 import { EditPaymentModal } from '@/components/admin/EditPaymentModal';
@@ -136,6 +137,9 @@ export function AdminDashboard() {
   const [completedLoansOpen, setCompletedLoansOpen] = useState(false);
   const [completedLoans, setCompletedLoans] = useState<any[]>([]);
   const [completedLoansLoading, setCompletedLoansLoading] = useState(false);
+  const [expiredLoansOpen, setExpiredLoansOpen] = useState(false);
+  const [expiredLoans, setExpiredLoans] = useState<ExpiredLoanRow[]>([]);
+  const [expiredLoansLoading, setExpiredLoansLoading] = useState(false);
 
   // Load route list only once
   useEffect(() => {
@@ -211,11 +215,29 @@ export function AdminDashboard() {
     loadCompletedLoans();
   }, [loadCompletedLoans]);
 
+  // Préstamos vencidos (siguen activos y ya pasó su fecha final). Se trae todo y se filtra por ruta en pantalla.
+  const loadExpiredLoans = useCallback(async () => {
+    setExpiredLoansLoading(true);
+    try {
+      const rows = await AdminService.getExpiredLoans('all');
+      setExpiredLoans(rows);
+    } catch (error) {
+      toast.error('No se pudo cargar los préstamos vencidos');
+    } finally {
+      setExpiredLoansLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadExpiredLoans();
+  }, [loadExpiredLoans]);
+
   // Tiempo real: cuando un celular sube cobros/préstamos/gastos/cierres, el PC se actualiza solo.
   const isLive = useRealtimeRefresh(
     () => {
       loadStats(true);
       loadCompletedLoans();
+      loadExpiredLoans();
       AdminService.getRouteStates().then(setRouteStates).catch(() => { });
     },
     { tables: ['payments', 'loans', 'loan_installments', 'clients', 'expenses', 'daily_closings'] },
@@ -252,6 +274,11 @@ export function AdminDashboard() {
   const completedLoansInRoute = isFiltered
     ? completedLoans.filter((l: any) => l.route_id === selectedRoute)
     : completedLoans;
+
+  // Préstamos vencidos de la ruta elegida en el dashboard ('' o 'all' = todas)
+  const expiredLoansInRoute = isFiltered
+    ? expiredLoans.filter(l => l.routeId === selectedRoute)
+    : expiredLoans;
 
   const routeSubtitle = selectedRoute === ''
     ? 'Seleccione una ruta'
@@ -596,6 +623,34 @@ export function AdminDashboard() {
           </div>
         </button>
 
+        {/* 2b. Préstamos vencidos: siguen activos y ya pasó su fecha final */}
+        <button
+          type="button"
+          onClick={() => setExpiredLoansOpen(true)}
+          className="bg-white rounded-3xl border border-rose-100 shadow-sm p-6 hover:shadow-md hover:border-rose-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
+        >
+          <div className="flex items-start justify-between w-full mb-6">
+            <div className="w-14 h-14 rounded-2xl bg-rose-50 flex items-center justify-center relative shadow-inner">
+              <AlertTriangle className="w-7 h-7 text-rose-600" />
+              <span className={`absolute -top-2 -right-2 min-w-7 h-7 px-1.5 bg-rose-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md ${expiredLoansLoading ? 'opacity-50' : ''}`}>
+                {expiredLoansLoading ? '…' : expiredLoansInRoute.length}
+              </span>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-rose-50 transition-colors">
+              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-rose-600 group-hover:translate-x-0.5 transition-all" />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Préstamos Vencidos</h3>
+            <p className="text-sm text-slate-500 leading-relaxed">
+              Clientes que ya pasaron su fecha final y siguen debiendo · {selectedRoute === '' ? 'Todas las rutas' : routeSubtitle}
+            </p>
+            <p className="text-xs text-rose-600 font-semibold mt-1.5">
+              Clic para ver el listado
+            </p>
+          </div>
+        </button>
+
         {/* 3. Sorteo de boletas */}
         <button
           onClick={() => setIsLotteryOpen(true)}
@@ -912,6 +967,15 @@ export function AdminDashboard() {
         routes={routeStates}
         initialRouteId={selectedRoute || 'all'}
         isLoading={completedLoansLoading}
+        formatCurrency={formatCurrency}
+      />
+      <ExpiredLoansModal
+        isOpen={expiredLoansOpen}
+        onClose={() => setExpiredLoansOpen(false)}
+        loans={expiredLoansInRoute}
+        routes={routeStates}
+        routeLabel={isFiltered ? selectedRouteData?.ruta : undefined}
+        isLoading={expiredLoansLoading}
         formatCurrency={formatCurrency}
       />
     </div>
