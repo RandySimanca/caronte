@@ -7,7 +7,7 @@ import { formatCurrency } from '@/lib/utils';
 export interface VisitedClientEntry {
   clientId: string;
   clientName: string;
-  /** Total cobrado hoy a este cliente */
+  /** Total cobrado hoy a este cliente (incluye el saldo recogido si refinanció) */
   amount: number;
   /** ISO del último cobro de hoy ('' si no se conoce la hora) */
   lastAt: string;
@@ -15,6 +15,8 @@ export interface VisitedClientEntry {
   paidAll?: boolean;
   /** Terminó hoy su préstamo refinanciando */
   refinanced?: boolean;
+  /** Saldo que debía y se recogió al refinanciar (ya está incluido en `amount`) */
+  refinancedAmount?: number;
 }
 
 interface Props {
@@ -106,7 +108,7 @@ export function VisitedTodayModal({ isOpen, onClose, clients }: Props) {
                     <p className="font-bold text-slate-800 text-sm truncate">{c.clientName}</p>
                     <p className="text-xs text-slate-400">
                       {timeLabel(c.lastAt) || 'Hoy'}
-                      {c.paidAll ? ' · Pagó todo' : c.refinanced ? ' · Refinanció' : ''}
+                      {c.paidAll ? ' · Pagó todo' : c.refinanced ? ' · Refinanciación' : ''}
                     </p>
                   </div>
                   <p className="shrink-0 text-sm font-black text-brand-600">

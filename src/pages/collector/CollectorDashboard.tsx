@@ -313,32 +313,43 @@ export function CollectorDashboard() {
         lastAt: (e.collectedAt || '') > prev.lastAt ? (e.collectedAt || '') : prev.lastAt,
       });
     }
+    // Saldo que el cliente debía y se recogió al refinanciar hoy (por cliente). Cuenta como cobrado
+    // del cliente, igual que se muestra del lado del admin.
+    const refinancedByClient = new Map<string, number>();
+    for (const l of todayNewLoans) {
+      const rb = refinancedBalanceOf(l);
+      if (rb > 0) refinancedByClient.set(l.client_id, (refinancedByClient.get(l.client_id) || 0) + rb);
+    }
     const visitedTodayClients: VisitedClientEntry[] = [];
     const listedVisited = new Set<string>();
     for (const cid of visitedClientIds) {
       const paid = paidByClient.get(cid);
       const done = completedToday.find(c => c.clientId === cid);
+      const refinancedAmount = done?.refinanced ? (refinancedByClient.get(cid) || 0) : 0;
       listedVisited.add(cid);
       visitedTodayClients.push({
         clientId: cid,
         clientName: clients.find(c => c.id === cid)?.full_name || 'Cliente',
-        amount: paid?.amount || 0,
+        amount: (paid?.amount || 0) + refinancedAmount,
         lastAt: paid?.lastAt || done?.completedAt || '',
         paidAll: !!done && !done.refinanced,
         refinanced: !!done?.refinanced,
+        refinancedAmount,
       });
     }
     for (const done of completedToday) {
       if (listedVisited.has(done.clientId)) continue;
       listedVisited.add(done.clientId);
       const paid = paidByClient.get(done.clientId);
+      const refinancedAmount = done.refinanced ? (refinancedByClient.get(done.clientId) || 0) : 0;
       visitedTodayClients.push({
         clientId: done.clientId,
         clientName: done.clientName,
-        amount: paid?.amount || 0,
+        amount: (paid?.amount || 0) + refinancedAmount,
         lastAt: paid?.lastAt || done.completedAt || '',
         paidAll: !done.refinanced,
         refinanced: !!done.refinanced,
+        refinancedAmount,
       });
     }
     visitedTodayClients.sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || ''));

@@ -538,8 +538,20 @@ export class AdminService {
       arrearsTotal += loanArrears;
     }
 
-    // Adelantadas para hoy: cuotas de hoy ya pagadas en días anteriores
-    const prepaidTodayData = (prepaidTodayRes.data || []).map((i: any) => ({
+    // Adelantadas para hoy: cuotas de hoy ya pagadas en días anteriores.
+    // Igual que el cobrador, solo cuentan los préstamos ACTIVOS (y no ganadores del sorteo): los
+    // clientes que adelantaron cuotas para terminar su préstamo ya no están en la ruta.
+    const countableLoanIds = new Set(
+      activeLoans.filter((l: any) => !isLotteryWinnerLoan(l as any, draw)).map((l: any) => l.id as string)
+    );
+    const seenPrepaidLoans = new Set<string>();
+    const prepaidTodayData = (prepaidTodayRes.data || [])
+      .filter((i: any) => {
+        if (!countableLoanIds.has(i.loan_id) || seenPrepaidLoans.has(i.loan_id)) return false;
+        seenPrepaidLoans.add(i.loan_id);
+        return true;
+      })
+      .map((i: any) => ({
       loanId: i.loan_id,
       clientName: (i.loan as any)?.client?.full_name || 'Cliente desconocido',
       amount: Number((i.loan as any)?.daily_installment || i.scheduled_amount),
@@ -2619,9 +2631,12 @@ export class AdminService {
       const completedAt: string | null = loan.status === 'REFINANCIADO'
         ? (newLoan?.created_at || null)
         : (lastPayment.get(loan.id) || null);
-      const completedOn = completedAt
-        ? colombiaDateFromIso(completedAt)
-        : (loan.status === 'REFINANCIADO' ? (newLoan?.disbursement_date || null) : null);
+      // Refinanciado: se cierra el día de desembolso del préstamo nuevo (mismo criterio que usa el
+      // cobrador y que elige los candidatos arriba). created_at puede caer en otro día (p. ej. un
+      // préstamo creado en la noche con desembolso al día siguiente) y lo sacaba del "hoy".
+      const completedOn = loan.status === 'REFINANCIADO'
+        ? (newLoan?.disbursement_date || (completedAt ? colombiaDateFromIso(completedAt) : null))
+        : (completedAt ? colombiaDateFromIso(completedAt) : null);
       return { ...loan, newLoan, completed_at: completedAt, completed_on: completedOn };
     });
 
