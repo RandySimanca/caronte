@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Fuel, Wrench, Coffee, MoreHorizontal } from 'lucide-react';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -8,6 +8,7 @@ import { db } from '@/db/schema';
 import { v4 as uuidv4 } from 'uuid';
 import toast from 'react-hot-toast';
 import { useSyncStore } from '@/stores/syncStore';
+import { useAuthStore } from '@/stores/authStore';
 
 export function ExpensesPage() {
   const [amount, setAmount] = useState('');
@@ -34,6 +35,14 @@ export function ExpensesPage() {
   ) || [];
 
   const totalExpenses = expenses.reduce((acc, curr) => acc + curr.amount, 0);
+
+  // Si el celular aún no tiene las categorías reales, intentar bajarlas al abrir la pantalla
+  const userId = useAuthStore(state => state.user?.id);
+  useEffect(() => {
+    if (settings && dbCategories.length === 0 && userId && useSyncStore.getState().isOnline) {
+      import('@/services/SyncService').then(m => m.SyncService.pullSettings(userId)).catch(() => {});
+    }
+  }, [settings === undefined, dbCategories.length, userId]);
 
   const categories = dbCategories.length > 0 
     ? dbCategories.map((c: any) => ({

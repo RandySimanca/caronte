@@ -436,14 +436,39 @@ export class SyncService {
               activeRouteId = routes.length > 0 ? routes[0].id : null;
             }
 
+            // Si el celular no tenía las categorías reales (ids de respaldo como "combustible"),
+            // buscar la categoría por nombre en el servidor para no enviar un id que no es UUID.
+            let categoryId: string = exp.category_id;
+            let expenseDescription: string = exp.description;
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(categoryId || ''))) {
+              const { data: serverCats, error: catErr } = await supabase
+                .from('expense_categories')
+                .select('id, name')
+                .eq('active', true);
+              if (catErr) throw catErr;
+              const cats = (serverCats || []) as { id: string; name: string }[];
+              const norm = (s: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+              const wanted = (exp.category_name || '').trim();
+              let match = cats.find(c => norm(c.name) === norm(wanted));
+              if (!match) {
+                match = cats.find(c => /^otr/i.test(c.name)) || cats[0];
+                if (match && wanted) expenseDescription = `${wanted}: ${expenseDescription}`;
+              }
+              if (!match) {
+                throw new Error('La empresa no tiene categorías de gasto. El administrador debe crearlas en Configuración > Cat. Gastos.');
+              }
+              categoryId = match.id;
+              await db.expenses.update(exp.id, { category_id: match.id, category_name: match.name });
+            }
+
             const expenseDb = {
               operation_id: op.operation_id,
               collector_id: user?.id,
               route_id: activeRouteId,
               expense_date: exp.expense_date,
-              category_id: exp.category_id,
+              category_id: categoryId,
               amount: exp.amount,
-              description: exp.description,
+              description: expenseDescription,
               sync_status: 'synced'
             };
 
@@ -574,7 +599,9 @@ export class SyncService {
       // 6. Fetch Settings and Categories for the user's company
       const { companyId } = useAuthStore.getState();
       const { data: settingsRaw } = await supabase.from('system_settings').select('key, value').eq('company_id', companyId);
-      const { data: categories } = await supabase.from('expense_categories').select('*').eq('active', true).eq('company_id', companyId);
+      let catQuery = supabase.from('expense_categories').select('*').eq('active', true);
+      if (companyId) catQuery = catQuery.eq('company_id', companyId);
+      const { data: categories } = await catQuery;
       const settings = (settingsRaw || []) as { key: string; value: any }[];
 
       const localSettings = settings.map(s => ({ key: s.key, value: s.value }));
@@ -955,11 +982,12 @@ export class SyncService {
         .eq('company_id', companyId);
 
       // Categorías de gastos de la empresa
-      const { data: categories } = await supabase
+      let catQuery2 = supabase
         .from('expense_categories')
         .select('*')
-        .eq('active', true)
-        .eq('company_id', companyId);
+        .eq('active', true);
+      if (companyId) catQuery2 = catQuery2.eq('company_id', companyId);
+      const { data: categories } = await catQuery2;
 
       // Viático específico del cobrador desde su asignación activa
       const { data: assignmentsRaw2 } = await supabase
