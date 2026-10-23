@@ -130,27 +130,33 @@ export function PaymentConfirmationModal({
     reader.readAsDataURL(file);
   };
 
-  // Auto-fill expected amount when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setAmount(Math.round(financialState.expectedTotal).toString());
-      setObservation('');
-      setShowDuplicateWarning(false);
-      setLotteryWinner(null);
-      setIsTransfer(false);
-      setVoucherBase64(null);
-      setWhatsappData(null);
+  // Siempre apuntan a los valores más recientes sin disparar el efecto de abajo
+  const latestRef = useRef({ expectedTotal: financialState.expectedTotal, loan });
+  latestRef.current = { expectedTotal: financialState.expectedTotal, loan };
 
-      // Check if this loan won the lottery (by loan id, client id or raffle number)
-      const checkLotteryWinner = async () => {
-        const draw = await getLotteryLastDraw();
-        if (isLotteryWinnerLoan(loan, draw)) {
-          setLotteryWinner(draw);
-        }
-      };
-      checkLotteryWinner();
-    }
-  }, [isOpen, financialState.expectedTotal, loan]);
+  // Reiniciar y autocompletar el monto SOLO cuando el modal se abre.
+  // (Antes dependía de loan/expectedTotal: al guardar el cobro esos valores cambian
+  // en Dexie y el efecto borraba el panel "¡Cobro guardado!" de WhatsApp.)
+  useEffect(() => {
+    if (!isOpen) return;
+    const { expectedTotal, loan: currentLoan } = latestRef.current;
+    setAmount(Math.round(expectedTotal).toString());
+    setObservation('');
+    setShowDuplicateWarning(false);
+    setLotteryWinner(null);
+    setIsTransfer(false);
+    setVoucherBase64(null);
+    setWhatsappData(null);
+
+    // Check if this loan won the lottery (by loan id, client id or raffle number)
+    const checkLotteryWinner = async () => {
+      const draw = await getLotteryLastDraw();
+      if (isLotteryWinnerLoan(currentLoan, draw)) {
+        setLotteryWinner(draw);
+      }
+    };
+    checkLotteryWinner();
+  }, [isOpen]);
 
   const handleSaveClick = async () => {
     if (lotteryWinner) {

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { ArrowLeft, Edit, CheckCircle2, CheckCircle, Trophy, Ticket, MessageCircle, Calendar } from 'lucide-react';
 import { useNavigate, useParams, NavLink } from 'react-router-dom';
 import { formatCurrency } from '@/lib/utils';
@@ -132,6 +132,30 @@ export function ClientDetailPage() {
     };
   }, [loan, installments, today]);
 
+  // Mientras el modal de cobro está abierto usamos una "foto" de loan/financialState tomada
+  // antes de cobrar: al guardar, Dexie cambia el préstamo (incluso a CANCELADO si el saldo
+  // llega a 0) y sin esto el modal se desmontaría antes de mostrar el panel de WhatsApp.
+  const paymentModalDataRef = useRef<{ loan: NonNullable<typeof loan>; financialState: NonNullable<typeof financialState> } | null>(null);
+  if (!isPaymentModalOpen) {
+    paymentModalDataRef.current = loan && financialState ? { loan, financialState } : null;
+  }
+  const paymentModalData = paymentModalDataRef.current;
+
+  const paymentModal = paymentModalData && !isLotteryWinner ? (
+    <PaymentConfirmationModal
+      isOpen={isPaymentModalOpen}
+      onClose={() => setIsPaymentModalOpen(false)}
+      onPaymentSaved={() => navigate('/route', { replace: true })}
+      clientId={client?.id ?? ''}
+      clientName={client?.full_name ?? ''}
+      clientDocument={client?.document_id ?? ''}
+      clientAvatarUrl={client?.photo_face_url ?? null}
+      clientPhone={client?.phone ?? null}
+      loan={paymentModalData.loan}
+      financialState={paymentModalData.financialState}
+    />
+  ) : null;
+
   const exportPdf = async () => {
     if (!client || !loan || !installments) return;
     try {
@@ -235,6 +259,7 @@ export function ClientDetailPage() {
             Nuevo préstamo para este cliente
           </NavLink>
         </div>
+        {isPaymentModalOpen && paymentModal}
       </div>
     );
   }
@@ -488,20 +513,7 @@ export function ClientDetailPage() {
         )}
       </div>
 
-      {financialState && !isLotteryWinner && loan && (
-        <PaymentConfirmationModal
-          isOpen={isPaymentModalOpen}
-          onClose={() => setIsPaymentModalOpen(false)}
-          onPaymentSaved={() => navigate('/route', { replace: true })}
-          clientId={client.id}
-          clientName={client.full_name}
-          clientDocument={client.document_id}
-          clientAvatarUrl={client.photo_face_url}
-          clientPhone={client.phone ?? null}
-          loan={loan}
-          financialState={financialState}
-        />
-      )}
+      {paymentModal}
 
       {loan && (
         <CollectorPaymentCardModal
