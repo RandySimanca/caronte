@@ -137,6 +137,13 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
     }
   };
 
+  // Texto libre del gasto (p. ej. lo que el cobrador escribió en "Otros"); oculta el texto genérico "Gasto de X"
+  const gastoDetalle = (g: any): string => {
+    const d = (g?.description || '').trim();
+    if (!d || /^gasto de /i.test(d)) return (g?.observation || '').trim();
+    return d;
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-CO', {
       style: 'currency',
@@ -182,6 +189,7 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
         ]},
         { sheetName: 'Detalle Gastos', data: detail.detalleGastos.map((g: any) => ({
           Categoria: g.category?.name || 'Otros',
+          Detalle: gastoDetalle(g),
           Monto: g.amount
         }))},
         { sheetName: 'Préstamos Nuevos', data: (detail.detallePrestamos || []).map((l: any) => ({
@@ -287,6 +295,20 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                   </div>
                   <span className="font-bold shrink-0">-{formatCurrency(detail.totalGastos)}</span>
                 </div>
+
+                {(detail.detalleGastos?.length ?? 0) > 0 && (
+                  <ul className="ml-7 -mt-1 bg-white border border-rose-100 rounded-xl divide-y divide-rose-50 text-xs sm:text-sm">
+                    {detail.detalleGastos.map((g: any, i: number) => (
+                      <li key={i} className="flex justify-between items-start gap-3 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-700 truncate">{g.category?.name || 'Otros'}</p>
+                          {gastoDetalle(g) && <p className="text-slate-500 break-words">{gastoDetalle(g)}</p>}
+                        </div>
+                        <span className="font-bold text-rose-600 shrink-0">{formatCurrency(Number(g.amount))}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
 
                 <div className="flex justify-between items-center gap-3 text-rose-600">
                   <div className="flex items-center gap-2 font-bold text-sm sm:text-base min-w-0">

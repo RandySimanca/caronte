@@ -14,7 +14,7 @@ interface DailyLiquidationPdfProps {
     totalPrestado: number;
     totalEntregar: number;
     totalTransferencias?: number;
-    detalleGastos: { amount: number; category: { name: string } }[];
+    detalleGastos: { amount: number; description?: string | null; observation?: string | null; category: { name: string } }[];
     detallePrestamos?: { cliente: string; monto: number }[];
   };
   baseAmount: number;
@@ -23,6 +23,12 @@ interface DailyLiquidationPdfProps {
   approvedAt?: string | null;
   /** Total aprobado guardado en el cierre (solo días liquidados) */
   approvedTotal?: number | null;
+}
+
+function gastoDetalle(g: { description?: string | null; observation?: string | null }): string {
+  const d = (g.description || '').trim();
+  if (!d || /^gasto de /i.test(d)) return (g.observation || '').trim();
+  return d;
 }
 
 export function DailyLiquidationPdf({ dateStr, routeName, collectorName, detail, baseAmount, source = 'live', approvedAt = null, approvedTotal = null }: DailyLiquidationPdfProps) {
@@ -99,13 +105,15 @@ export function DailyLiquidationPdf({ dateStr, routeName, collectorName, detail,
         <Text style={pdfStyles.sectionTitle}>Detalle de Gastos Operativos</Text>
         <View style={pdfStyles.table}>
           <View style={[pdfStyles.tableRow, pdfStyles.tableHeader]}>
-            <View style={[pdfStyles.tableCol, { width: '70%' }]}><Text>Categoría</Text></View>
+            <View style={[pdfStyles.tableCol, { width: '30%' }]}><Text>Categoría</Text></View>
+            <View style={[pdfStyles.tableCol, { width: '40%' }]}><Text>Detalle</Text></View>
             <View style={[pdfStyles.tableCol, { width: '30%' }]}><Text style={pdfStyles.textRight}>Valor</Text></View>
           </View>
           
           {detail.detalleGastos.map((gasto, i) => (
             <View style={pdfStyles.tableRow} key={i}>
-              <View style={[pdfStyles.tableCol, { width: '70%' }]}><Text>{gasto.category?.name || 'Otros'}</Text></View>
+              <View style={[pdfStyles.tableCol, { width: '30%' }]}><Text>{gasto.category?.name || 'Otros'}</Text></View>
+              <View style={[pdfStyles.tableCol, { width: '40%' }]}><Text>{gastoDetalle(gasto)}</Text></View>
               <View style={[pdfStyles.tableCol, { width: '30%' }]}><Text style={[pdfStyles.textRight, pdfStyles.textRed]}>{formatCurrency(gasto.amount)}</Text></View>
             </View>
           ))}

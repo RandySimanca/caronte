@@ -12,6 +12,9 @@ import { useSyncStore } from '@/stores/syncStore';
 export function ExpensesPage() {
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<string | null>(null);
+  // Detalle obligatorio cuando la categoría es "Otro/Otros" (¿en qué se gastó?)
+  const [otherDetail, setOtherDetail] = useState('');
+  const isOtherName = (name?: string) => /^otr/i.test((name || '').trim());
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -36,7 +39,7 @@ export function ExpensesPage() {
     ? dbCategories.map((c: any) => ({
         id: c.id,
         name: c.name,
-        icon: c.name === 'Combustible' ? Fuel : c.name === 'Reparación' ? Wrench : Coffee,
+        icon: c.name === 'Combustible' ? Fuel : c.name === 'Reparación' ? Wrench : isOtherName(c.name) ? MoreHorizontal : Coffee,
         color: c.name === 'Combustible' ? 'text-rose-500' : c.name === 'Reparación' ? 'text-blue-500' : 'text-amber-500',
         bg: c.name === 'Combustible' ? 'bg-rose-50' : c.name === 'Reparación' ? 'bg-blue-50' : 'bg-amber-50'
       }))
@@ -58,7 +61,13 @@ export function ExpensesPage() {
     }
 
     const categoryDef = categories.find((c: any) => c.id === category);
-    
+    const isOther = isOtherName(categoryDef?.name);
+    const detailText = otherDetail.trim();
+    if (isOther && !detailText) {
+      toast.error('Escribe cuál es el otro gasto');
+      return;
+    }
+
     try {
       const expenseId = uuidv4();
       const expenseDate = format(new Date(), 'yyyy-MM-dd');
@@ -67,7 +76,7 @@ export function ExpensesPage() {
         id: expenseId,
         category_id: category,
         category_name: categoryDef?.name || 'Otro',
-        description: `Gasto de ${categoryDef?.name || 'Otro'}`,
+        description: isOther ? detailText : `Gasto de ${categoryDef?.name || 'Otro'}`,
         amount: Number(amount),
         expense_date: expenseDate,
         route_id: 'local', // Se resuelve en SyncService
@@ -88,6 +97,7 @@ export function ExpensesPage() {
       toast.success('Gasto registrado');
       setAmount('');
       setCategory(null);
+      setOtherDetail('');
       
       // Intentar sincronizar en background
       useSyncStore.getState().setPendingCount(await db.syncQueue.where('status').anyOf(['pending', 'failed']).count());
@@ -138,6 +148,20 @@ export function ExpensesPage() {
               </button>
             ))}
           </div>
+
+          {isOtherName(categories.find((c: any) => c.id === category)?.name) && (
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-slate-600 mb-1">¿Cuál es el gasto? *</label>
+              <input
+                type="text"
+                value={otherDetail}
+                onChange={(e) => setOtherDetail(e.target.value)}
+                maxLength={120}
+                className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl py-3 px-4 font-medium focus:outline-none focus:ring-2 focus:ring-brand-500"
+                placeholder="Ej: almuerzo, parqueadero, pasaje..."
+              />
+            </div>
+          )}
 
           <div className="relative mb-4">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium">$</span>
