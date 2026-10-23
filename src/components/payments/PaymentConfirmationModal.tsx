@@ -24,6 +24,10 @@ interface FinancialState {
   isPaidToday?: boolean;
 }
 
+// Panel de WhatsApp post-cobro desactivado por ahora (el celular de cobro no tiene WhatsApp).
+// Para reactivarlo, cambiar a true.
+const ENABLE_WHATSAPP_PANEL = false;
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -330,8 +334,14 @@ export function PaymentConfirmationModal({
         currentBalance: newLoanBalance,
         arrearsAfterPayment,
       });
-      setWhatsappData({ message: waMessage, phone: clientPhone ?? null });
-      // No cerramos el modal todavía — mostramos el paso de WhatsApp
+      if (ENABLE_WHATSAPP_PANEL) {
+        setWhatsappData({ message: waMessage, phone: clientPhone ?? null });
+        // No cerramos el modal todavía — mostramos el paso de WhatsApp
+      } else {
+        // Sin panel de WhatsApp: cerrar el modal y volver a la lista de la ruta
+        onClose();
+        onPaymentSaved?.();
+      }
     } catch (error: any) {
       console.error('Error saving payment:', error);
       toast.error('Error al guardar el cobro. Inténtalo de nuevo.');
