@@ -52,3 +52,32 @@ export async function downloadUnsyncedBackup(): Promise<number> {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
   return ops.length;
 }
+
+/**
+ * Nombre del cliente al que pertenece una operación encolada (para mostrarlo en los avisos de error).
+ * Cobro → préstamo → cliente; préstamo/cliente nuevos traen el nombre en el payload.
+ * Devuelve '' si no se puede determinar (p. ej. gastos, orden de ruta).
+ */
+export async function opClientName(op: Pick<SyncOperation, 'operation_type' | 'payload'>): Promise<string> {
+  try {
+    const type = op.operation_type as string;
+    const pl = op.payload || {};
+    if (pl.client?.full_name) return String(pl.client.full_name);
+    if (type === 'CLIENT' || type === 'UPDATE_CLIENT') {
+      if (pl.full_name) return String(pl.full_name);
+    }
+    let clientId: string | undefined = pl.client_id ?? pl.client?.id;
+    if (!clientId) {
+      const loanId: string | undefined = pl.loanId ?? pl.loan_id ?? pl.payment?.loanId ?? pl.loan?.id;
+      if (loanId) {
+        const loan = await db.loans.get(loanId);
+        clientId = loan?.client_id;
+      }
+    }
+    if (!clientId) return '';
+    const client = await db.clients.get(clientId);
+    return client?.full_name || '';
+  } catch {
+    return '';
+  }
+}

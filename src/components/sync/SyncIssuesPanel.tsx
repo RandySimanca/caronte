@@ -5,7 +5,7 @@ import { db } from '@/db/schema';
 import { SyncService } from '@/services/SyncService';
 import { useSyncStore } from '@/stores/syncStore';
 import { formatCurrency } from '@/lib/utils';
-import { OP_LABELS, downloadUnsyncedBackup, opPaymentAmount } from '@/lib/syncBackup';
+import { OP_LABELS, downloadUnsyncedBackup, opClientName, opPaymentAmount } from '@/lib/syncBackup';
 
 /**
  * Aviso visible cuando hay operaciones que NO se pudieron enviar al servidor.
@@ -18,6 +18,12 @@ export function SyncIssuesPanel({ collectorId }: { collectorId?: string }) {
   const [busy, setBusy] = useState(false);
 
   const failed = useLiveQuery(() => db.syncQueue.where('status').equals('failed').toArray()) || [];
+  // Nombre del cliente afectado por cada operación fallida (id de la cola → nombre)
+  const clientNames = useLiveQuery(async () => {
+    const ops = await db.syncQueue.where('status').equals('failed').toArray();
+    const entries = await Promise.all(ops.map(async o => [o.id, await opClientName(o)] as const));
+    return Object.fromEntries(entries) as Record<number, string>;
+  }) || {};
   if (failed.length === 0) return null;
 
   const stuck = failed.filter(o => (o.retry_count || 0) >= 3).length;
@@ -50,12 +56,16 @@ export function SyncIssuesPanel({ collectorId }: { collectorId?: string }) {
       <ul className="space-y-1.5 max-h-40 overflow-y-auto">
         {failed.map(op => {
           const amount = opPaymentAmount(op);
+          const clientName = op.id != null ? clientNames[op.id] : '';
           return (
             <li key={op.id} className="text-xs bg-white/70 border border-amber-100 rounded-lg px-3 py-2">
               <div className="flex justify-between font-semibold text-slate-800">
                 <span>{OP_LABELS[op.operation_type] ?? op.operation_type}{amount > 0 ? ` · ${formatCurrency(amount)}` : ''}</span>
                 <span className="text-slate-400 font-medium">{new Date(op.local_timestamp).toLocaleString('es-CO')}</span>
               </div>
+              {clientName && (
+                <p className="text-sm font-black text-slate-900 mt-0.5 break-words">Cliente: {clientName}</p>
+              )}
               <p className="text-rose-600 mt-0.5 break-words">
                 {op.error_message || 'Error desconocido'} {op.retry_count ? `(${op.retry_count} intentos)` : ''}
               </p>
