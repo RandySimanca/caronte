@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Fuel, Wrench, Coffee, MoreHorizontal } from 'lucide-react';
+import { Fuel, Wrench, Coffee, MoreHorizontal, Trash2 } from 'lucide-react';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import toast from 'react-hot-toast';
 import { useSyncStore } from '@/stores/syncStore';
 import { useAuthStore } from '@/stores/authStore';
+import { confirmDanger } from '@/lib/swal';
 
 export function ExpensesPage() {
   const [amount, setAmount] = useState('');
@@ -118,6 +119,24 @@ export function ExpensesPage() {
     }
   };
 
+  // Borra un gasto que NO se ha enviado al servidor (y su operación en cola) para poder digitarlo de nuevo
+  const handleDeletePending = async (expense: { id: string; amount: number; category_name: string }) => {
+    const ok = await confirmDanger({
+      title: '¿Eliminar este gasto?',
+      text: `${expense.category_name} por ${formatCurrency(expense.amount)} no se ha enviado al administrador. Podrás volver a digitarlo.`,
+      confirmText: 'Sí, eliminar',
+    });
+    if (!ok) return;
+    try {
+      await db.syncQueue.where('operation_id').equals(expense.id).delete();
+      await db.expenses.delete(expense.id);
+      useSyncStore.getState().setPendingCount(await db.syncQueue.where('status').anyOf(['pending', 'failed']).count());
+      toast.success('Gasto eliminado');
+    } catch {
+      toast.error('No se pudo eliminar el gasto');
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-slate-50">
       <header className="bg-white px-4 py-4 border-b border-slate-100 sticky top-0 z-10 text-center">
@@ -209,7 +228,18 @@ export function ExpensesPage() {
                       <p className="text-xs text-slate-500 font-medium">{expense.category_name}</p>
                     </div>
                   </div>
-                  <span className="font-bold text-slate-800">{formatCurrency(expense.amount)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-800">{formatCurrency(expense.amount)}</span>
+                    {expense.sync_status === 'pending' && (
+                      <button
+                        onClick={() => handleDeletePending(expense)}
+                        aria-label="Eliminar gasto sin enviar"
+                        className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </li>
               );
             })}
