@@ -428,7 +428,6 @@ export class SyncService {
             }
           } else if (op.operation_type === 'EXPENSE') {
             const exp = op.payload;
-            const user = await getCurrentUser();
 
             let activeRouteId = exp.route_id;
             if (!activeRouteId || activeRouteId === 'local') {
@@ -436,43 +435,16 @@ export class SyncService {
               activeRouteId = routes.length > 0 ? routes[0].id : null;
             }
 
-            // Si el celular no tenía las categorías reales (ids de respaldo como "combustible"),
-            // buscar la categoría por nombre en el servidor para no enviar un id que no es UUID.
-            let categoryId: string = exp.category_id;
-            let expenseDescription: string = exp.description;
-            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(categoryId || ''))) {
-              const { data: serverCats, error: catErr } = await supabase
-                .from('expense_categories')
-                .select('id, name')
-                .eq('active', true);
-              if (catErr) throw catErr;
-              const cats = (serverCats || []) as { id: string; name: string }[];
-              const norm = (s: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-              const wanted = (exp.category_name || '').trim();
-              let match = cats.find(c => norm(c.name) === norm(wanted));
-              if (!match) {
-                match = cats.find(c => /^otr/i.test(c.name)) || cats[0];
-                if (match && wanted) expenseDescription = `${wanted}: ${expenseDescription}`;
-              }
-              if (!match) {
-                throw new Error('La empresa no tiene categorías de gasto. El administrador debe crearlas en Configuración > Cat. Gastos.');
-              }
-              categoryId = match.id;
-              await db.expenses.update(exp.id, { category_id: match.id, category_name: match.name });
-            }
-
-            const expenseDb = {
-              operation_id: op.operation_id,
-              collector_id: user?.id,
-              route_id: activeRouteId,
-              expense_date: exp.expense_date,
-              category_id: categoryId,
-              amount: exp.amount,
-              description: expenseDescription,
-              sync_status: 'synced'
-            };
-
-            const { error } = await supabase.from('expenses').upsert(expenseDb as any, { onConflict: 'operation_id' });
+            // El servidor resuelve la categoría (por id, por nombre o "Otros"): un gasto nunca se rechaza por eso
+            const { error } = await supabase.rpc('register_expense', {
+              p_operation_id: op.operation_id,
+              p_route_id: activeRouteId || null,
+              p_expense_date: exp.expense_date,
+              p_category_id: String(exp.category_id ?? ''),
+              p_category_name: exp.category_name ?? null,
+              p_amount: exp.amount,
+              p_description: exp.description,
+            } as any);
             if (error) throw error;
 
             // Actualizar localmente el estado del gasto

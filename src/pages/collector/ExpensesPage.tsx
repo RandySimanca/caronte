@@ -45,24 +45,24 @@ export function ExpensesPage() {
     }
   }, [settings === undefined, dbCategories.length, userId]);
 
-  const categories = dbCategories.length > 0 
-    ? dbCategories.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        icon: c.name === 'Combustible' ? Fuel : c.name === 'Reparación' ? Wrench : isOtherName(c.name) ? MoreHorizontal : Coffee,
-        color: c.name === 'Combustible' ? 'text-rose-500' : c.name === 'Reparación' ? 'text-blue-500' : 'text-amber-500',
-        bg: c.name === 'Combustible' ? 'bg-rose-50' : c.name === 'Reparación' ? 'bg-blue-50' : 'bg-amber-50'
-      }))
-    : [
-        { id: 'viaticos', name: 'Viáticos', icon: Coffee, color: 'text-amber-500', bg: 'bg-amber-50' },
-        { id: 'combustible', name: 'Combustible', icon: Fuel, color: 'text-rose-500', bg: 'bg-rose-50' },
-        { id: 'reparacion', name: 'Reparación', icon: Wrench, color: 'text-blue-500', bg: 'bg-blue-50' },
-        { id: 'otro', name: 'Otro', icon: MoreHorizontal, color: 'text-slate-500', bg: 'bg-slate-50' },
-      ];
+  // Solo categorías reales de la empresa (ids UUID). Sin ellas no se puede registrar el gasto.
+  const categories = dbCategories.map((c: any) => ({
+    id: c.id,
+    name: c.name,
+    icon: c.name === 'Combustible' ? Fuel : c.name === 'Reparación' ? Wrench : isOtherName(c.name) ? MoreHorizontal : Coffee,
+    color: c.name === 'Combustible' ? 'text-rose-500' : c.name === 'Reparación' ? 'text-blue-500' : isOtherName(c.name) ? 'text-slate-500' : 'text-amber-500',
+    bg: c.name === 'Combustible' ? 'bg-rose-50' : c.name === 'Reparación' ? 'bg-blue-50' : isOtherName(c.name) ? 'bg-slate-50' : 'bg-amber-50',
+  }));
+  const hasCategories = categories.length > 0;
+  const defaultCat = { icon: MoreHorizontal, color: 'text-slate-500', bg: 'bg-slate-50' };
 
   const handleNewExpense = async () => {
     if (!amount || Number(amount) <= 0) {
       toast.error('Ingresa un valor válido');
+      return;
+    }
+    if (!hasCategories) {
+      toast.error('Aún no hay categorías de gasto. Sincroniza con internet e intenta de nuevo.');
       return;
     }
     if (!category) {
@@ -161,6 +161,13 @@ export function ExpensesPage() {
         {/* Form */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
           <h2 className="text-sm font-bold text-slate-800 mb-4">Registrar gasto</h2>
+
+          {!hasCategories && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium rounded-xl p-3">
+              Aún no hay categorías de gasto cargadas en este celular. Conéctate a internet y toca Sincronizar.
+              Si el aviso sigue, pídele al administrador que revise Configuración &gt; Cat. Gastos.
+            </div>
+          )}
           
           <div className="grid grid-cols-4 gap-2 mb-4">
           {categories.map((cat: { id: string; name: string; icon: React.ElementType; color: string }) => (
@@ -205,7 +212,8 @@ export function ExpensesPage() {
 
           <button 
             onClick={handleNewExpense}
-            className="w-full bg-brand-600 hover:bg-brand-700 active:scale-[0.98] transition-transform text-white font-bold py-3 rounded-xl shadow-md shadow-brand-500/30"
+            disabled={!hasCategories}
+            className="w-full bg-brand-600 hover:bg-brand-700 active:scale-[0.98] transition-transform text-white font-bold py-3 rounded-xl shadow-md shadow-brand-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Nuevo Gasto
           </button>
@@ -216,7 +224,7 @@ export function ExpensesPage() {
           <h3 className="text-sm font-bold text-slate-800 mb-3 px-1">Gastos registrados</h3>
           <ul className="bg-white rounded-2xl shadow-sm border border-slate-100 divide-y divide-slate-100">
             {expenses.map((expense) => {
-              const catDef = categories.find((c: any) => c.name === expense.category_name) || categories[categories.length - 1];
+              const catDef = categories.find((c: any) => c.name === expense.category_name) || defaultCat;
               return (
                 <li key={expense.id} className="p-4 flex items-center justify-between">
                   <div className="flex items-center">
