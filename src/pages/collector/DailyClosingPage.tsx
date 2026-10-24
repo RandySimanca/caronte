@@ -13,8 +13,8 @@ import { confirmDanger } from '@/lib/swal';
 
 export function DailyClosingPage() {
   const navigate = useNavigate();
-  const [baseAmount, setBaseAmount] = useState(0);
-  const [noBaseAmount, setNoBaseAmount] = useState(false);
+  // Base digitada a mano: solo se usa cuando no hay un cierre anterior con valor que se tome automáticamente
+  const [manualBase, setManualBase] = useState(0);
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -23,6 +23,12 @@ export function DailyClosingPage() {
   const collectorViaticumSetting = settings?.find(s => s.key === 'collector_viaticum');
   const defaultViaticumSetting = settings?.find(s => s.key === 'default_viaticum');
   const dayClosedSetting = settings?.find(s => s.key === `day_closed_${today}`);
+  // Base automática: total a entregar del último cierre aprobado (la sincroniza el celular). Si fue 0 o negativo
+  // (o no hay cierre previo) no se bloquea nada: la base es 0 y el cobrador puede digitar la que reciba hoy.
+  const previousClosing = settings?.find(s => s.key === 'previous_closing')?.value as { date: string | null; amount: number } | undefined;
+  const autoBase = previousClosing && Number(previousClosing.amount) > 0 ? Number(previousClosing.amount) : 0;
+  const baseIsAuto = autoBase > 0;
+  const baseAmount = baseIsAuto ? autoBase : manualBase;
   const closed = dayClosedSetting?.value === true;
   
   const viaticumAsignado = collectorViaticumSetting != null
@@ -132,11 +138,6 @@ export function DailyClosingPage() {
   const totalEntregar = baseAmount + collected - totalExpenses - viaticumAsignado - newLoansDelivered - transfersForClosing;
 
   const handleClose = async () => {
-    if (!noBaseAmount && (!baseAmount || baseAmount <= 0)) {
-      toast.error('La base inicial no puede estar vacía o en cero. Si no recibiste base inicial, marca la opción correspondiente.');
-      return;
-    }
-
     const confirmed = await confirmDanger({
       title: '¿Cerrar el día?',
       text: 'Esta acción no se puede deshacer y no podrás realizar más operaciones de cobro hoy.',
@@ -187,31 +188,18 @@ export function DailyClosingPage() {
                 type="text"
                 inputMode="numeric"
                 value={formatNumberInput(baseAmount.toString())}
-                onChange={(e) => setBaseAmount(Number(parseNumberInput(e.target.value)) || 0)}
-                disabled={noBaseAmount}
+                onChange={(e) => setManualBase(Number(parseNumberInput(e.target.value)) || 0)}
+                disabled={baseIsAuto}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-7 pr-3 py-2 text-right font-bold text-slate-800 focus:ring-2 focus:ring-brand-500 outline-none text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 placeholder="0"
               />
             </div>
           </div>
           <p className="text-xs text-slate-400 mt-2">
-            Dinero que el jefe le entrego para salir a cobrar hoy.
+            {baseIsAuto
+              ? `Tomada automáticamente del cierre del ${previousClosing?.date || 'día anterior'}.`
+              : 'El cierre anterior quedó en $0 (o no hay cierre previo). Si hoy el jefe te entregó base, digítala; si no, déjala en 0.'}
           </p>
-          <div className="mt-3 flex items-start gap-2">
-            <input
-              type="checkbox"
-              id="noBaseAmount"
-              checked={noBaseAmount}
-              onChange={(e) => {
-                setNoBaseAmount(e.target.checked);
-                if (e.target.checked) setBaseAmount(0);
-              }}
-              className="mt-1 w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500 cursor-pointer"
-            />
-            <label htmlFor="noBaseAmount" className="text-sm text-slate-600 cursor-pointer select-none">
-              Hoy no recibí base inicial
-            </label>
-          </div>
         </div>
 
         {/* Resumen financiero */}

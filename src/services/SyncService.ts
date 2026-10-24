@@ -540,6 +540,35 @@ export class SyncService {
   }
 
   /**
+   * Base automática del día: "total a entregar" del último cierre aprobado de la ruta (anterior a hoy).
+   * Se guarda en settings ('previous_closing') para que el cobrador la tenga también sin conexión.
+   * Si la consulta falla se conserva el valor que ya había en el celular.
+   */
+  private static async buildPreviousClosingSetting(routeId: string, today: string): Promise<{ key: string; value: any } | null> {
+    try {
+      const { data, error } = await supabase
+        .from('daily_closings')
+        .select('closing_date, actual_delivery, expected_delivery')
+        .eq('route_id', routeId)
+        .eq('is_closed', true)
+        .lt('closing_date', today)
+        .order('closing_date', { ascending: false })
+        .limit(1);
+      if (error) throw error;
+      const row = (data as any[])?.[0];
+      return {
+        key: 'previous_closing',
+        value: row
+          ? { date: String(row.closing_date).slice(0, 10), amount: Number(row.actual_delivery ?? row.expected_delivery ?? 0) }
+          : { date: null, amount: 0 },
+      };
+    } catch {
+      const prev = await db.settings.get('previous_closing');
+      return prev ? { key: 'previous_closing', value: prev.value } : null;
+    }
+  }
+
+  /**
    * Pulls the assigned routes, clients, loans, and installments for the current collector.
    *
    * Uses a SAFE MERGE strategy instead of clear+bulkAdd to prevent data loss:
@@ -632,6 +661,9 @@ export class SyncService {
         client_name: p.loan?.client?.full_name || null,
       }));
       localSettings.push({ key: paymentsTodaySettingKey(today), value: paymentsToday });
+
+      const previousClosing = await SyncService.buildPreviousClosingSetting(routeIds[0], today);
+      if (previousClosing) localSettings.push(previousClosing);
 
       // Préstamos que el cliente terminó HOY: pagados (CANCELADO + cobro de hoy) o refinanciados. El servidor ya no
       // los devuelve como ACTIVO y el pull los borra del celular, así que se guardan aparte para la
@@ -1022,6 +1054,8 @@ export class SyncService {
 
       if (routeIdData.length > 0) {
         const activeRouteId = routeIdData[0].route_id;
+        const previousClosing2 = await SyncService.buildPreviousClosingSetting(activeRouteId, today);
+        if (previousClosing2) localSettings.push(previousClosing2);
         const { data: closings } = await supabase
           .from('daily_closings')
           .select('is_closed')

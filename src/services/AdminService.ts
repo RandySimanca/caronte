@@ -893,6 +893,25 @@ export class AdminService {
   }
 
   /**
+   * Último cierre APROBADO de la ruta anterior a `dateStr`. Su "total a entregar" (actual_delivery) es la
+   * base automática del día siguiente. Devuelve null si la ruta aún no tiene cierres.
+   */
+  static async getPreviousClosing(routeId: string, dateStr: string): Promise<{ date: string; amount: number } | null> {
+    const { data, error } = await supabase
+      .from('daily_closings')
+      .select('closing_date, actual_delivery, expected_delivery')
+      .eq('route_id', routeId)
+      .eq('is_closed', true)
+      .lt('closing_date', dateStr)
+      .order('closing_date', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    const row = (data as any[])?.[0];
+    if (!row) return null;
+    return { date: String(row.closing_date).slice(0, 10), amount: Number(row.actual_delivery ?? row.expected_delivery ?? 0) };
+  }
+
+  /**
    * Devuelve el cierre (liquidación) guardado de una ruta para una fecha, o null si no existe.
    * Incluye la base entregada y el respaldo (snapshot) de lo aprobado.
    */

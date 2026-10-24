@@ -23,6 +23,8 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
   const [isApproving, setIsApproving] = useState(false);
   const [detail, setDetail] = useState<any>(null);
   const [baseAmount, setBaseAmount] = useState<number>(0);
+  // Fecha del cierre anterior de donde se tomó la base automática (null = base manual o sin cierre previo)
+  const [baseFromDate, setBaseFromDate] = useState<string | null>(null);
   // Cierre guardado en la base de datos para esta ruta y fecha (null si aún no existe)
   const [closing, setClosing] = useState<any | null>(null);
   // 'live': día abierto, se calcula en vivo | 'snapshot': liquidado con respaldo | 'legacy': liquidado sin respaldo
@@ -39,6 +41,7 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
       setIsLoading(true);
       setDetail(null);
       setBaseAmount(0);
+      setBaseFromDate(null);
       setClosing(null);
       setSource('live');
       try {
@@ -56,7 +59,21 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
           if (cancelled) return;
           setDetail(data);
           // La base ya guardada se precarga (también al reabrir un día)
-          setBaseAmount(Number(closingRow?.base_amount || 0));
+          if (closingRow) {
+            setBaseAmount(Number(closingRow.base_amount || 0));
+          } else {
+            // Día sin liquidación guardada: la base es el total a entregar del cierre anterior (editable por el admin)
+            try {
+              const prev = await AdminService.getPreviousClosing(route.id, dateStr);
+              if (cancelled) return;
+              if (prev && prev.amount > 0) {
+                setBaseAmount(prev.amount);
+                setBaseFromDate(prev.date);
+              }
+            } catch {
+              // Sin cierre anterior disponible: la base queda en 0 y se puede digitar
+            }
+          }
           setSource(closingRow?.is_closed ? 'legacy' : 'live');
         }
         setClosing(closingRow);
@@ -279,6 +296,11 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                     />
                   </div>
                 </div>
+                {baseFromDate && !isClosed && (
+                  <p className="text-xs text-slate-400 -mt-1 px-1">
+                    Tomada automáticamente del cierre del {baseFromDate}. Puedes ajustarla si hoy fue distinta.
+                  </p>
+                )}
 
                 <div className="flex justify-between items-center gap-3 pt-1">
                   <div className="flex items-center gap-2 text-emerald-600 font-bold text-sm sm:text-base min-w-0">
