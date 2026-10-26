@@ -176,8 +176,11 @@ export function AdminLayout() {
       </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-[calc(100vh-64px)] md:h-screen overflow-hidden bg-slate-50 md:rounded-l-2xl md:-ml-2 shadow-2xl relative z-20">
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+      {/* OJO: `z-20` solo en escritorio. En móvil un z-index aquí crea un contexto de apilamiento y los modales
+            (z-100+) quedaban POR DEBAJO de la barra inferior/superior (z-50), tapando sus botones. */}
+      <main className="flex-1 flex flex-col h-[calc(100dvh-64px)] md:h-screen overflow-hidden bg-slate-50 md:rounded-l-2xl md:-ml-2 shadow-2xl relative md:z-20">
+        {/* pb-24 en móvil: deja espacio para que la barra de navegación inferior no tape el final del contenido */}
+        <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-8">
           <Outlet />
         </div>
       </main>

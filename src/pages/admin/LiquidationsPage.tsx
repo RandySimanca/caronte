@@ -66,7 +66,7 @@ export function LiquidationsPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-sm">
         <div>
           <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
             <div className="w-12 h-12 rounded-xl bg-brand-100 text-brand-600 flex items-center justify-center">
@@ -89,9 +89,9 @@ export function LiquidationsPage() {
       </div>
 
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+        <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3">
           <h3 className="font-bold text-lg text-slate-800">Resumen del Día</h3>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
             <div className="flex items-center gap-2 text-sm text-slate-600">
               <CheckCircle className="w-4 h-4 text-emerald-500" />
               <span>Liquidado</span>
@@ -103,6 +103,41 @@ export function LiquidationsPage() {
           </div>
         </div>
 
+        {/* ===== Vista móvil: tarjetas (toda la información visible, sin scroll horizontal) ===== */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {isLoading ? (
+            <div className="py-12 text-center text-slate-400">
+              <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto mb-4"></div>
+              Cargando rutas...
+            </div>
+          ) : routes.length === 0 ? (
+            <p className="py-12 px-4 text-center text-slate-500 font-medium">No hay rutas activas para mostrar.</p>
+          ) : (
+            routes.map(route => (
+              <button
+                type="button"
+                key={route.id}
+                onClick={() => openLiquidationDetail(route)}
+                className="w-full text-left p-4 flex items-center gap-3 hover:bg-brand-50/50 active:bg-brand-50 transition-colors"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-slate-800 break-words">{route.ruta}</p>
+                  <p className="text-sm text-slate-500 font-medium break-words">{route.cobrador}</p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Recaudado: <span className="font-black text-slate-700">{route.estado === 'Liquidado' ? formatCurrency(route.aEntregar) : '---'}</span>
+                  </p>
+                </div>
+                <div className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold ${route.estado === 'Liquidado' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {route.estado === 'Liquidado' ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                  {route.estado}
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* ===== Vista escritorio: tabla (con scroll horizontal por si la pantalla es angosta) ===== */}
+        <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 text-sm">
@@ -152,6 +187,7 @@ export function LiquidationsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       <LiquidationDetailModal

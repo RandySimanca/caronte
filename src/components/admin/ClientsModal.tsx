@@ -124,17 +124,17 @@ function LoanDetail({ loan, onOpenPaymentCard, onAdminPayment }: { loan: any, on
         <p className="text-blue-500 font-bold text-xs uppercase mb-1">Deuda Actual</p>
         <p className={`font-black ${balance <= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{fmt(balance)}</p>
       </div>
-      <div className="col-span-2 sm:col-span-4 mt-2 flex justify-end gap-2">
+      <div className="col-span-2 sm:col-span-4 mt-2 flex flex-col sm:flex-row sm:justify-end gap-2">
         {!isPaidOff && <button
           onClick={(e) => { e.stopPropagation(); onAdminPayment(loan); }}
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors"
+          className="flex items-center justify-center gap-2 px-4 py-3 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors"
         >
           <DollarSign className="w-4 h-4" />
           Registrar Cobro (Oficina)
         </button>}
         <button
           onClick={(e) => { e.stopPropagation(); onOpenPaymentCard(loan.id); }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors"
+          className="flex items-center justify-center gap-2 px-4 py-3 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors"
         >
           <Calendar className="w-4 h-4" />
           Ver Tarjeta de Cobros
@@ -229,42 +229,40 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
 
   return (
     <>
-      <div className="fixed inset-0 z-[100] flex items-start justify-center pt-8 pb-4 px-4">
+      <div className="fixed inset-0 z-[100] flex items-end md:items-start justify-center md:pt-8 md:pb-4 md:px-4">
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
 
-        <div
-          className="relative bg-white rounded-3xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden"
-          style={{ maxHeight: 'calc(100vh - 4rem)' }}
-        >
+        <div className="relative bg-white rounded-t-3xl md:rounded-3xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden max-h-[94dvh] md:max-h-[calc(100vh-4rem)]">
           {/* Header */}
-          <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-brand-100 text-brand-600 flex items-center justify-center">
+          <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between gap-2 bg-slate-50 shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-brand-100 text-brand-600 flex items-center justify-center shrink-0">
                 <Users className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-xl font-black text-slate-800">Clientes</h3>
+                <h3 className="text-lg sm:text-xl font-black text-slate-800">Clientes</h3>
                 <p className="text-sm font-medium text-slate-500">
                   {isLoading ? 'Cargando...' : `${clients.length} resultado${clients.length !== 1 ? 's' : ''}`}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <button
                 onClick={() => { setCreateLoanClientId(undefined); setIsCreateLoanOpen(true); }}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-4 py-2 rounded-xl text-sm font-bold transition-colors whitespace-nowrap"
               >
                 <Plus className="w-4 h-4" />
-                Nuevo Préstamo
+                <span className="hidden sm:inline">Nuevo Préstamo</span>
+                <span className="sm:hidden">Nuevo</span>
               </button>
-              <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors ml-2">
+              <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors sm:ml-2">
                 <X className="w-6 h-6" />
               </button>
             </div>
           </div>
 
           {/* Filters */}
-          <div className="px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 shrink-0 bg-white items-stretch md:items-center">
+          <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 shrink-0 bg-white items-stretch md:items-center">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
@@ -340,8 +338,89 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
           </div>
 
           {/* Table */}
-          <div className="overflow-y-auto flex-1">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-y-auto flex-1 pb-safe">
+            {/* ===== Vista móvil: tarjetas (sin scroll horizontal; el detalle y los botones siempre quedan visibles) ===== */}
+            <div className="md:hidden divide-y divide-slate-100">
+              {isLoading ? (
+                <div className="py-16 text-center">
+                  <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto" />
+                </div>
+              ) : clients.length === 0 ? (
+                <p className="py-16 px-4 text-center text-slate-400 font-medium">No se encontraron clientes con los filtros actuales.</p>
+              ) : (
+                clients.map((c: any) => {
+                  const activeLoan = c.loans?.find((l: any) => l.status === 'ACTIVO') || c.loans?.[0] || null;
+                  const isExpanded = expandedId === c.id;
+                  const loanCount = c.loans?.length ?? 0;
+                  return (
+                    <div key={c.id} className={`px-4 py-3 ${isExpanded ? 'bg-blue-50/40' : ''}`}>
+                      <div className="flex items-start gap-2" onClick={() => activeLoan && toggleExpand(c.id)}>
+                        <div className="pt-0.5 shrink-0 text-slate-400">
+                          {activeLoan
+                            ? (isExpanded ? <ChevronUp className="w-5 h-5 text-blue-500" /> : <ChevronDown className="w-5 h-5" />)
+                            : <span className="block w-5" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-slate-800 break-words">{c.full_name}</p>
+                          <p className="text-xs text-slate-500 mt-0.5 break-all">
+                            <span className="font-mono">{c.document_id}</span>{c.phone ? ` · ${c.phone}` : ''}
+                          </p>
+                        </div>
+                        <div className="flex items-center shrink-0" onClick={e => e.stopPropagation()}>
+                          <button
+                            onClick={() => setEditClient(c)}
+                            className="p-2.5 text-slate-400 hover:text-blue-600 rounded-lg"
+                            title="Editar cliente"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteClient(c.id, e)}
+                            className="p-2.5 text-rose-500 hover:bg-rose-50 rounded-lg"
+                            title="Eliminar Cliente"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 pl-7 flex flex-wrap items-center gap-2 text-xs" onClick={() => activeLoan && toggleExpand(c.id)}>
+                        <span className={`px-2.5 py-1 rounded-lg font-bold ${statusColors[c.status] || 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-bold" title="Préstamos que ha tenido el cliente, incluyendo el actual">
+                          {loanCount} préstamo{loanCount !== 1 ? 's' : ''}
+                        </span>
+                        {activeLoan ? (
+                          <span className="flex items-center gap-0.5 font-black text-slate-800 text-sm">
+                            <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
+                            {formatCurrency(activeLoan.amount_requested)}
+                          </span>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setCreateLoanClientId(c.id); setIsCreateLoanOpen(true); }}
+                            className="text-brand-600 bg-brand-50 hover:bg-brand-100 px-3 py-1.5 rounded-lg font-bold border border-brand-200"
+                          >
+                            Asignar préstamo
+                          </button>
+                        )}
+                        <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                          {c.photo_face_url && <PhotoViewer url={c.photo_face_url} label={`Foto persona — ${c.full_name}`} />}
+                          {c.photo_doc_url && <PhotoViewer url={c.photo_doc_url} label={`Foto documento — ${c.full_name}`} />}
+                        </div>
+                      </div>
+
+                      {isExpanded && activeLoan && (
+                        <div className="mt-3">
+                          <LoanDetail loan={activeLoan} onOpenPaymentCard={setPaymentCardLoanId} onAdminPayment={setAdminPaymentLoan} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* ===== Vista escritorio: tabla ===== */}
+            <table className="hidden md:table w-full text-left border-collapse">
               <thead className="sticky top-0 bg-slate-50 z-10">
                 <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wider">
                   <th className="py-3 px-4 font-semibold w-8"></th>
@@ -359,13 +438,13 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={9} className="py-16 text-center">
+                    <td colSpan={10} className="py-16 text-center">
                       <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto" />
                     </td>
                   </tr>
                 ) : clients.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-16 text-center text-slate-400 font-medium">
+                    <td colSpan={10} className="py-16 text-center text-slate-400 font-medium">
                       No se encontraron clientes con los filtros actuales.
                     </td>
                   </tr>
@@ -482,7 +561,7 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
                         {/* Expanded loan detail row */}
                         {isExpanded && activeLoan && (
                           <tr key={`${c.id}-detail`} className="bg-blue-50/40">
-                            <td colSpan={9} className="px-6 pb-4 pt-1">
+                            <td colSpan={10} className="px-6 pb-4 pt-1">
                               <LoanDetail loan={activeLoan} onOpenPaymentCard={setPaymentCardLoanId} onAdminPayment={setAdminPaymentLoan} />
                             </td>
                           </tr>

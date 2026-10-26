@@ -19,7 +19,7 @@ type TabType = 'RESUMEN' | 'CARTERA' | 'LIBRO_AUXILIAR';
 
 export function ReportsPage() {
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('RESUMEN');
+  const [activeTab, setActiveTab] = useState<TabType>('CARTERA');
   
   const [data, setData] = useState<{ payments: any[], expenses: any[], loans: any[], assignments: any[] }>({ payments: [], expenses: [], loans: [], assignments: [] });
   const [portfolioData, setPortfolioData] = useState<{ loans: any[], arrearsInstallments: any[] }>({ loans: [], arrearsInstallments: [] });
@@ -327,19 +327,10 @@ export function ReportsPage() {
 
       {/* Tabs & Export Actions */}
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-slate-200 pb-4">
-        <div className="flex bg-slate-100 p-1 rounded-xl">
-          <button
-            onClick={() => setActiveTab('RESUMEN')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-              activeTab === 'RESUMEN' ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4" />
-            Resumen Período
-          </button>
+        <div className="flex bg-slate-100 p-1 rounded-xl max-w-full overflow-x-auto">
           <button
             onClick={() => setActiveTab('CARTERA')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+            className={`flex items-center gap-2 px-4 py-2 whitespace-nowrap shrink-0 rounded-lg text-sm font-bold transition-all ${
               activeTab === 'CARTERA' ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -348,12 +339,21 @@ export function ReportsPage() {
           </button>
           <button
             onClick={() => setActiveTab('LIBRO_AUXILIAR')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+            className={`flex items-center gap-2 px-4 py-2 whitespace-nowrap shrink-0 rounded-lg text-sm font-bold transition-all ${
               activeTab === 'LIBRO_AUXILIAR' ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
             <BookOpen className="w-4 h-4" />
             Libro Auxiliar
+          </button>
+          <button
+            onClick={() => setActiveTab('RESUMEN')}
+            className={`flex items-center gap-2 px-4 py-2 whitespace-nowrap shrink-0 rounded-lg text-sm font-bold transition-all ${
+              activeTab === 'RESUMEN' ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            Resumen Período
           </button>
         </div>
 
