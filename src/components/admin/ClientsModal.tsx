@@ -348,7 +348,7 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
                   <th className="py-3 px-4 font-semibold">Nombre</th>
                   <th className="py-3 px-4 font-semibold">Cédula</th>
                   <th className="py-3 px-4 font-semibold">Teléfono</th>
-                  <th className="py-3 px-4 font-semibold">Ruta</th>
+                  <th className="py-3 px-4 font-semibold text-center" title="Total de préstamos que ha tenido el cliente, incluyendo el actual">Nº Préstamos</th>
                   <th className="py-3 px-4 font-semibold text-right">Préstamo</th>
                   <th className="py-3 px-4 font-semibold text-center">Fotos</th>
                   <th className="py-3 px-4 font-semibold">Estado</th>
@@ -400,7 +400,15 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
                           </td>
                           <td className="py-3 px-4 text-slate-600 font-mono text-sm">{c.document_id}</td>
                           <td className="py-3 px-4 text-slate-600">{c.phone || '—'}</td>
-                          <td className="py-3 px-4 text-slate-600">{(c.route as any)?.name || '—'}</td>
+                          {/* Total de préstamos del cliente (históricos + actual). Cada préstamo nuevo o refinanciación es una fila en `loans`. */}
+                          <td className="py-3 px-4 text-center">
+                            <span
+                              className="inline-flex items-center justify-center min-w-[2rem] px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-sm font-black"
+                              title={`${c.loans?.length ?? 0} préstamo${(c.loans?.length ?? 0) !== 1 ? 's' : ''} en total`}
+                            >
+                              {c.loans?.length ?? 0}
+                            </span>
+                          </td>
 
                           {/* Loan amount */}
                           <td className="py-3 px-4 text-right">
