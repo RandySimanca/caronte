@@ -85,7 +85,7 @@ export function UsersPage() {
           <p className="text-sm text-slate-500">Administra cobradores, supervisores y otros roles</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={() => setShowInactive(!showInactive)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold transition-all ${
@@ -122,7 +122,91 @@ export function UsersPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* ===== Vista móvil: tarjetas (sin scroll horizontal) ===== */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {isLoading ? (
+            <div className="p-8 text-center text-slate-500">
+              <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+              Cargando usuarios...
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <p className="p-8 text-center text-slate-500">No se encontraron usuarios.</p>
+          ) : (
+            filteredUsers.map((user) => {
+              const canDelete = user.id !== currentUserId &&
+                (currentUserRole === 'SUPER_ADMIN' || user.roles?.name !== 'ADMINISTRADOR');
+              return (
+                <div key={user.id} className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 shrink-0 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-bold">
+                      {user.full_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-slate-800 break-words">{user.full_name}</p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wide
+                          ${user.roles?.name === 'ADMINISTRADOR' ? 'bg-purple-100 text-purple-700' :
+                            user.roles?.name === 'COBRADOR' ? 'bg-blue-100 text-blue-700' :
+                            'bg-slate-100 text-slate-700'}`}
+                        >
+                          {user.roles?.name || 'SIN ROL'}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-2 h-2 rounded-full ${user.active ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-red-500'}`} />
+                          <span className={`text-xs font-semibold ${user.active ? 'text-emerald-700' : 'text-red-700'}`}>
+                            {user.active ? 'Activo' : 'Inactivo'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                    <div className="min-w-0">
+                      <dt className="text-xs font-semibold uppercase tracking-wider text-slate-400">Contacto</dt>
+                      <dd className="text-slate-600 break-all">{user.phone || '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wider text-slate-400">Registro</dt>
+                      <dd className="text-slate-600">{format(new Date(user.created_at), 'dd MMM yyyy', { locale: es })}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {user.roles?.name === 'COBRADOR' && (
+                      <button
+                        onClick={() => setPayrollModalUser(user)}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 bg-brand-50 text-brand-700 hover:bg-brand-100 rounded-lg text-sm font-bold transition-colors"
+                      >
+                        <Calculator className="w-4 h-4" />
+                        Nómina
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleEditUser(user)}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg text-sm font-bold transition-colors"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      Editar
+                    </button>
+                    {canDelete && (
+                      <button
+                        onClick={() => handleDeleteUser(user)}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg text-sm font-bold transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Eliminar
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* ===== Vista escritorio: tabla ===== */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-white border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -137,7 +221,7 @@ export function UsersPage() {
             <tbody className="divide-y divide-slate-50">
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-500">
+                  <td colSpan={6} className="p-8 text-center text-slate-500">
                     <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
                     Cargando usuarios...
                   </td>
