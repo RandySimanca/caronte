@@ -270,15 +270,23 @@ export function AdminDashboard() {
       ? routeStates
       : routeStates.filter(r => r.id === selectedRoute);
 
-  // Préstamos terminados de la ruta elegida en el dashboard ('' o 'all' = todas)
-  const completedLoansInRoute = isFiltered
-    ? completedLoans.filter((l: any) => l.route_id === selectedRoute)
-    : completedLoans;
+  // Mientras no se haya escogido una ruta ('' = "Seleccione una ruta") NO se muestra información de
+  // préstamos terminados ni vencidos (igual que el resto de tarjetas, que quedan en cero).
+  const noRouteSelected = selectedRoute === '';
 
-  // Préstamos vencidos de la ruta elegida en el dashboard ('' o 'all' = todas)
-  const expiredLoansInRoute = isFiltered
-    ? expiredLoans.filter(l => l.routeId === selectedRoute)
-    : expiredLoans;
+  // Préstamos terminados de la ruta elegida en el dashboard ('all' = todas)
+  const completedLoansInRoute = noRouteSelected
+    ? []
+    : isFiltered
+      ? completedLoans.filter((l: any) => l.route_id === selectedRoute)
+      : completedLoans;
+
+  // Préstamos vencidos de la ruta elegida en el dashboard ('all' = todas)
+  const expiredLoansInRoute = noRouteSelected
+    ? []
+    : isFiltered
+      ? expiredLoans.filter(l => l.routeId === selectedRoute)
+      : expiredLoans;
 
   const routeSubtitle = selectedRoute === ''
     ? 'Seleccione una ruta'
@@ -602,14 +610,14 @@ export function AdminDashboard() {
         {/* 2. Préstamos terminados (debajo del Sorteo de Boletas) */}
         <button
           type="button"
-          onClick={() => setCompletedLoansOpen(true)}
+          onClick={() => (noRouteSelected ? toast('Seleccione una ruta para ver los préstamos terminados') : setCompletedLoansOpen(true))}
           className="bg-white rounded-3xl border border-emerald-100 shadow-sm p-6 hover:shadow-md hover:border-emerald-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
         >
           <div className="flex items-start justify-between w-full mb-6">
             <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center relative shadow-inner">
               <CheckCircle className="w-7 h-7 text-emerald-600" />
               <span className={`absolute -top-2 -right-2 min-w-7 h-7 px-1.5 bg-emerald-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md ${completedLoansLoading ? 'opacity-50' : ''}`}>
-                {completedLoansLoading ? '…' : completedLoansInRoute.length}
+                {noRouteSelected ? '—' : completedLoansLoading ? '…' : completedLoansInRoute.length}
               </span>
             </div>
             <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
@@ -619,7 +627,7 @@ export function AdminDashboard() {
           <div>
             <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Préstamos Terminados Hoy</h3>
             <p className="text-sm text-slate-500 leading-relaxed">
-              Clientes que terminaron de pagar hoy · {selectedRoute === '' ? 'Todas las rutas' : routeSubtitle}
+              Clientes que terminaron de pagar hoy · {routeSubtitle}
             </p>
             <p className="text-xs text-emerald-600 font-semibold mt-1.5">
               Clic para ver detalle o buscar historial
@@ -630,14 +638,14 @@ export function AdminDashboard() {
         {/* 2b. Préstamos vencidos: siguen activos y ya pasó su fecha final */}
         <button
           type="button"
-          onClick={() => setExpiredLoansOpen(true)}
+          onClick={() => (noRouteSelected ? toast('Seleccione una ruta para ver los préstamos vencidos') : setExpiredLoansOpen(true))}
           className="bg-white rounded-3xl border border-rose-100 shadow-sm p-6 hover:shadow-md hover:border-rose-300 transition-all text-left flex flex-col justify-between group h-full relative overflow-hidden"
         >
           <div className="flex items-start justify-between w-full mb-6">
             <div className="w-14 h-14 rounded-2xl bg-rose-50 flex items-center justify-center relative shadow-inner">
               <AlertTriangle className="w-7 h-7 text-rose-600" />
               <span className={`absolute -top-2 -right-2 min-w-7 h-7 px-1.5 bg-rose-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md ${expiredLoansLoading ? 'opacity-50' : ''}`}>
-                {expiredLoansLoading ? '…' : expiredLoansInRoute.length}
+                {noRouteSelected ? '—' : expiredLoansLoading ? '…' : expiredLoansInRoute.length}
               </span>
             </div>
             <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-rose-50 transition-colors">
@@ -647,7 +655,7 @@ export function AdminDashboard() {
           <div>
             <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Préstamos Vencidos</h3>
             <p className="text-sm text-slate-500 leading-relaxed">
-              Clientes que ya pasaron su fecha final y siguen debiendo · {selectedRoute === '' ? 'Todas las rutas' : routeSubtitle}
+              Clientes que ya pasaron su fecha final y siguen debiendo · {routeSubtitle}
             </p>
             <p className="text-xs text-rose-600 font-semibold mt-1.5">
               Clic para ver el listado
@@ -967,7 +975,7 @@ export function AdminDashboard() {
       <CompletedLoansModal
         isOpen={completedLoansOpen}
         onClose={() => setCompletedLoansOpen(false)}
-        loans={completedLoans}
+        loans={noRouteSelected ? [] : completedLoans}
         routes={routeStates}
         initialRouteId={selectedRoute || 'all'}
         isLoading={completedLoansLoading}
