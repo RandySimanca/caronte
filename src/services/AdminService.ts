@@ -2761,15 +2761,47 @@ export class AdminService {
 
     let capital = 0;
     let collected = 0;
-    let count = 0;
+    const details: {
+      id: string; clientName: string; documentId: string; phone: string | null; routeId: string | null;
+      amountRequested: number; amountDelivered: number; collected: number; profit: number;
+      disbursementDate: string | null; completedOn: string | null; daysToFinish: number | null;
+    }[] = [];
     for (const l of completed as any[]) {
       if (lotteryLoanIds.has(l.id)) continue; // ganado con boleta → no genera ganancia
-      count += 1;
-      capital += Number(l.amount_requested || 0);
-      collected += (paidByLoan.get(l.id) || 0) + (prepaidByLoan.get(l.id) || 0);
+      const requested = Number(l.amount_requested || 0);
+      const got = (paidByLoan.get(l.id) || 0) + (prepaidByLoan.get(l.id) || 0);
+      capital += requested;
+      collected += got;
+
+      const client = Array.isArray(l.client) ? l.client[0] : l.client;
+      const disbursementDate: string | null = l.disbursement_date ? String(l.disbursement_date).slice(0, 10) : null;
+      const completedOn: string | null = l.completed_on || null;
+      details.push({
+        id: l.id,
+        clientName: client?.full_name || 'Sin nombre',
+        documentId: client?.document_id || '',
+        phone: client?.phone || null,
+        routeId: l.route_id || null,
+        amountRequested: requested,
+        amountDelivered: Number(l.amount_delivered || 0),
+        collected: got,
+        profit: got - requested,
+        disbursementDate,
+        completedOn,
+        daysToFinish: disbursementDate && completedOn
+          ? Math.round((Date.parse(completedOn) - Date.parse(disbursementDate)) / 86400000)
+          : null,
+      });
     }
 
-    return { count, capital, collected, profit: collected - capital, excludedLottery: lotteryLoanIds.size };
+    return {
+      count: details.length,
+      capital,
+      collected,
+      profit: collected - capital,
+      excludedLottery: lotteryLoanIds.size,
+      loans: details, // ya viene del más reciente al más antiguo (por fecha de cierre)
+    };
   }
 
 }

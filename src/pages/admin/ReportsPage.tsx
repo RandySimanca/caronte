@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { BarChart3, Calendar, Filter, TrendingDown, DollarSign, Activity, FileDown, FileSpreadsheet, Briefcase, BookOpen, Download, UserCheck, Car, Wallet, CheckCheck } from 'lucide-react';
+import { BarChart3, Calendar, Filter, TrendingDown, DollarSign, Activity, FileDown, FileSpreadsheet, Briefcase, BookOpen, Download, UserCheck, Car, Wallet, CheckCheck, Users } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import toast from 'react-hot-toast';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
@@ -10,6 +10,7 @@ import {
 import { pdf } from '@react-pdf/renderer';
 import { PeriodReportPdf } from '@/components/reports/pdf/templates/PeriodReportPdf';
 import { PortfolioReportPdf } from '@/components/reports/pdf/templates/PortfolioReportPdf';
+import { CompletedLoansProfitModal, type CompletedProfitLoan } from '@/components/admin/CompletedLoansProfitModal';
 import { LedgerReportPdf } from '@/components/reports/pdf/templates/LedgerReportPdf';
 import { downloadExcel } from '@/components/reports/excel/ExcelExporter';
 
@@ -25,7 +26,8 @@ export function ReportsPage() {
   const [portfolioData, setPortfolioData] = useState<{ loans: any[], arrearsInstallments: any[] }>({ loans: [], arrearsInstallments: [] });
   const [ledgerData, setLedgerData] = useState<any[]>([]);
   // Ganancias reales: salen de los préstamos TERMINADOS dentro del período seleccionado
-  const [completedProfit, setCompletedProfit] = useState<{ count: number; capital: number; collected: number; profit: number; excludedLottery: number }>({ count: 0, capital: 0, collected: 0, profit: 0, excludedLottery: 0 });
+  const [completedProfit, setCompletedProfit] = useState<{ count: number; capital: number; collected: number; profit: number; excludedLottery: number; loans: CompletedProfitLoan[] }>({ count: 0, capital: 0, collected: 0, profit: 0, excludedLottery: 0, loans: [] });
+  const [isProfitModalOpen, setIsProfitModalOpen] = useState(false);
   const [pendingCollection, setPendingCollection] = useState<{ totalScheduled: number; totalPending: number; totalPaid: number; installmentCount: number; pendingCount: number }>({ totalScheduled: 0, totalPending: 0, totalPaid: 0, installmentCount: 0, pendingCount: 0 });
   
   const [routeStates, setRouteStates] = useState<any[]>([]);
@@ -62,7 +64,7 @@ export function ReportsPage() {
       setPortfolioData(cartera);
       setLedgerData(ledger);
       setPendingCollection(pending);
-      setCompletedProfit(profit ?? { count: 0, capital: 0, collected: 0, profit: 0, excludedLottery: 0 });
+      setCompletedProfit(profit ?? { count: 0, capital: 0, collected: 0, profit: 0, excludedLottery: 0, loans: [] });
     } catch (error: any) {
       toast.error('Error al cargar datos del reporte');
     } finally {
@@ -218,7 +220,7 @@ export function ReportsPage() {
         blob = await pdf(<PeriodReportPdf dateRange={dateRangeStr} routeName={getRouteName()} stats={{ totalRecaudo, totalGastos, totalPrestado, gananciaProyectada }} dailyRecaudoData={dailyRecaudoData} expensesByCategory={expensesByCategory} />).toBlob();
         filename = `Resumen_${getRouteName()}_${startDate}_${endDate}.pdf`;
       } else if (activeTab === 'CARTERA') {
-        blob = await pdf(<PortfolioReportPdf routeName={getRouteName()} stats={portfolioStats} realProfit={{ ...completedProfit, period: dateRangeStr }} arrearsByRange={arrearsByRange} topDefaulters={topDefaulters} />).toBlob();
+        blob = await pdf(<PortfolioReportPdf routeName={getRouteName()} stats={portfolioStats} realProfit={{ count: completedProfit.count, capital: completedProfit.capital, collected: completedProfit.collected, profit: completedProfit.profit, period: dateRangeStr }} arrearsByRange={arrearsByRange} topDefaulters={topDefaulters} />).toBlob();
         filename = `Cartera_${getRouteName()}.pdf`;
       } else {
         blob = await pdf(<LedgerReportPdf dateRange={dateRangeStr} routeName={getRouteName()} transactions={ledgerData} />).toBlob();
@@ -259,6 +261,18 @@ export function ReportsPage() {
             { Indicador: 'Recaudado en Préstamos Terminados', Valor: completedProfit.collected },
             { Indicador: 'Ganancia Real (Préstamos Terminados)', Valor: completedProfit.profit },
           ]},
+          { sheetName: 'Ganancias por Cliente', data: completedProfit.loans.map(l => ({
+            Cliente: l.clientName,
+            Cedula: l.documentId,
+            Telefono: l.phone || '',
+            Ruta: routeStates.find(r => r.id === l.routeId)?.ruta || '',
+            Desembolso: l.disbursementDate || '',
+            Termino: l.completedOn || '',
+            Dias: l.daysToFinish ?? '',
+            Prestado: l.amountRequested,
+            Recaudado: l.collected,
+            Ganado: l.profit,
+          })) },
           { sheetName: 'Mora por Rangos', data: arrearsByRange.map(r => ({ Rango: r.range, Prestamos: r.count, Monto: r.amount })) },
           { sheetName: 'Top Morosos', data: topDefaulters.map(d => ({ Cliente: d.clientName, Telefono: d.phone, DiasAtraso: d.daysLate, SaldoMora: d.arrearsAmount })) }
         ], `Cartera_${getRouteName()}`);
@@ -644,18 +658,15 @@ export function ReportsPage() {
               </div>
 
               {/* Ganancias reales: salen de los préstamos terminados (pagados) en el período */}
-              <div className="bg-gradient-to-br from-emerald-50 to-white p-5 sm:p-6 rounded-2xl border border-emerald-200 shadow-sm">
-                <div className="flex flex-col lg:flex-row lg:items-center gap-5 lg:gap-8">
-                  <div className="lg:w-2/5">
-                    <div className="flex items-center gap-2 text-emerald-700 font-bold mb-1">
+              <div className="bg-gradient-to-br from-emerald-50 to-white p-5 sm:p-6 rounded-2xl border border-emerald-200 shadow-sm space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-emerald-700 font-bold">
                       <CheckCheck className="w-5 h-5 shrink-0" />
                       Ganancias Reales (Préstamos Terminados)
                     </div>
-                    <div className={`text-3xl sm:text-4xl font-black break-words ${completedProfit.profit < 0 ? 'text-red-700' : 'text-emerald-800'}`}>
-                      {formatCurrency(completedProfit.profit)}
-                    </div>
-                    <p className="text-xs text-emerald-700/80 mt-2">
-                      Préstamos pagados que terminaron del {dateRangeStr}. Es lo recaudado menos el capital prestado.
+                    <p className="text-xs text-emerald-700/80 mt-1">
+                      Préstamos pagados que terminaron del {dateRangeStr}. Ganancia = lo recaudado − lo prestado.
                     </p>
                     {completedProfit.excludedLottery > 0 && (
                       <p className="text-xs text-slate-500 mt-1">
@@ -663,26 +674,36 @@ export function ReportsPage() {
                       </p>
                     )}
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 flex-1">
-                    <div className="bg-white/80 border border-emerald-100 rounded-xl p-3">
-                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Terminados</div>
-                      <div className="text-xl font-black text-slate-800 mt-1">{completedProfit.count}</div>
-                    </div>
-                    <div className="bg-white/80 border border-emerald-100 rounded-xl p-3">
-                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Capital prestado</div>
-                      <div className="text-lg font-black text-slate-800 mt-1 break-words">{formatCurrency(completedProfit.capital)}</div>
-                    </div>
-                    <div className="bg-white/80 border border-emerald-100 rounded-xl p-3">
-                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Recaudado</div>
-                      <div className="text-lg font-black text-slate-800 mt-1 break-words">{formatCurrency(completedProfit.collected)}</div>
-                    </div>
-                    <div className="bg-white/80 border border-emerald-100 rounded-xl p-3">
-                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Margen</div>
-                      <div className="text-xl font-black text-slate-800 mt-1">
-                        {completedProfit.capital > 0 ? `${((completedProfit.profit / completedProfit.capital) * 100).toFixed(1)}%` : '—'}
-                      </div>
-                    </div>
+                  <button
+                    onClick={() => setIsProfitModalOpen(true)}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors shrink-0"
+                  >
+                    <Users className="w-4 h-4" />
+                    Ver clientes ({completedProfit.count})
+                  </button>
+                </div>
+
+                {/* Recaudado − Prestado = Ganado */}
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-2 sm:gap-3">
+                  <div className="bg-white border border-emerald-100 rounded-xl p-4 min-w-0">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Recaudado</div>
+                    <div className="text-2xl font-black text-slate-800 mt-1 break-words">{formatCurrency(completedProfit.collected)}</div>
                   </div>
+                  <div className="text-center text-2xl font-black text-slate-400">−</div>
+                  <div className="bg-white border border-emerald-100 rounded-xl p-4 min-w-0">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Prestado</div>
+                    <div className="text-2xl font-black text-slate-800 mt-1 break-words">{formatCurrency(completedProfit.capital)}</div>
+                  </div>
+                  <div className="text-center text-2xl font-black text-slate-400">=</div>
+                  <div className={`rounded-xl p-4 min-w-0 border ${completedProfit.profit < 0 ? 'bg-red-50 border-red-200' : 'bg-emerald-600 border-emerald-600'}`}>
+                    <div className={`text-xs font-bold uppercase tracking-wide ${completedProfit.profit < 0 ? 'text-red-600' : 'text-emerald-100'}`}>Ganado</div>
+                    <div className={`text-2xl sm:text-3xl font-black mt-1 break-words ${completedProfit.profit < 0 ? 'text-red-700' : 'text-white'}`}>{formatCurrency(completedProfit.profit)}</div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
+                  <span>Préstamos terminados: <b className="text-slate-800">{completedProfit.count}</b></span>
+                  <span>Margen: <b className="text-slate-800">{completedProfit.capital > 0 ? `${((completedProfit.profit / completedProfit.capital) * 100).toFixed(1)}%` : '—'}</b></span>
                 </div>
               </div>
 
@@ -791,6 +812,15 @@ export function ReportsPage() {
           )}
         </>
       )}
+
+      <CompletedLoansProfitModal
+        isOpen={isProfitModalOpen}
+        onClose={() => setIsProfitModalOpen(false)}
+        loans={completedProfit.loans}
+        routes={routeStates}
+        periodLabel={dateRangeStr}
+        formatCurrency={formatCurrency}
+      />
     </div>
   );
 }
