@@ -2704,6 +2704,74 @@ export class AdminService {
       .sort((a, b) => (b.completed_at || '').localeCompare(a.completed_at || ''));
   }
 
+  /**
+   * GANANCIAS REALES de los préstamos TERMINADOS en un rango de fechas (reporte Estado Cartera).
+   *
+   * Solo cuenta préstamos CANCELADO (pagados), con el mismo criterio de "terminado" del modal de
+   * Préstamos Terminados: la fecha real de cierre es la del último cobro.
+   *
+   * Ganancia real de un préstamo = lo que realmente entró (cobros + domingos prepagados al desembolsar)
+   *                                − capital prestado (amount_requested).
+   *  - Pagado completo → equivale al interés del préstamo.
+   *
+   * NO entran en el cálculo (no generan ganancia):
+   *  - Los préstamos ganados con BOLETA del sorteo: el sistema los salda registrando un "pago" por todo el
+   *    saldo (dispositivo SERVER_LOTTERY) que no es dinero cobrado, así que se excluyen del todo
+   *    (ni cuentan como terminados, ni su capital, ni su recaudo). Se informan en `excludedLottery`.
+   *  - La boleta (receipt_fee) ni los REFINANCIADOS (su saldo pasa al préstamo nuevo).
+   */
+  static async getCompletedLoansProfit(startDate: string, endDate: string, routeId?: string) {
+    const completed = (await AdminService.getCompletedLoans(routeId, false, undefined, startDate, endDate))
+      .filter((l: any) => l.status === 'CANCELADO');
+
+    const ids: string[] = completed.map((l: any) => l.id);
+    const paidByLoan = new Map<string, number>();
+    const prepaidByLoan = new Map<string, number>();
+    const lotteryLoanIds = new Set<string>();
+
+    const chunkSize = 50;
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const part = ids.slice(i, i + chunkSize);
+
+      const { data: loanRows, error: loanErr } = await supabase
+        .from('loans').select('id, sundays_prepaid_amount').in('id', part);
+      if (loanErr) throw loanErr;
+      for (const r of (loanRows || []) as any[]) prepaidByLoan.set(r.id, Number(r.sundays_prepaid_amount || 0));
+
+      // Préstamos saldados por boleta ganadora del sorteo
+      const { data: winners, error: winErr } = await supabase
+        .from('lottery_winners').select('loan_id').in('loan_id', part);
+      if (winErr) throw winErr;
+      for (const w of (winners || []) as any[]) lotteryLoanIds.add(w.loan_id);
+
+      // Cobros paginados para no toparse con el límite de filas por consulta
+      for (let from = 0; ; from += 1000) {
+        const { data: pays, error: payErr } = await supabase
+          .from('payments').select('loan_id, total_amount, device_id')
+          .in('loan_id', part).order('id').range(from, from + 999);
+        if (payErr) throw payErr;
+        for (const p of (pays || []) as any[]) {
+          // Respaldo: el "pago" automático del premio de la boleta también marca el préstamo como de sorteo
+          if (p.device_id === 'SERVER_LOTTERY') lotteryLoanIds.add(p.loan_id);
+          paidByLoan.set(p.loan_id, (paidByLoan.get(p.loan_id) || 0) + Number(p.total_amount || 0));
+        }
+        if (!pays || pays.length < 1000) break;
+      }
+    }
+
+    let capital = 0;
+    let collected = 0;
+    let count = 0;
+    for (const l of completed as any[]) {
+      if (lotteryLoanIds.has(l.id)) continue; // ganado con boleta → no genera ganancia
+      count += 1;
+      capital += Number(l.amount_requested || 0);
+      collected += (paidByLoan.get(l.id) || 0) + (prepaidByLoan.get(l.id) || 0);
+    }
+
+    return { count, capital, collected, profit: collected - capital, excludedLottery: lotteryLoanIds.size };
+  }
+
 }
 
 

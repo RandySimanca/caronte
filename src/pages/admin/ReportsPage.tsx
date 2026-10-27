@@ -24,6 +24,8 @@ export function ReportsPage() {
   const [data, setData] = useState<{ payments: any[], expenses: any[], loans: any[], assignments: any[] }>({ payments: [], expenses: [], loans: [], assignments: [] });
   const [portfolioData, setPortfolioData] = useState<{ loans: any[], arrearsInstallments: any[] }>({ loans: [], arrearsInstallments: [] });
   const [ledgerData, setLedgerData] = useState<any[]>([]);
+  // Ganancias reales: salen de los préstamos TERMINADOS dentro del período seleccionado
+  const [completedProfit, setCompletedProfit] = useState<{ count: number; capital: number; collected: number; profit: number; excludedLottery: number }>({ count: 0, capital: 0, collected: 0, profit: 0, excludedLottery: 0 });
   const [pendingCollection, setPendingCollection] = useState<{ totalScheduled: number; totalPending: number; totalPaid: number; installmentCount: number; pendingCount: number }>({ totalScheduled: 0, totalPending: 0, totalPaid: 0, installmentCount: 0, pendingCount: 0 });
   
   const [routeStates, setRouteStates] = useState<any[]>([]);
@@ -48,16 +50,19 @@ export function ReportsPage() {
   const fetchReports = async () => {
     setIsLoading(true);
     try {
-      const [resumen, cartera, ledger, pending] = await Promise.all([
+      const [resumen, cartera, ledger, pending, profit] = await Promise.all([
         AdminService.getReportsData(startDate, endDate, selectedRoute),
         AdminService.getPortfolioState(selectedRoute),
         AdminService.getLedgerTransactions(startDate, endDate, selectedRoute),
-        AdminService.getPendingCollectionAmount(startDate, endDate, selectedRoute)
+        AdminService.getPendingCollectionAmount(startDate, endDate, selectedRoute),
+        // Si falla no tumba el resto del reporte
+        AdminService.getCompletedLoansProfit(startDate, endDate, selectedRoute).catch(() => null)
       ]);
       setData(resumen);
       setPortfolioData(cartera);
       setLedgerData(ledger);
       setPendingCollection(pending);
+      setCompletedProfit(profit ?? { count: 0, capital: 0, collected: 0, profit: 0, excludedLottery: 0 });
     } catch (error: any) {
       toast.error('Error al cargar datos del reporte');
     } finally {
@@ -213,7 +218,7 @@ export function ReportsPage() {
         blob = await pdf(<PeriodReportPdf dateRange={dateRangeStr} routeName={getRouteName()} stats={{ totalRecaudo, totalGastos, totalPrestado, gananciaProyectada }} dailyRecaudoData={dailyRecaudoData} expensesByCategory={expensesByCategory} />).toBlob();
         filename = `Resumen_${getRouteName()}_${startDate}_${endDate}.pdf`;
       } else if (activeTab === 'CARTERA') {
-        blob = await pdf(<PortfolioReportPdf routeName={getRouteName()} stats={portfolioStats} arrearsByRange={arrearsByRange} topDefaulters={topDefaulters} />).toBlob();
+        blob = await pdf(<PortfolioReportPdf routeName={getRouteName()} stats={portfolioStats} realProfit={{ ...completedProfit, period: dateRangeStr }} arrearsByRange={arrearsByRange} topDefaulters={topDefaulters} />).toBlob();
         filename = `Cartera_${getRouteName()}.pdf`;
       } else {
         blob = await pdf(<LedgerReportPdf dateRange={dateRangeStr} routeName={getRouteName()} transactions={ledgerData} />).toBlob();
@@ -249,6 +254,10 @@ export function ReportsPage() {
             { Indicador: 'Capital Recuperado', Valor: portfolioStats.capitalRecuperado },
             { Indicador: 'Cartera Activa', Valor: portfolioStats.carteraActiva },
             { Indicador: 'Cartera Vencida', Valor: portfolioStats.carteraVencida },
+            { Indicador: `Préstamos Terminados (${startDate} a ${endDate})`, Valor: completedProfit.count },
+            { Indicador: 'Capital de Préstamos Terminados', Valor: completedProfit.capital },
+            { Indicador: 'Recaudado en Préstamos Terminados', Valor: completedProfit.collected },
+            { Indicador: 'Ganancia Real (Préstamos Terminados)', Valor: completedProfit.profit },
           ]},
           { sheetName: 'Mora por Rangos', data: arrearsByRange.map(r => ({ Rango: r.range, Prestamos: r.count, Monto: r.amount })) },
           { sheetName: 'Top Morosos', data: topDefaulters.map(d => ({ Cliente: d.clientName, Telefono: d.phone, DiasAtraso: d.daysLate, SaldoMora: d.arrearsAmount })) }
@@ -631,6 +640,49 @@ export function ReportsPage() {
                   <div className="text-red-700 font-bold mb-2">Cartera Vencida (Mora)</div>
                   <div className="text-3xl font-black text-red-900">{formatCurrency(portfolioStats.carteraVencida)}</div>
                   <p className="text-xs text-red-600 mt-2">Saldo en cuotas atrasadas</p>
+                </div>
+              </div>
+
+              {/* Ganancias reales: salen de los préstamos terminados (pagados) en el período */}
+              <div className="bg-gradient-to-br from-emerald-50 to-white p-5 sm:p-6 rounded-2xl border border-emerald-200 shadow-sm">
+                <div className="flex flex-col lg:flex-row lg:items-center gap-5 lg:gap-8">
+                  <div className="lg:w-2/5">
+                    <div className="flex items-center gap-2 text-emerald-700 font-bold mb-1">
+                      <CheckCheck className="w-5 h-5 shrink-0" />
+                      Ganancias Reales (Préstamos Terminados)
+                    </div>
+                    <div className={`text-3xl sm:text-4xl font-black break-words ${completedProfit.profit < 0 ? 'text-red-700' : 'text-emerald-800'}`}>
+                      {formatCurrency(completedProfit.profit)}
+                    </div>
+                    <p className="text-xs text-emerald-700/80 mt-2">
+                      Préstamos pagados que terminaron del {dateRangeStr}. Es lo recaudado menos el capital prestado.
+                    </p>
+                    {completedProfit.excludedLottery > 0 && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        No incluye {completedProfit.excludedLottery} préstamo{completedProfit.excludedLottery !== 1 ? 's' : ''} ganado{completedProfit.excludedLottery !== 1 ? 's' : ''} con boleta (no generan ganancia).
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 flex-1">
+                    <div className="bg-white/80 border border-emerald-100 rounded-xl p-3">
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Terminados</div>
+                      <div className="text-xl font-black text-slate-800 mt-1">{completedProfit.count}</div>
+                    </div>
+                    <div className="bg-white/80 border border-emerald-100 rounded-xl p-3">
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Capital prestado</div>
+                      <div className="text-lg font-black text-slate-800 mt-1 break-words">{formatCurrency(completedProfit.capital)}</div>
+                    </div>
+                    <div className="bg-white/80 border border-emerald-100 rounded-xl p-3">
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Recaudado</div>
+                      <div className="text-lg font-black text-slate-800 mt-1 break-words">{formatCurrency(completedProfit.collected)}</div>
+                    </div>
+                    <div className="bg-white/80 border border-emerald-100 rounded-xl p-3">
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Margen</div>
+                      <div className="text-xl font-black text-slate-800 mt-1">
+                        {completedProfit.capital > 0 ? `${((completedProfit.profit / completedProfit.capital) * 100).toFixed(1)}%` : '—'}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 

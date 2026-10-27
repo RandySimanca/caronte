@@ -10,6 +10,14 @@ interface PortfolioReportPdfProps {
     carteraActiva: number;
     carteraVencida: number;
   };
+  // Ganancias reales (préstamos terminados en el período)
+  realProfit?: {
+    count: number;
+    capital: number;
+    collected: number;
+    profit: number;
+    period: string;
+  };
   arrearsByRange: {
     range: string;
     amount: number;
@@ -23,7 +31,7 @@ interface PortfolioReportPdfProps {
   }[];
 }
 
-export function PortfolioReportPdf({ routeName, stats, arrearsByRange, topDefaulters }: PortfolioReportPdfProps) {
+export function PortfolioReportPdf({ routeName, stats, realProfit, arrearsByRange, topDefaulters }: PortfolioReportPdfProps) {
   return (
     <PdfLayout 
       title="Estado de Cartera" 
@@ -58,6 +66,34 @@ export function PortfolioReportPdf({ routeName, stats, arrearsByRange, topDefaul
           </View>
         </View>
       </View>
+
+      {realProfit && (
+        <View style={pdfStyles.section}>
+          <Text style={pdfStyles.sectionTitle}>Ganancias Reales (Préstamos Terminados) · {realProfit.period}</Text>
+          <View style={pdfStyles.table}>
+            <View style={[pdfStyles.tableRow, pdfStyles.tableHeader]}>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text>Indicador</Text></View>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text style={pdfStyles.textRight}>Valor</Text></View>
+            </View>
+            <View style={pdfStyles.tableRow}>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text>Préstamos terminados</Text></View>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text style={[pdfStyles.textRight, pdfStyles.textBold]}>{realProfit.count}</Text></View>
+            </View>
+            <View style={pdfStyles.tableRow}>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text>Capital prestado</Text></View>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text style={[pdfStyles.textRight, pdfStyles.textBold]}>{formatCurrency(realProfit.capital)}</Text></View>
+            </View>
+            <View style={pdfStyles.tableRow}>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text>Total recaudado</Text></View>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text style={[pdfStyles.textRight, pdfStyles.textBold]}>{formatCurrency(realProfit.collected)}</Text></View>
+            </View>
+            <View style={[pdfStyles.tableRow, { backgroundColor: pdfColors.slate50 }]}>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text style={pdfStyles.textBold}>Ganancia real</Text></View>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text style={[pdfStyles.textRight, realProfit.profit < 0 ? pdfStyles.textRed : pdfStyles.textEmerald, pdfStyles.textBold]}>{formatCurrency(realProfit.profit)}</Text></View>
+            </View>
+          </View>
+        </View>
+      )}
 
       <View style={pdfStyles.section}>
         <Text style={pdfStyles.sectionTitle}>Análisis de Morosidad por Rangos</Text>
