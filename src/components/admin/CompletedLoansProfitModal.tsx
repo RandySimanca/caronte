@@ -15,6 +15,8 @@ export interface CompletedProfitLoan {
   disbursementDate: string | null; // YYYY-MM-DD
   completedOn: string | null;      // YYYY-MM-DD (día del último cobro)
   daysToFinish: number | null;
+  isRefinanced: boolean;     // terminó por refinanciación (no por pago directo)
+  refinancedBalance: number; // saldo recogido al refinanciar (incluido en "collected")
 }
 
 interface Props {
@@ -27,6 +29,17 @@ interface Props {
 }
 
 const fmtDate = (d?: string | null) => (d ? d.split('-').reverse().join('/') : '—');
+
+function RefinancedBadge({ amount, formatCurrency }: { amount: number; formatCurrency: (n: number) => string }) {
+  return (
+    <span
+      className="inline-block ml-2 align-middle px-2 py-0.5 rounded-md bg-violet-100 text-violet-700 text-[10px] font-black uppercase tracking-wide"
+      title={`Terminó por refinanciación. Saldo recogido: ${formatCurrency(amount)}`}
+    >
+      Refinanciado
+    </span>
+  );
+}
 
 export function CompletedLoansProfitModal({ isOpen, onClose, loans, routes, periodLabel, formatCurrency }: Props) {
   const [search, setSearch] = useState('');
@@ -131,7 +144,10 @@ export function CompletedLoansProfitModal({ isOpen, onClose, loans, routes, peri
               <div className="md:hidden divide-y divide-slate-100">
                 {visible.map((l) => (
                   <div key={l.id} className="px-4 py-3">
-                    <p className="font-bold text-slate-800 break-words">{l.clientName}</p>
+                    <p className="font-bold text-slate-800 break-words">
+                      {l.clientName}
+                      {l.isRefinanced && <RefinancedBadge amount={l.refinancedBalance} formatCurrency={formatCurrency} />}
+                    </p>
                     <p className="text-xs text-slate-500 mt-0.5 break-all">
                       <span className="font-mono">{l.documentId}</span>
                       {l.phone ? (
@@ -148,6 +164,11 @@ export function CompletedLoansProfitModal({ isOpen, onClose, loans, routes, peri
                       {routeName(l.routeId)} · {fmtDate(l.disbursementDate)} → {fmtDate(l.completedOn)}
                       {l.daysToFinish !== null ? ` (${l.daysToFinish} días)` : ''}
                     </p>
+                    {l.isRefinanced && (
+                      <p className="text-xs text-violet-700 mt-1">
+                        Incluye {formatCurrency(l.refinancedBalance)} de saldo recogido al refinanciar
+                      </p>
+                    )}
                     <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
                       <div className="min-w-0">
                         <p className="text-[10px] font-bold uppercase text-slate-400">Prestado</p>
@@ -185,7 +206,10 @@ export function CompletedLoansProfitModal({ isOpen, onClose, loans, routes, peri
                   {visible.map((l) => (
                     <tr key={l.id} className="hover:bg-slate-50/60">
                       <td className="py-3 px-4">
-                        <p className="font-bold text-slate-800">{l.clientName}</p>
+                        <p className="font-bold text-slate-800">
+                          {l.clientName}
+                          {l.isRefinanced && <RefinancedBadge amount={l.refinancedBalance} formatCurrency={formatCurrency} />}
+                        </p>
                         <p className="text-xs text-slate-500 font-mono">{l.documentId}</p>
                       </td>
                       <td className="py-3 px-4 text-slate-600">{l.phone || '—'}</td>

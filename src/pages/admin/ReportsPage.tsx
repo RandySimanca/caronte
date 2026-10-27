@@ -26,7 +26,7 @@ export function ReportsPage() {
   const [portfolioData, setPortfolioData] = useState<{ loans: any[], arrearsInstallments: any[] }>({ loans: [], arrearsInstallments: [] });
   const [ledgerData, setLedgerData] = useState<any[]>([]);
   // Ganancias reales: salen de los préstamos TERMINADOS dentro del período seleccionado
-  const [completedProfit, setCompletedProfit] = useState<{ count: number; capital: number; collected: number; profit: number; excludedLottery: number; loans: CompletedProfitLoan[] }>({ count: 0, capital: 0, collected: 0, profit: 0, excludedLottery: 0, loans: [] });
+  const [completedProfit, setCompletedProfit] = useState<{ count: number; capital: number; collected: number; profit: number; excludedLottery: number; refinancedCount: number; loans: CompletedProfitLoan[] }>({ count: 0, capital: 0, collected: 0, profit: 0, excludedLottery: 0, refinancedCount: 0, loans: [] });
   const [isProfitModalOpen, setIsProfitModalOpen] = useState(false);
   const [pendingCollection, setPendingCollection] = useState<{ totalScheduled: number; totalPending: number; totalPaid: number; installmentCount: number; pendingCount: number }>({ totalScheduled: 0, totalPending: 0, totalPaid: 0, installmentCount: 0, pendingCount: 0 });
   
@@ -64,7 +64,7 @@ export function ReportsPage() {
       setPortfolioData(cartera);
       setLedgerData(ledger);
       setPendingCollection(pending);
-      setCompletedProfit(profit ?? { count: 0, capital: 0, collected: 0, profit: 0, excludedLottery: 0, loans: [] });
+      setCompletedProfit(profit ?? { count: 0, capital: 0, collected: 0, profit: 0, excludedLottery: 0, refinancedCount: 0, loans: [] });
     } catch (error: any) {
       toast.error('Error al cargar datos del reporte');
     } finally {
@@ -269,6 +269,8 @@ export function ReportsPage() {
             Desembolso: l.disbursementDate || '',
             Termino: l.completedOn || '',
             Dias: l.daysToFinish ?? '',
+            Tipo: l.isRefinanced ? 'Refinanciado' : 'Pagado',
+            SaldoRefinanciado: l.refinancedBalance,
             Prestado: l.amountRequested,
             Recaudado: l.collected,
             Ganado: l.profit,
@@ -666,7 +668,7 @@ export function ReportsPage() {
                       Ganancias Reales (Préstamos Terminados)
                     </div>
                     <p className="text-xs text-emerald-700/80 mt-1">
-                      Préstamos pagados que terminaron del {dateRangeStr}. Ganancia = lo recaudado − lo prestado.
+                      Préstamos terminados (pagados o refinanciados) del {dateRangeStr}. Ganancia = lo recaudado − lo prestado.
                     </p>
                     {completedProfit.excludedLottery > 0 && (
                       <p className="text-xs text-slate-500 mt-1">
@@ -702,7 +704,12 @@ export function ReportsPage() {
                 </div>
 
                 <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
-                  <span>Préstamos terminados: <b className="text-slate-800">{completedProfit.count}</b></span>
+                  <span>
+                    Préstamos terminados: <b className="text-slate-800">{completedProfit.count}</b>
+                    {completedProfit.refinancedCount > 0 && (
+                      <span className="text-slate-500"> ({completedProfit.refinancedCount} por refinanciación)</span>
+                    )}
+                  </span>
                   <span>Margen: <b className="text-slate-800">{completedProfit.capital > 0 ? `${((completedProfit.profit / completedProfit.capital) * 100).toFixed(1)}%` : '—'}</b></span>
                 </div>
               </div>

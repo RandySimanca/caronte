@@ -2707,27 +2707,32 @@ export class AdminService {
   /**
    * GANANCIAS REALES de los préstamos TERMINADOS en un rango de fechas (reporte Estado Cartera).
    *
-   * Solo cuenta préstamos CANCELADO (pagados), con el mismo criterio de "terminado" del modal de
-   * Préstamos Terminados: la fecha real de cierre es la del último cobro.
+   * Cuenta los préstamos TERMINADOS: pagados (CANCELADO) y los cerrados por REFINANCIACIÓN, con el mismo
+   * criterio de "terminado" del modal de Préstamos Terminados (fecha real de cierre: último cobro, o el día
+   * de desembolso del préstamo nuevo si fue refinanciado).
    *
    * Ganancia real de un préstamo = lo que realmente entró (cobros + domingos prepagados al desembolsar)
    *                                − capital prestado (amount_requested).
    *  - Pagado completo → equivale al interés del préstamo.
+   *  - Refinanciado → el saldo pendiente se descuenta del efectivo del préstamo nuevo (columna
+   *    refinanced_balance del préstamo nuevo), o sea que se recoge completo y cuenta como recaudado.
    *
    * NO entran en el cálculo (no generan ganancia):
    *  - Los préstamos ganados con BOLETA del sorteo: el sistema los salda registrando un "pago" por todo el
    *    saldo (dispositivo SERVER_LOTTERY) que no es dinero cobrado, así que se excluyen del todo
    *    (ni cuentan como terminados, ni su capital, ni su recaudo). Se informan en `excludedLottery`.
-   *  - La boleta (receipt_fee) ni los REFINANCIADOS (su saldo pasa al préstamo nuevo).
+   *  - La boleta (receipt_fee).
    */
   static async getCompletedLoansProfit(startDate: string, endDate: string, routeId?: string) {
+    // getCompletedLoans devuelve CANCELADO (pagados) y REFINANCIADO (cerrados al abrir el préstamo nuevo)
     const completed = (await AdminService.getCompletedLoans(routeId, false, undefined, startDate, endDate))
-      .filter((l: any) => l.status === 'CANCELADO');
+      .filter((l: any) => l.status === 'CANCELADO' || l.status === 'REFINANCIADO');
 
     const ids: string[] = completed.map((l: any) => l.id);
     const paidByLoan = new Map<string, number>();
     const prepaidByLoan = new Map<string, number>();
     const lotteryLoanIds = new Set<string>();
+    const refinancedByLoan = new Map<string, number>(); // préstamo viejo → saldo recogido al refinanciar
 
     const chunkSize = 50;
     for (let i = 0; i < ids.length; i += chunkSize) {
@@ -2737,6 +2742,19 @@ export class AdminService {
         .from('loans').select('id, sundays_prepaid_amount').in('id', part);
       if (loanErr) throw loanErr;
       for (const r of (loanRows || []) as any[]) prepaidByLoan.set(r.id, Number(r.sundays_prepaid_amount || 0));
+
+      // Saldo recogido al refinanciar: se guarda en el préstamo NUEVO que apunta al viejo
+      const { data: refiRows, error: refiErr } = await supabase
+        .from('loans').select('refinanced_from_loan_id, refinanced_balance')
+        .in('refinanced_from_loan_id', part);
+      if (refiErr) throw refiErr;
+      for (const r of (refiRows || []) as any[]) {
+        if (!r.refinanced_from_loan_id) continue;
+        refinancedByLoan.set(
+          r.refinanced_from_loan_id,
+          (refinancedByLoan.get(r.refinanced_from_loan_id) || 0) + Number(r.refinanced_balance || 0)
+        );
+      }
 
       // Préstamos saldados por boleta ganadora del sorteo
       const { data: winners, error: winErr } = await supabase
@@ -2765,11 +2783,13 @@ export class AdminService {
       id: string; clientName: string; documentId: string; phone: string | null; routeId: string | null;
       amountRequested: number; amountDelivered: number; collected: number; profit: number;
       disbursementDate: string | null; completedOn: string | null; daysToFinish: number | null;
+      refinancedBalance: number; isRefinanced: boolean;
     }[] = [];
     for (const l of completed as any[]) {
       if (lotteryLoanIds.has(l.id)) continue; // ganado con boleta → no genera ganancia
       const requested = Number(l.amount_requested || 0);
-      const got = (paidByLoan.get(l.id) || 0) + (prepaidByLoan.get(l.id) || 0);
+      const refinancedBalance = l.status === 'REFINANCIADO' ? (refinancedByLoan.get(l.id) || 0) : 0;
+      const got = (paidByLoan.get(l.id) || 0) + (prepaidByLoan.get(l.id) || 0) + refinancedBalance;
       capital += requested;
       collected += got;
 
@@ -2791,6 +2811,8 @@ export class AdminService {
         daysToFinish: disbursementDate && completedOn
           ? Math.round((Date.parse(completedOn) - Date.parse(disbursementDate)) / 86400000)
           : null,
+        refinancedBalance,
+        isRefinanced: l.status === 'REFINANCIADO',
       });
     }
 
@@ -2800,6 +2822,7 @@ export class AdminService {
       collected,
       profit: collected - capital,
       excludedLottery: lotteryLoanIds.size,
+      refinancedCount: details.filter((d) => d.isRefinanced).length,
       loans: details, // ya viene del más reciente al más antiguo (por fecha de cierre)
     };
   }
