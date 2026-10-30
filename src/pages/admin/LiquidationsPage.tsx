@@ -94,7 +94,7 @@ export function LiquidationsPage() {
             to="/admin/cash-accounts"
             className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-bold rounded-xl"
           >
-            <HandCoins className="w-4 h-4 text-brand-600" />
+
             Cuentas de efectivo
           </Link>
           <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200">
@@ -160,56 +160,56 @@ export function LiquidationsPage() {
 
         {/* ===== Vista escritorio: tabla (con scroll horizontal por si la pantalla es angosta) ===== */}
         <div className="hidden md:block overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 text-sm">
-              <th className="py-4 px-6 font-semibold w-1/4">Ruta</th>
-              <th className="py-4 px-6 font-semibold w-1/4">Cobrador</th>
-              <th className="py-4 px-6 font-semibold text-right w-1/4">Recaudado (Aprox)</th>
-              <th className="py-4 px-6 font-semibold text-center w-1/4">Estado</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50">
-            {isLoading ? (
-              <tr>
-                <td colSpan={4} className="py-12 text-center text-slate-400">
-                  <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto mb-4"></div>
-                  Cargando rutas...
-                </td>
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 text-sm">
+                <th className="py-4 px-6 font-semibold w-1/4">Ruta</th>
+                <th className="py-4 px-6 font-semibold w-1/4">Cobrador</th>
+                <th className="py-4 px-6 font-semibold text-right w-1/4">Recaudado (Aprox)</th>
+                <th className="py-4 px-6 font-semibold text-center w-1/4">Estado</th>
               </tr>
-            ) : routes.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="py-12 text-center text-slate-500 font-medium">
-                  No hay rutas activas para mostrar.
-                </td>
-              </tr>
-            ) : (
-              routes.map(route => (
-                <tr
-                  key={route.id}
-                  onClick={() => openLiquidationDetail(route)}
-                  className="hover:bg-brand-50/50 transition-colors cursor-pointer group"
-                >
-                  <td className="py-4 px-6 font-bold text-slate-800 group-hover:text-brand-600">{route.ruta}</td>
-                  <td className="py-4 px-6 text-slate-600 font-medium">{route.cobrador}</td>
-                  <td className="py-4 px-6 text-right font-black text-slate-700">
-                    {route.estado === 'Liquidado' ? formatCurrency(route.aEntregar) : '---'}
-                    <div>{differenceBadge(route)}</div>
-                  </td>
-                  <td className="py-4 px-6">
-                    <div className="flex justify-center">
-                      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold ${route.estado === 'Liquidado' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                        }`}>
-                        {route.estado === 'Liquidado' ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
-                        {route.estado}
-                      </div>
-                    </div>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={4} className="py-12 text-center text-slate-400">
+                    <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto mb-4"></div>
+                    Cargando rutas...
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : routes.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-12 text-center text-slate-500 font-medium">
+                    No hay rutas activas para mostrar.
+                  </td>
+                </tr>
+              ) : (
+                routes.map(route => (
+                  <tr
+                    key={route.id}
+                    onClick={() => openLiquidationDetail(route)}
+                    className="hover:bg-brand-50/50 transition-colors cursor-pointer group"
+                  >
+                    <td className="py-4 px-6 font-bold text-slate-800 group-hover:text-brand-600">{route.ruta}</td>
+                    <td className="py-4 px-6 text-slate-600 font-medium">{route.cobrador}</td>
+                    <td className="py-4 px-6 text-right font-black text-slate-700">
+                      {route.estado === 'Liquidado' ? formatCurrency(route.aEntregar) : '---'}
+                      <div>{differenceBadge(route)}</div>
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="flex justify-center">
+                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold ${route.estado === 'Liquidado' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                          {route.estado === 'Liquidado' ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                          {route.estado}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

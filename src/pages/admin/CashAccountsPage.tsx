@@ -44,9 +44,6 @@ export function CashAccountsPage() {
         </Link>
         <div>
           <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-            <div className="w-12 h-12 rounded-xl bg-brand-100 text-brand-600 flex items-center justify-center">
-              <HandCoins className="w-7 h-7" />
-            </div>
             Cuentas de efectivo
           </h1>
           <p className="text-slate-500 mt-2">Faltantes que los cobradores deben reponer y sobrantes que aún no tienen dueño.</p>
