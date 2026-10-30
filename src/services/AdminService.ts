@@ -2827,6 +2827,174 @@ export class AdminService {
     };
   }
 
+  /**
+   * Historial completo de préstamos de un cliente específico.
+   * Devuelve todos sus préstamos (activos, cancelados, refinanciados) ordenados del más reciente
+   * al más antiguo, con el monto prestado, desembolsado, interés, lo cobrado, la ganancia generada
+   * y las fechas clave de cada préstamo.
+   */
+  static async getClientLoanHistory(clientId: string): Promise<{
+    id: string;
+    status: string;
+    amountRequested: number;
+    amountDelivered: number;
+    interestAmount: number;
+    initialObligation: number;
+    currentBalance: number;
+    termDays: number;
+    dailyInstallment: number;
+    disbursementDate: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    completedOn: string | null;
+    daysToFinish: number | null;
+    collected: number;
+    profit: number;
+    routeId: string | null;
+    routeName: string | null;
+    isRefinanced: boolean;
+    refinancedBalance: number;
+    sundaysPrepaidAmount: number;
+    receiptFee: number;
+    raffleNumber: string | null;
+  }[]> {
+    // 1. Obtener todos los préstamos del cliente con info de ruta
+    const { data: loans, error: loansErr } = await supabase
+      .from('loans')
+      .select(`
+        id,
+        status,
+        amount_requested,
+        amount_delivered,
+        interest_amount,
+        initial_obligation,
+        current_balance,
+        term_days,
+        daily_installment,
+        disbursement_date,
+        start_date,
+        end_date,
+        created_at,
+        refinanced_from_loan_id,
+        refinanced_balance,
+        sundays_prepaid_amount,
+        receipt_fee,
+        raffle_number,
+        route_id,
+        route:routes(name)
+      `)
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false });
+
+    if (loansErr) throw loansErr;
+    if (!loans || loans.length === 0) return [];
+
+    const ids = loans.map((l: any) => l.id as string);
+
+    // 2. Suma de cobros por préstamo
+    const paidByLoan = new Map<string, number>();
+    const chunkSize = 50;
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const part = ids.slice(i, i + chunkSize);
+      const { data: pays } = await supabase
+        .from('payments')
+        .select('loan_id, total_amount')
+        .in('loan_id', part);
+      for (const p of (pays || []) as any[]) {
+        paidByLoan.set(p.loan_id, (paidByLoan.get(p.loan_id) || 0) + Number(p.total_amount || 0));
+      }
+    }
+
+    // 3. Último cobro de los préstamos CANCELADOS (fecha real de cierre)
+    const cancelledIds = loans.filter((l: any) => l.status === 'CANCELADO').map((l: any) => l.id as string);
+    const lastPaymentDate = new Map<string, string>();
+    for (let i = 0; i < cancelledIds.length; i += chunkSize) {
+      const part = cancelledIds.slice(i, i + chunkSize);
+      const { data: lp } = await supabase
+        .from('payments')
+        .select('loan_id, collected_at')
+        .in('loan_id', part)
+        .order('collected_at', { ascending: false })
+        .limit(5000);
+      for (const p of (lp || []) as any[]) {
+        if (p.loan_id && !lastPaymentDate.has(p.loan_id)) {
+          lastPaymentDate.set(p.loan_id, colombiaDateFromIso(p.collected_at));
+        }
+      }
+    }
+
+    // 4. Préstamos nuevos que apuntan a los refinanciados (para la fecha de cierre y el saldo recogido)
+    const refinancedIds = loans.filter((l: any) => l.status === 'REFINANCIADO').map((l: any) => l.id as string);
+    const refinancedNewLoan = new Map<string, { disbursementDate: string | null; refinancedBalance: number }>();
+    for (let i = 0; i < refinancedIds.length; i += chunkSize) {
+      const part = refinancedIds.slice(i, i + chunkSize);
+      const { data: newLoans } = await supabase
+        .from('loans')
+        .select('refinanced_from_loan_id, disbursement_date, refinanced_balance')
+        .in('refinanced_from_loan_id', part);
+      for (const nl of (newLoans || []) as any[]) {
+        if (!nl.refinanced_from_loan_id) continue;
+        refinancedNewLoan.set(nl.refinanced_from_loan_id, {
+          disbursementDate: nl.disbursement_date ? String(nl.disbursement_date).slice(0, 10) : null,
+          refinancedBalance: Number(nl.refinanced_balance || 0),
+        });
+      }
+    }
+
+    return loans.map((l: any) => {
+      const requested = Number(l.amount_requested || 0);
+      const sundaysPrepaid = Number(l.sundays_prepaid_amount || 0);
+      const paid = paidByLoan.get(l.id) || 0;
+      const newLoanInfo = l.status === 'REFINANCIADO' ? (refinancedNewLoan.get(l.id) || null) : null;
+      const refinancedBalance = newLoanInfo?.refinancedBalance || Number(l.refinanced_balance || 0);
+
+      // Lo recaudado = cobros + domingos prepagados + saldo recogido al refinanciar
+      const collected = paid + sundaysPrepaid + (l.status === 'REFINANCIADO' ? refinancedBalance : 0);
+      const profit = collected - requested;
+
+      // Fecha real de cierre
+      let completedOn: string | null = null;
+      if (l.status === 'CANCELADO') {
+        completedOn = lastPaymentDate.get(l.id) || null;
+      } else if (l.status === 'REFINANCIADO') {
+        completedOn = newLoanInfo?.disbursementDate || null;
+      }
+
+      const disbursementDate = l.disbursement_date ? String(l.disbursement_date).slice(0, 10) : null;
+      const daysToFinish = disbursementDate && completedOn
+        ? Math.round((Date.parse(completedOn) - Date.parse(disbursementDate)) / 86400000)
+        : null;
+
+      const route = Array.isArray(l.route) ? l.route[0] : l.route;
+
+      return {
+        id: l.id as string,
+        status: l.status as string,
+        amountRequested: requested,
+        amountDelivered: Number(l.amount_delivered || 0),
+        interestAmount: Number(l.interest_amount || 0),
+        initialObligation: Number(l.initial_obligation || 0),
+        currentBalance: Number(l.current_balance || 0),
+        termDays: Number(l.term_days || 0),
+        dailyInstallment: Number(l.daily_installment || 0),
+        disbursementDate,
+        startDate: l.start_date ? String(l.start_date).slice(0, 10) : null,
+        endDate: l.end_date ? String(l.end_date).slice(0, 10) : null,
+        completedOn,
+        daysToFinish,
+        collected,
+        profit,
+        routeId: l.route_id || null,
+        routeName: route?.name || null,
+        isRefinanced: l.status === 'REFINANCIADO',
+        refinancedBalance,
+        sundaysPrepaidAmount: sundaysPrepaid,
+        receiptFee: Number(l.receipt_fee || 0),
+        raffleNumber: l.raffle_number || null,
+      };
+    });
+  }
+
 }
 
 

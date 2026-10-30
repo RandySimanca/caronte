@@ -8,6 +8,7 @@ import { PaymentCardModal } from './PaymentCardModal';
 import { EditClientModal } from './EditClientModal';
 import { AdminCreateLoanModal } from './AdminCreateLoanModal';
 import { AdminPaymentModal } from './AdminPaymentModal';
+import { ClientLoanHistoryModal } from './ClientLoanHistoryModal';
 
 interface ClientsModalProps {
   isOpen: boolean;
@@ -159,6 +160,8 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
   const [adminPaymentLoan, setAdminPaymentLoan] = useState<any | null>(null);
   const [isCreateLoanOpen, setIsCreateLoanOpen] = useState(false);
   const [createLoanClientId, setCreateLoanClientId] = useState<string | undefined>(undefined);
+  // Historial de préstamos del cliente
+  const [historyClient, setHistoryClient] = useState<{ id: string; name: string } | null>(null);
 
   const todayStr = colombiaDateFromIso(new Date().toISOString());
 
@@ -386,9 +389,13 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
 
                       <div className="mt-2 pl-7 flex flex-wrap items-center gap-2 text-xs" onClick={() => activeLoan && toggleExpand(c.id)}>
                         <span className={`px-2.5 py-1 rounded-lg font-bold ${statusColors[c.status] || 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
-                        <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-bold" title="Préstamos que ha tenido el cliente, incluyendo el actual">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setHistoryClient({ id: c.id, name: c.full_name }); }}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-700 font-bold hover:bg-indigo-200 transition-colors"
+                          title="Ver historial completo de préstamos de este cliente"
+                        >
                           {loanCount} préstamo{loanCount !== 1 ? 's' : ''}
-                        </span>
+                        </button>
                         {activeLoan ? (
                           <span className="flex items-center gap-0.5 font-black text-slate-800 text-sm">
                             <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
@@ -480,13 +487,14 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
                           <td className="py-3 px-4 text-slate-600 font-mono text-sm">{c.document_id}</td>
                           <td className="py-3 px-4 text-slate-600">{c.phone || '—'}</td>
                           {/* Total de préstamos del cliente (históricos + actual). Cada préstamo nuevo o refinanciación es una fila en `loans`. */}
-                          <td className="py-3 px-4 text-center">
-                            <span
-                              className="inline-flex items-center justify-center min-w-[2rem] px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-sm font-black"
-                              title={`${c.loans?.length ?? 0} préstamo${(c.loans?.length ?? 0) !== 1 ? 's' : ''} en total`}
+                          <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => setHistoryClient({ id: c.id, name: c.full_name })}
+                              className="inline-flex items-center justify-center min-w-[2rem] px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-700 text-sm font-black hover:bg-indigo-200 transition-colors cursor-pointer"
+                              title={`Ver historial completo: ${c.loans?.length ?? 0} préstamo${(c.loans?.length ?? 0) !== 1 ? 's' : ''} en total`}
                             >
                               {c.loans?.length ?? 0}
-                            </span>
+                            </button>
                           </td>
 
                           {/* Loan amount */}
@@ -626,6 +634,13 @@ export function ClientsModal({ isOpen, onClose, initialRouteId = 'all', initialO
         routeStates={routeStates}
         onSuccess={() => { }}
         initialClientId={createLoanClientId}
+      />
+
+      <ClientLoanHistoryModal
+        isOpen={!!historyClient}
+        onClose={() => setHistoryClient(null)}
+        clientId={historyClient?.id ?? null}
+        clientName={historyClient?.name ?? ''}
       />
     </>
   );
