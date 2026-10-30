@@ -125,6 +125,16 @@ export function PaymentConfirmationModal({
     };
   }, [amount, financialState]);
 
+  // Todo lo que el cliente aún debe (incluye cuotas futuras). Es el tope del cobro:
+  // si se registra más, el excedente no se puede repartir en cuotas y el servidor
+  // rechaza el pago (chk_distribution_sum). Con cuotas futuras pendientes hay margen
+  // para adelantar o liquidar; en las últimas cuotas el tope coincide con lo sugerido.
+  const totalOwed = useMemo(
+    () => Math.round(financialState.pendingInstallments.reduce((s, i) => s + Number(i.balance || 0), 0)),
+    [financialState.pendingInstallments]
+  );
+  const exceedsDebt = distribution.numAmount > totalOwed;
+
   // Capture voucher from file input
   const handleVoucherChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -135,16 +145,16 @@ export function PaymentConfirmationModal({
   };
 
   // Siempre apuntan a los valores más recientes sin disparar el efecto de abajo
-  const latestRef = useRef({ expectedTotal: financialState.expectedTotal, loan });
-  latestRef.current = { expectedTotal: financialState.expectedTotal, loan };
+  const latestRef = useRef({ expectedTotal: financialState.expectedTotal, totalOwed, loan });
+  latestRef.current = { expectedTotal: financialState.expectedTotal, totalOwed, loan };
 
   // Reiniciar y autocompletar el monto SOLO cuando el modal se abre.
   // (Antes dependía de loan/expectedTotal: al guardar el cobro esos valores cambian
   // en Dexie y el efecto borraba el panel "¡Cobro guardado!" de WhatsApp.)
   useEffect(() => {
     if (!isOpen) return;
-    const { expectedTotal, loan: currentLoan } = latestRef.current;
-    setAmount(Math.round(expectedTotal).toString());
+    const { expectedTotal, totalOwed: owed, loan: currentLoan } = latestRef.current;
+    setAmount(Math.min(Math.round(expectedTotal), owed).toString());
     setObservation('');
     setShowDuplicateWarning(false);
     setLotteryWinner(null);
@@ -168,6 +178,10 @@ export function PaymentConfirmationModal({
       return;
     }
     if (distribution.numAmount <= 0) return;
+    if (exceedsDebt) {
+      toast.error(`El cliente solo debe ${formatCurrency(totalOwed)}. No puedes cobrar más.`);
+      return;
+    }
 
     // Confirmación con SweetAlert antes de guardar
     const confirmed = await confirmAction({
@@ -192,6 +206,10 @@ export function PaymentConfirmationModal({
       return;
     }
     if (distribution.numAmount <= 0) return;
+    if (exceedsDebt) {
+      toast.error(`El cliente solo debe ${formatCurrency(totalOwed)}. No puedes cobrar más.`);
+      return;
+    }
     setIsSaving(true);
 
     try {
@@ -492,8 +510,13 @@ export function PaymentConfirmationModal({
                   <div className="flex space-x-2 mt-3">
                     <button onClick={() => setAmount(Math.round(financialState.expectedTotal).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">Pago exacto</button>
                     <button onClick={() => setAmount(Math.round(financialState.todayQuota).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">Solo hoy</button>
-                    <button onClick={() => setAmount(Math.round(financialState.expectedTotal + loan.daily_installment).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">+1 Adelanto</button>
+                    <button onClick={() => setAmount(Math.min(Math.round(financialState.expectedTotal + loan.daily_installment), totalOwed).toString())} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">+1 Adelanto</button>
                   </div>
+                  {exceedsDebt && (
+                    <p className="mt-2 text-xs font-semibold text-rose-600">
+                      El cliente solo debe {formatCurrency(totalOwed)}. El monto no puede ser mayor.
+                    </p>
+                  )}
                 </div>
 
                 {/* Distribution Breakdown */}
@@ -635,10 +658,10 @@ export function PaymentConfirmationModal({
                 {/* Save Button */}
                 <button
                   onClick={handleSaveClick}
-                  disabled={distribution.numAmount <= 0 || isSaving}
+                  disabled={distribution.numAmount <= 0 || exceedsDebt || isSaving}
                   className={cn(
                     "w-full font-bold py-4 rounded-xl shadow-md transition-all active:scale-[0.98]",
-                    distribution.numAmount > 0 && !isSaving
+                    distribution.numAmount > 0 && !exceedsDebt && !isSaving
                       ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/30"
                       : "bg-slate-100 text-slate-400 cursor-not-allowed"
                   )}

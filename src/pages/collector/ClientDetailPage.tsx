@@ -91,10 +91,12 @@ export function ClientDetailPage() {
 
     // todayQuota is 0 if already paid or if the loan hasn't started yet (starts tomorrow or later).
     // If today is partially paid, use the remaining balance to complete today's quota.
+    // Si no existe cuota con fecha de hoy (el préstamo ya pasó su fecha final) NO se inventa una:
+    // antes se usaba daily_installment y el total esperado superaba lo que el cliente debe.
     const todayQuota = Math.round(
-      (isPaidToday || loan.start_date > today)
+      (isPaidToday || loan.start_date > today || !todayInstallment)
         ? 0
-        : (todayInstallment ? Number(todayInstallment.balance || 0) : Number(loan.daily_installment || 0))
+        : Number(todayInstallment.balance || 0)
     );
     const expectedTotal = todayQuota + arrears;
 
