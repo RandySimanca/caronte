@@ -14,6 +14,7 @@ const SETTING_LABELS: Record<string, string> = {
   default_salary: 'Salario Mensual por Defecto',
   grace_days: 'Días de Gracia',
   interest_rate: 'Tasa de Interés',
+  late_clarification_days: 'Plazo para Aclarar Sobrantes (días)',
   lottery_mode: 'Modo de Boletas',
   require_client_photo: 'Requiere Foto de Cliente',
   working_days: 'Días Laborales',

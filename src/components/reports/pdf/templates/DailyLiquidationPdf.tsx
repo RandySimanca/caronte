@@ -23,6 +23,11 @@ interface DailyLiquidationPdfProps {
   approvedAt?: string | null;
   /** Total aprobado guardado en el cierre (solo días liquidados) */
   approvedTotal?: number | null;
+  /** Efectivo que realmente entregó el cobrador (null = sin conteo, p. ej. cierres anteriores) */
+  actualDelivery?: number | null;
+  /** Efectivo recibido - esperado: negativo = faltante, positivo = sobrante */
+  difference?: number | null;
+  observations?: string | null;
 }
 
 function gastoDetalle(g: { description?: string | null; observation?: string | null }): string {
@@ -31,7 +36,7 @@ function gastoDetalle(g: { description?: string | null; observation?: string | n
   return d;
 }
 
-export function DailyLiquidationPdf({ dateStr, routeName, collectorName, detail, baseAmount, source = 'live', approvedAt = null, approvedTotal = null }: DailyLiquidationPdfProps) {
+export function DailyLiquidationPdf({ dateStr, routeName, collectorName, detail, baseAmount, source = 'live', approvedAt = null, approvedTotal = null, actualDelivery = null, difference = null, observations = null }: DailyLiquidationPdfProps) {
   const totalEsperadoFinal = detail.totalEntregar + baseAmount;
   const approvedAtLabel = approvedAt
     ? new Date(approvedAt).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })
@@ -98,6 +103,34 @@ export function DailyLiquidationPdf({ dateStr, routeName, collectorName, detail,
               </Text>
             </View>
           </View>
+
+          {actualDelivery !== null && (
+            <View style={pdfStyles.tableRow}>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text>Efectivo recibido del cobrador</Text></View>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}><Text style={pdfStyles.textRight}>{formatCurrency(actualDelivery)}</Text></View>
+            </View>
+          )}
+
+          {actualDelivery !== null && difference !== null && (
+            <View style={[pdfStyles.tableRow, { backgroundColor: pdfColors.slate50 }]}>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}>
+                <Text style={pdfStyles.textBold}>
+                  {difference === 0 ? 'CAJA CUADRADA' : difference < 0 ? 'FALTANTE' : 'SOBRANTE'}
+                </Text>
+              </View>
+              <View style={[pdfStyles.tableCol, { width: '50%' }]}>
+                <Text style={[pdfStyles.textRight, pdfStyles.textBold, difference === 0 ? pdfStyles.textEmerald : pdfStyles.textRed]}>
+                  {difference === 0 ? formatCurrency(0) : formatCurrency(Math.abs(difference))}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {observations ? (
+            <View style={pdfStyles.tableRow}>
+              <View style={[pdfStyles.tableCol, { width: '100%' }]}><Text>Observación: {observations}</Text></View>
+            </View>
+          ) : null}
         </View>
       </View>
 

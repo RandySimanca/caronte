@@ -5,6 +5,7 @@ import { daysExpired } from '@/lib/expiredLoan';
 import { parseLotteryLastDraw, isLotteryWinnerLoan } from '@/lib/lottery';
 import { isLoanClavo } from '@/lib/clavo';
 import { loanValueOf, refinancedBalanceOf } from '@/lib/refinance';
+import { computeDifference, dependentsOf, wouldGoNegative, type LedgerEntry } from '@/lib/cashLedger';
 import { useAuthStore } from '@/stores/authStore';
 
 export interface UserWithRole extends User {
@@ -785,7 +786,7 @@ export class AdminService {
     // 2. Obtener cierres de caja para esa fecha
     const { data: closings, error: closingsError } = await supabase
       .from('daily_closings')
-      .select('route_id, is_closed, base_amount, total_collected, total_expenses, expected_delivery, actual_delivery')
+      .select('route_id, is_closed, base_amount, total_collected, total_expenses, expected_delivery, actual_delivery, difference')
       .eq('closing_date', dateStr);
     if (closingsError) throw closingsError;
 
@@ -945,19 +946,57 @@ export class AdminService {
   }
 
   /**
+   * Un cobro que aclara un sobrante del cobrador no se corrige ni se borra desde el historial de pagos:
+   * hay que anular la aclaración en Cuentas de efectivo para que el sobrante vuelva a quedar pendiente.
+   */
+  private static async assertPaymentNotLinkedToLedger(paymentId: string) {
+    const { data, error } = await supabase
+      .from('collector_cash_ledger')
+      .select('id')
+      .eq('payment_id', paymentId)
+      .is('voided_at', null)
+      .limit(1);
+    if (error) {
+      if (this.isMissingLedgerTable(error)) return;
+      throw error;
+    }
+    if ((data || []).length > 0) {
+      throw new Error('Este cobro aclara un sobrante del cobrador. Anúlalo desde Cuentas de efectivo para que el sobrante vuelva a quedar pendiente.');
+    }
+  }
+
+  /**
    * Aprueba la liquidación y la guarda en la base de datos
    */
   static async approveLiquidation(payload: any) {
+    // Efectivo que realmente entregó el cobrador (lo digita el admin). Si el total esperado es <= 0 no hay
+    // efectivo por recibir, así que se toma el esperado y no hay diferencia.
+    const expected = Number(payload.totalEntregar);
+    const hasCashToCount = expected > 0;
+    const rawActual = payload.actualDelivery;
+    if (hasCashToCount && (rawActual === null || rawActual === undefined || rawActual === '' || !Number.isFinite(Number(rawActual)) || Number(rawActual) < 0)) {
+      throw new Error('Digita el efectivo que entregó el cobrador antes de aprobar.');
+    }
+    const actual = hasCashToCount ? Math.round(Number(rawActual)) : expected;
+    const difference = hasCashToCount ? computeDifference(expected, actual) : 0;
+    const observations = String(payload.observations || '').trim();
+    if (difference !== 0 && observations.length < 3) {
+      throw new Error('Hay una diferencia de caja: escribe una observación que la explique.');
+    }
+
     // Respaldo exacto de lo que el admin vio y aprobó (alimenta el modal histórico y el PDF)
     const snapshot = payload.detail
       ? {
-        version: 1,
+        version: 2,
         generated_at: new Date().toISOString(),
         route_name: payload.routeName || null,
         collector_name: payload.collectorName || null,
         date: payload.date,
         base_amount: payload.baseAmount || 0,
         total_entregar: payload.totalEntregar,
+        actual_delivery: actual,
+        difference,
+        observations: observations || null,
         detail: payload.detail,
       }
       : null;
@@ -971,8 +1010,9 @@ export class AdminService {
       total_expenses: payload.totalGastos + (payload.totalPrestado || 0) + (payload.totalTransferencias || 0),
       viaticum_assigned: payload.viaticoDia,
       expected_delivery: payload.totalEntregar,
-      actual_delivery: payload.totalEntregar,
-      difference: 0,
+      actual_delivery: actual,
+      difference,
+      observations: observations || null,
       is_closed: true,
       has_pending_sync: false,
       closed_by: payload.adminId,
@@ -1009,13 +1049,118 @@ export class AdminService {
     }
 
     if (error) throw error;
+
+    // La diferencia de caja pasa a la cuenta de efectivo del cobrador (faltante o sobrante).
+    // Si no se puede registrar, el día no queda liquidado a medias: se reabre y se avisa.
+    try {
+      await this.syncClosingDifference({ closing: data, difference, adminId: payload.adminId, observations });
+    } catch (err) {
+      await supabase
+        .from('daily_closings')
+        .update({ is_closed: false, closed_by: null, closed_at: null } as any)
+        .eq('id', (data as any).id);
+      throw err;
+    }
+
     return data as any;
   }
 
+  /** ¿El error es porque la migración 044 (tabla collector_cash_ledger) aún no se aplicó? */
+  private static isMissingLedgerTable(error: any): boolean {
+    const msg = String(error?.message || '');
+    return (
+      error?.code === '42P01' ||
+      error?.code === 'PGRST205' ||
+      (/collector_cash_ledger/i.test(msg) && /(does not exist|schema cache|could not find)/i.test(msg))
+    );
+  }
+
   /**
-   * Reabre una liquidación (elimina o marca como no cerrada la liquidación de un día)
+   * Deja en la cuenta del cobrador el movimiento de diferencia de un cierre (FALTANTE o SOBRANTE).
+   * Reemplaza el vigente del mismo cierre (pasa al reabrir y volver a aprobar). Si el cierre cuadra
+   * no crea nada.
+   */
+  private static async syncClosingDifference(opts: { closing: any; difference: number; adminId: string; observations: string }) {
+    const { closing, difference, adminId, observations } = opts;
+
+    const { data: existing, error: exErr } = await supabase
+      .from('collector_cash_ledger')
+      .select('*')
+      .eq('closing_id', closing.id)
+      .in('kind', ['FALTANTE', 'SOBRANTE'])
+      .is('voided_at', null);
+    if (exErr) {
+      if (this.isMissingLedgerTable(exErr)) {
+        if (difference === 0) return; // migración 044 pendiente y el día cuadra: nada que registrar
+        throw new Error('Falta aplicar la migración 044_collector_cash_ledger.sql en Supabase para registrar faltantes y sobrantes.');
+      }
+      throw exErr;
+    }
+
+    const previous = (existing || []) as LedgerEntry[];
+    if (previous.length > 0) {
+      const ids = previous.map(p => p.id);
+      const { data: deps, error: depErr } = await supabase
+        .from('collector_cash_ledger')
+        .select('id')
+        .in('related_id', ids)
+        .is('voided_at', null)
+        .limit(1);
+      if (depErr) throw depErr;
+      if ((deps || []).length > 0) {
+        throw new Error('El sobrante de este día ya tiene aclaraciones o devoluciones. Anúlalas en Cuentas de efectivo antes de volver a aprobar.');
+      }
+      const { error: voidErr } = await supabase
+        .from('collector_cash_ledger')
+        .update({ voided_at: new Date().toISOString(), voided_by: adminId, void_reason: 'Reemplazado por una nueva aprobación del cierre' } as any)
+        .in('id', ids);
+      if (voidErr) throw voidErr;
+    }
+
+    if (difference === 0) return;
+
+    const { error: insErr } = await supabase.from('collector_cash_ledger').insert({
+      collector_id: closing.collector_id,
+      route_id: closing.route_id,
+      closing_id: closing.id,
+      kind: difference < 0 ? 'FALTANTE' : 'SOBRANTE',
+      amount: Math.abs(difference),
+      movement_date: String(closing.closing_date).slice(0, 10),
+      note: observations || null,
+      created_by: adminId,
+    } as any);
+    if (insErr) throw insErr;
+  }
+
+  /**
+   * Reabre una liquidación (elimina o marca como no cerrada la liquidación de un día).
+   * Si el día dejó un faltante o sobrante en la cuenta del cobrador, ese movimiento se anula; antes se
+   * valida que no tenga reposiciones o aclaraciones que dependan de él.
    */
   static async reopenLiquidation(routeId: string, dateStr: string) {
+    const closing = await this.getClosingForDate(routeId, dateStr);
+
+    let diffIds: string[] = [];
+    if (closing?.id) {
+      const { data: ledger, error: ledErr } = await supabase
+        .from('collector_cash_ledger')
+        .select('*')
+        .eq('collector_id', closing.collector_id)
+        .is('voided_at', null);
+      if (ledErr && !this.isMissingLedgerTable(ledErr)) throw ledErr;
+
+      const entries = (ledErr ? [] : (ledger || [])) as LedgerEntry[];
+      const diffRows = entries.filter(e => e.closing_id === closing.id && (e.kind === 'FALTANTE' || e.kind === 'SOBRANTE'));
+      diffIds = diffRows.map(d => d.id);
+
+      if (diffRows.some(d => dependentsOf(d, entries).length > 0)) {
+        throw new Error('Este día dejó un sobrante que ya fue aclarado, devuelto o compensado. Anula esos movimientos en Cuentas de efectivo antes de reabrir el día.');
+      }
+      if (diffIds.length > 0 && wouldGoNegative(entries, diffIds)) {
+        throw new Error('Este día dejó un faltante que ya tiene reposiciones o compensaciones registradas. Anúlalas en Cuentas de efectivo antes de reabrir el día.');
+      }
+    }
+
     const { error } = await supabase
       .from('daily_closings')
       .update({ is_closed: false, closed_by: null, closed_at: null } as any)
@@ -1023,6 +1168,18 @@ export class AdminService {
       .eq('closing_date', dateStr);
 
     if (error) throw error;
+
+    if (diffIds.length > 0) {
+      const { error: voidErr } = await supabase
+        .from('collector_cash_ledger')
+        .update({
+          voided_at: new Date().toISOString(),
+          voided_by: useAuthStore.getState().user?.id ?? null,
+          void_reason: 'Día reabierto',
+        } as any)
+        .in('id', diffIds);
+      if (voidErr) throw voidErr;
+    }
   }
 
   // ─── CLIENTES ────────────────────────────────────────────────────────
@@ -1989,6 +2146,8 @@ export class AdminService {
     adminId: string;
     totalAmount: number;
     observation?: string;
+    /** Fecha real del cobro (ISO). Solo para cobros tardíos que aclaran un sobrante; por defecto, ahora. */
+    collectedAt?: string;
   }) {
     // 1. Get loan to calculate distributions
     const { data: loan, error: loanErr } = await supabase.from('loans').select('*').eq('id', payload.loanId).single();
@@ -2000,7 +2159,10 @@ export class AdminService {
     crypto.getRandomValues(array);
     const operationId = Array.from(array, dec => ('0' + dec.toString(16)).substr(-2)).join('');
 
-    const collectedAt = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    const collectedAt = payload.collectedAt ?? nowIso;
+    // Día del cobro (Colombia): decide si cada cuota queda pagada a tiempo, atrasada o adelantada
+    const payDateStr = colombiaDateFromIso(collectedAt);
 
     const { error: paymentError } = await supabase
       .from('payments')
@@ -2020,7 +2182,7 @@ export class AdminService {
         is_above_expected: false,
         sync_status: 'synced',
         collected_at: collectedAt,
-        synced_at: collectedAt,
+        synced_at: nowIso,
         created_by: payload.adminId
       }] as any);
 
@@ -2049,7 +2211,8 @@ export class AdminService {
     const allocations = [];
     const updatedInsts = [];
 
-    const todayStr = colombiaToday();
+    // Para un cobro tardío se compara contra la fecha real del pago, no contra hoy
+    const todayStr = payDateStr;
 
     for (const inst of (pendingInsts || [])) {
       if (remainingToDistribute <= 0) break;
@@ -2112,7 +2275,7 @@ export class AdminService {
       status: newLoanBalance <= 0 ? 'CANCELADO' : loan.status
     }).eq('id', payload.loanId);
 
-    return { operation_id: operationId };
+    return { operation_id: operationId, payment_id: paymentId as string | null };
   }
 
   /**
@@ -2303,6 +2466,7 @@ export class AdminService {
       .eq('id', paymentId)
       .single();
     if (pErr) throw pErr;
+    await this.assertPaymentNotLinkedToLedger(paymentId);
     await this.assertPaymentDayNotClosed(payment as any);
 
     const oldAmount = Number(payment.total_amount);
@@ -2485,7 +2649,7 @@ export class AdminService {
    * Elimina un cobro registrado por completo, revirtiendo el saldo del préstamo
    * y el estado de las cuotas.
    */
-  static async deletePayment(paymentId: string) {
+  static async deletePayment(paymentId: string, opts?: { skipLedgerChecks?: boolean }) {
     // 1. Obtener el pago original
     const { data: payment, error: pErr } = await supabase
       .from('payments')
@@ -2493,7 +2657,12 @@ export class AdminService {
       .eq('id', paymentId)
       .single();
     if (pErr) throw pErr;
-    await this.assertPaymentDayNotClosed(payment as any);
+    // `skipLedgerChecks` solo lo usa la anulación de una aclaración de sobrante (CashLedgerService): ese cobro
+    // lo registró el admin, no entra en la liquidación del cobrador, y su día ya puede estar liquidado.
+    if (!opts?.skipLedgerChecks) {
+      await this.assertPaymentNotLinkedToLedger(paymentId);
+      await this.assertPaymentDayNotClosed(payment as any);
+    }
 
     const loanId = payment.loan_id;
 

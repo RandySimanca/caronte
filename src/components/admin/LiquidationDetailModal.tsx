@@ -9,6 +9,9 @@ import { pdf } from '@react-pdf/renderer';
 import { DailyLiquidationPdf } from '../reports/pdf/templates/DailyLiquidationPdf';
 import { downloadExcel } from '../reports/excel/ExcelExporter';
 import { FileDown, FileSpreadsheet } from 'lucide-react';
+import { CashLedgerService } from '@/services/CashLedgerService';
+import { CollectorCashAccountModal } from './CollectorCashAccountModal';
+import { computeDifference, type CashBalances } from '@/lib/cashLedger';
 
 interface LiquidationDetailModalProps {
   isOpen: boolean;
@@ -29,6 +32,12 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
   const [closing, setClosing] = useState<any | null>(null);
   // 'live': día abierto, se calcula en vivo | 'snapshot': liquidado con respaldo | 'legacy': liquidado sin respaldo
   const [source, setSource] = useState<'live' | 'snapshot' | 'legacy'>('live');
+  // Efectivo que el admin cuenta y recibe del cobrador (texto del input) y la explicación de una diferencia
+  const [actualStr, setActualStr] = useState('');
+  const [observations, setObservations] = useState('');
+  // Faltante / sobrante pendientes del cobrador en su cuenta de efectivo (null = aún no cargado o sin migración)
+  const [balances, setBalances] = useState<CashBalances | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
   
   const currentUser = useAuthStore(state => state.user);
 
@@ -44,6 +53,9 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
       setBaseFromDate(null);
       setClosing(null);
       setSource('live');
+      setActualStr('');
+      setObservations('');
+      setBalances(null);
       try {
         const closingRow = await AdminService.getClosingForDate(route.id, dateStr);
         if (cancelled) return;
@@ -77,6 +89,12 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
           setSource(closingRow?.is_closed ? 'legacy' : 'live');
         }
         setClosing(closingRow);
+        // Cuenta de efectivo del cobrador: es informativa, si falla no se bloquea la liquidación
+        if (route.cobradorId) {
+          CashLedgerService.getBalances(route.cobradorId)
+            .then(b => { if (!cancelled) setBalances(b); })
+            .catch(() => undefined);
+        }
       } catch (error) {
         if (cancelled) return;
         toast.error('Error al cargar detalle de liquidación');
@@ -91,18 +109,41 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
   }, [isOpen, route?.id, dateStr]);
 
   const isClosed = closing ? !!closing.is_closed : route?.estado === 'Liquidado';
+  const totalFinal = detail ? detail.totalEntregar + baseAmount : 0;
+  // Si el total esperado es <= 0 el admin no recibe efectivo, así que no hay nada que contar
+  const needsCashCount = totalFinal > 0;
+  const actualCash = actualStr === '' ? null : Number(parseNumberInput(actualStr));
+  const cashEntered = !needsCashCount || actualCash !== null;
+  const liveDifference = needsCashCount && actualCash !== null ? computeDifference(totalFinal, actualCash) : 0;
+  const needsObservation = liveDifference !== 0 && observations.trim().length < 3;
+  // Los cierres anteriores a esta función (sin snapshot versión 2) no tienen conteo real de efectivo
+  const closedCounted = !!closing?.is_closed && (closing?.snapshot?.version ?? 0) >= 2;
   const approvedAtLabel = closing?.closed_at
     ? new Date(closing.closed_at).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })
     : null;
 
   const handleApprove = async () => {
     if (!currentUser || !route || !detail) return;
+    if (!cashEntered) {
+      toast.error('Digita el efectivo que entregó el cobrador');
+      return;
+    }
+    if (needsObservation) {
+      toast.error('Hay una diferencia de caja: escribe una observación que la explique');
+      return;
+    }
 
-    const totalFinal = detail.totalEntregar + baseAmount;
+    const diffHtml = liveDifference === 0
+      ? '<span style="color:#059669">Caja cuadrada</span>'
+      : liveDifference < 0
+        ? `<span style="color:#dc2626">Faltante: <strong>${formatCurrency(Math.abs(liveDifference))}</strong> (queda a cargo del cobrador)</span>`
+        : `<span style="color:#d97706">Sobrante: <strong>${formatCurrency(liveDifference)}</strong> (queda por aclarar)</span>`;
     const confirmed = await confirmAction({
       title: '¿Aprobar y cerrar caja?',
       html: `<strong>${route.cobrador}</strong> &mdash; Ruta <strong>${route.ruta}</strong><br/>
-             Total a entregar: <strong style="color:#059669">${formatCurrency(totalFinal)}</strong>`,
+             Total esperado: <strong style="color:#059669">${formatCurrency(totalFinal)}</strong>${needsCashCount
+               ? `<br/>Efectivo recibido: <strong>${formatCurrency(actualCash ?? 0)}</strong><br/>${diffHtml}`
+               : ''}`,
       confirmText: 'Sí, aprobar',
     });
     if (!confirmed) return;
@@ -117,6 +158,8 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
         totalGastos: detail.totalGastos,
         viaticoDia: detail.viaticoDia,
         totalEntregar: totalFinal,
+        actualDelivery: needsCashCount ? actualCash : totalFinal,
+        observations: observations.trim(),
         totalPrestado: detail.totalPrestado,
         totalTransferencias: detail.totalTransferencias || 0,
         baseAmount: baseAmount,
@@ -169,6 +212,15 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
     }).format(amount);
   };
 
+  // Conteo de efectivo para PDF/Excel: el guardado si el día está liquidado; el que se está digitando si no
+  const reportActual = isClosed
+    ? (closedCounted ? Number(closing.actual_delivery) : null)
+    : (needsCashCount ? actualCash : null);
+  const reportDifference = reportActual === null
+    ? null
+    : (isClosed ? Number(closing?.difference || 0) : liveDifference);
+  const reportObservations = isClosed ? (closing?.observations || null) : (observations.trim() || null);
+
   const exportPdf = async () => {
     try {
       const blob = await pdf(<DailyLiquidationPdf 
@@ -180,6 +232,9 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
         source={source}
         approvedAt={closing?.closed_at || null}
         approvedTotal={closing?.is_closed ? Number(closing.expected_delivery) : null}
+        actualDelivery={reportActual}
+        difference={reportDifference}
+        observations={reportObservations}
       />).toBlob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -202,6 +257,10 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
           { Concepto: 'Viático Asignado', Valor: -detail.viaticoDia },
           { Concepto: 'Préstamos Nuevos', Valor: -detail.totalPrestado },
           { Concepto: 'Total A Entregar', Valor: detail.totalEntregar + baseAmount },
+          ...(reportActual !== null ? [
+            { Concepto: 'Efectivo Recibido', Valor: reportActual },
+            { Concepto: 'Diferencia (negativo = faltante, positivo = sobrante)', Valor: reportDifference ?? 0 },
+          ] : []),
           { Concepto: 'Salario Mensual Cobrador (Referencia)', Valor: detail.salarioCobrador || 0 }
         ]},
         { sheetName: 'Detalle Gastos', data: detail.detalleGastos.map((g: any) => ({
@@ -274,6 +333,20 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                 </div>
               )}
               
+              {balances && (balances.debt > 0 || balances.surplus > 0) && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs sm:text-sm font-medium rounded-xl p-3 flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    Este cobrador tiene
+                    {balances.debt > 0 && <> un faltante por reponer de <strong>{formatCurrency(balances.debt)}</strong></>}
+                    {balances.debt > 0 && balances.surplus > 0 && ' y'}
+                    {balances.surplus > 0 && <> un sobrante por aclarar de <strong>{formatCurrency(balances.surplus)}</strong></>}.
+                  </span>
+                  <button onClick={() => setAccountOpen(true)} className="px-3 py-1 bg-white border border-amber-300 rounded-lg font-bold hover:bg-amber-100">
+                    Ver cuenta
+                  </button>
+                </div>
+              )}
+
               {/* Resumen Matemático */}
               <div className="bg-slate-50 rounded-2xl p-4 sm:p-5 border border-slate-200 space-y-3 sm:space-y-4">
                 
@@ -364,6 +437,78 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                 </div>
               </div>
 
+              {/* Conteo de efectivo: lo que realmente recibe el admin */}
+              {!isClosed && (needsCashCount ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="font-bold text-slate-800 text-sm sm:text-base">Efectivo recibido del cobrador</label>
+                    <button
+                      type="button"
+                      onClick={() => setActualStr(formatNumberInput(String(Math.round(totalFinal))))}
+                      className="text-xs font-bold text-brand-600 hover:text-brand-700"
+                    >
+                      Cuadra exacto
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">$</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={actualStr}
+                      onChange={(e) => setActualStr(formatNumberInput(e.target.value))}
+                      placeholder="Cuenta el dinero y digítalo"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-7 pr-3 py-2 text-right text-lg font-black text-slate-800 focus:ring-2 focus:ring-brand-500 outline-none"
+                    />
+                  </div>
+                  {actualCash !== null && (
+                    <div className={`flex justify-between items-center rounded-lg px-3 py-2 text-sm font-bold ${
+                      liveDifference === 0 ? 'bg-emerald-50 text-emerald-700'
+                        : liveDifference < 0 ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      <span>{liveDifference === 0 ? 'Caja cuadrada' : liveDifference < 0 ? 'Faltante (lo debe el cobrador)' : 'Sobrante (por aclarar)'}</span>
+                      {liveDifference !== 0 && <span>{formatCurrency(Math.abs(liveDifference))}</span>}
+                    </div>
+                  )}
+                  {liveDifference !== 0 && (
+                    <div>
+                      <label className="text-xs font-bold text-slate-600">
+                        Observación de la diferencia (obligatoria)
+                      </label>
+                      <textarea
+                        value={observations}
+                        onChange={(e) => setObservations(e.target.value)}
+                        rows={2}
+                        placeholder={liveDifference < 0 ? 'Qué dijo el cobrador del faltante' : 'Posible cobro que no se digitó, etc.'}
+                        className="w-full mt-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  El total a entregar es $0 o negativo: no hay efectivo por recibir del cobrador, así que no hay nada que contar.
+                </p>
+              ))}
+
+              {isClosed && closing && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2 text-sm">
+                  {closedCounted ? (
+                    <>
+                      <div className="flex justify-between"><span className="text-slate-500">Total esperado</span><span className="font-bold text-slate-800">{formatCurrency(Number(closing.expected_delivery))}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Efectivo recibido</span><span className="font-bold text-slate-800">{formatCurrency(Number(closing.actual_delivery))}</span></div>
+                      <div className={`flex justify-between font-black ${Number(closing.difference) === 0 ? 'text-emerald-600' : Number(closing.difference) < 0 ? 'text-rose-600' : 'text-amber-600'}`}>
+                        <span>{Number(closing.difference) === 0 ? 'Caja cuadrada' : Number(closing.difference) < 0 ? 'Faltante' : 'Sobrante'}</span>
+                        {Number(closing.difference) !== 0 && <span>{formatCurrency(Math.abs(Number(closing.difference)))}</span>}
+                      </div>
+                      {closing.observations && <p className="text-xs text-slate-500 break-words">“{closing.observations}”</p>}
+                    </>
+                  ) : (
+                    <p className="text-xs text-slate-500">Cierre anterior al conteo de efectivo: no tiene efectivo recibido ni diferencia registrados.</p>
+                  )}
+                </div>
+              )}
+
               {/* Costos de Personal — informativo */}
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
                 <div className="flex items-center gap-2 text-amber-700 font-bold text-sm">
@@ -412,8 +557,8 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
               ) : (
                 <button
                   onClick={handleApprove}
-                  disabled={isApproving}
-                  className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-white font-bold rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center gap-2"
+                  disabled={isApproving || !cashEntered || needsObservation}
+                  className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center gap-2"
                 >
                   {isApproving ? (
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -440,6 +585,16 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
           ) : null}
         </div>
       </div>
+
+      <CollectorCashAccountModal
+        isOpen={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        collectorId={route.cobradorId ?? null}
+        collectorName={route.cobrador}
+        onChanged={() => {
+          if (route.cobradorId) CashLedgerService.getBalances(route.cobradorId).then(setBalances).catch(() => undefined);
+        }}
+      />
     </div>
   );
 }

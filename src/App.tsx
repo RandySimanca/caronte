@@ -22,6 +22,7 @@ import { LoginPage } from '@/pages/auth/LoginPage';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { AdminDashboard } from '@/pages/admin/AdminDashboard';
 import { LiquidationsPage } from '@/pages/admin/LiquidationsPage';
+import { CashAccountsPage } from '@/pages/admin/CashAccountsPage';
 import { UsersPage } from '@/pages/admin/UsersPage';
 import { RoutesPage } from '@/pages/admin/RoutesPage';
 import { SettingsPage } from '@/pages/admin/SettingsPage';
@@ -133,6 +134,7 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: 'dashboard', element: <AdminDashboard /> },
       { path: 'liquidations', element: <LiquidationsPage /> },
+      { path: 'cash-accounts', element: <CashAccountsPage /> },
       { path: 'users', element: <UsersPage /> },
       // Placeholders para el resto
       { path: 'routes', element: <RoutesPage /> },
