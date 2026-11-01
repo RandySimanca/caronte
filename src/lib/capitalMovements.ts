@@ -4,19 +4,28 @@
  * El monto de cada movimiento es SIEMPRE positivo; el tipo (kind) define si suma o resta a la plata
  * que circula en la ruta (la "base" de la liquidación):
  *   - APORTE_CAPITAL   suma   (el admin agrega dinero a la ruta)
- *   - SALARIO_COBRADOR resta  (pago mensual al cobrador)
- *   - SALARIO_ADMIN    resta  (retiro mensual del administrador)
+ *   - SALARIO_COBRADOR resta  (pago al cobrador)
+ *   - SALARIO_ADMIN    resta  (retiro del administrador)
+ *   - RETIRO_OTRO      resta  (retiro de dinero de la ruta que no es salario)
+ *
+ * Los pagos de salario pueden salir de la ruta (source RUTA, descuentan la base) o de otro dinero del
+ * admin (source EXTERNO, no tocan la base pero cuentan como salario pagado en los reportes).
  *
  * Este archivo es puro (sin dependencias) para poder probarlo aislado. Las mismas reglas de ventana de
  * fechas están en la función SQL get_route_pending_capital() de la migración 045.
  */
 
-export type CapitalKind = 'APORTE_CAPITAL' | 'SALARIO_COBRADOR' | 'SALARIO_ADMIN';
+export type CapitalKind = 'APORTE_CAPITAL' | 'SALARIO_COBRADOR' | 'SALARIO_ADMIN' | 'RETIRO_OTRO';
+
+/** De dónde sale el dinero: de la ruta (baja la base) o de otro dinero del admin (no toca la base). */
+export type CapitalSource = 'RUTA' | 'EXTERNO';
 
 export interface CapitalMovement {
   id: string;
-  route_id: string;
+  /** null solo en pagos EXTERNO sin ruta asignada. */
+  route_id: string | null;
   kind: CapitalKind;
+  source: CapitalSource;
   amount: number;
   movement_date: string; // YYYY-MM-DD
   method: 'EFECTIVO' | 'TRANSFERENCIA' | null;
@@ -38,13 +47,19 @@ export const KIND_LABELS: Record<CapitalKind, string> = {
   APORTE_CAPITAL: 'Aporte de capital',
   SALARIO_COBRADOR: 'Salario del cobrador',
   SALARIO_ADMIN: 'Salario del administrador',
+  RETIRO_OTRO: 'Otro retiro',
+};
+
+export const SOURCE_LABELS: Record<CapitalSource, string> = {
+  RUTA: 'Dinero de la ruta',
+  EXTERNO: 'Otro dinero (no toca la ruta)',
 };
 
 export const SALARY_KINDS: CapitalKind[] = ['SALARIO_COBRADOR', 'SALARIO_ADMIN'];
 
 /** ¿El movimiento saca dinero de la ruta? */
 export function isOutflow(kind: CapitalKind): boolean {
-  return kind === 'SALARIO_COBRADOR' || kind === 'SALARIO_ADMIN';
+  return kind !== 'APORTE_CAPITAL';
 }
 
 function r2(n: number): number {
@@ -56,12 +71,13 @@ const isActive = (m: Pick<CapitalMovement, 'voided_at'>) => !m.voided_at;
 export interface CapitalTotals {
   /** Dinero que el admin agregó a la ruta. */
   aportes: number;
-  /** Dinero que salió de la ruta (salarios). */
+  /** Dinero que salió (salarios y otros retiros), sea de la ruta o de otro dinero. */
   retiros: number;
   /** aportes - retiros. */
   net: number;
   salarioCobrador: number;
   salarioAdmin: number;
+  otrosRetiros: number;
 }
 
 /** Totales de los movimientos vigentes (ignora los anulados). */
@@ -69,26 +85,29 @@ export function summarize(movements: CapitalMovement[]): CapitalTotals {
   let aportes = 0;
   let salarioCobrador = 0;
   let salarioAdmin = 0;
+  let otrosRetiros = 0;
   for (const m of movements) {
     if (!isActive(m)) continue;
     const amount = Number(m.amount) || 0;
     if (m.kind === 'APORTE_CAPITAL') aportes += amount;
     else if (m.kind === 'SALARIO_COBRADOR') salarioCobrador += amount;
     else if (m.kind === 'SALARIO_ADMIN') salarioAdmin += amount;
+    else if (m.kind === 'RETIRO_OTRO') otrosRetiros += amount;
   }
-  const retiros = salarioCobrador + salarioAdmin;
+  const retiros = salarioCobrador + salarioAdmin + otrosRetiros;
   return {
     aportes: r2(aportes),
     retiros: r2(retiros),
     net: r2(aportes - retiros),
     salarioCobrador: r2(salarioCobrador),
     salarioAdmin: r2(salarioAdmin),
+    otrosRetiros: r2(otrosRetiros),
   };
 }
 
 /**
  * Movimientos vigentes que entran a la base de la liquidación del día `untilDate`:
- * los de fecha posterior al último cierre aprobado (`prevDate`) y hasta `untilDate` inclusive.
+ * solo los de la ruta (source RUTA; los pagos EXTERNO no tocan la base), con fecha posterior al último cierre aprobado (`prevDate`) y hasta `untilDate` inclusive.
  * Sin cierre anterior (`prevDate` = null) entran todos los que lleguen hasta `untilDate`.
  */
 export function movementsInWindow(
@@ -97,7 +116,7 @@ export function movementsInWindow(
   untilDate: string,
 ): CapitalMovement[] {
   return movements.filter(m => {
-    if (!isActive(m)) return false;
+    if (!isActive(m) || m.source !== 'RUTA') return false;
     const d = m.movement_date.slice(0, 10);
     return d <= untilDate && (prevDate === null || d > prevDate);
   });
@@ -157,10 +176,4 @@ export function periodLabel(periodMonth: string): string {
   const [y, m] = periodMonth.slice(0, 10).split('-').map(Number);
   const name = new Date(Date.UTC(y, m - 1, 1)).toLocaleString('es-CO', { month: 'long', timeZone: 'UTC' });
   return `${name} de ${y}`;
-}
-
-/** Lo que falta por pagar de un mes (nunca negativo). */
-export function pendingSalary(due: number, paid: number): number {
-  const p = r2(Number(due || 0) - Number(paid || 0));
-  return p > 0 ? p : 0;
 }

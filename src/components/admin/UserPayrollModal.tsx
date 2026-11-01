@@ -4,7 +4,7 @@ import { AdminService, UserWithRole } from '@/services/AdminService';
 import toast from 'react-hot-toast';
 import { CapitalMovementService } from '@/services/CapitalMovementService';
 import { CapitalMovementFormModal } from '@/components/admin/CapitalMovementFormModal';
-import { pendingSalary, periodMonthOf } from '@/lib/capitalMovements';
+import { periodMonthOf } from '@/lib/capitalMovements';
 
 interface Props {
   isOpen: boolean;
@@ -17,7 +17,7 @@ export function UserPayrollModal({ isOpen, onClose, user }: Props) {
   const [month, setMonth] = useState(new Date().getMonth() + 1); // 1-12
   const [payrollData, setPayrollData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
-  // Lo ya pagado del salario de ese mes (pagos registrados en Capital y pagos de salario)
+  // Lo ya pagado del salario de ese mes (pagos registrados en la vista Dinero, de la ruta o de otro dinero)
   const [paid, setPaid] = useState(0);
   const [isPayFormOpen, setIsPayFormOpen] = useState(false);
 
@@ -148,61 +148,28 @@ export function UserPayrollModal({ isOpen, onClose, user }: Props) {
                     <DollarSign className="w-4 h-4 text-emerald-600" />
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Salario a Pagar</p>
-                    <p className="text-sm text-slate-400">Base: ${(payrollData.workerSalary || 0).toLocaleString()}</p>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ya pagado este mes</p>
+                    <p className="text-sm text-slate-400">Pagos de salario registrados</p>
                   </div>
                 </div>
                 <div className="text-right">
                   <p className="text-xl font-black text-emerald-600">
-                    ${Math.round(payrollData.payrollAmount || 0).toLocaleString()}
+                    ${Math.round(paid).toLocaleString()}
                   </p>
                 </div>
               </div>
 
-              <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-                    <DollarSign className="w-4 h-4 text-amber-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Viáticos (ya recibidos en ruta)</p>
-                    <p className="text-sm text-slate-400">Día: ${(payrollData.workerViaticum || 0).toLocaleString()} · se descuentan en la liquidación diaria</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-xl font-black text-slate-400">
-                    ${Math.round(payrollData.totalViaticum || 0).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-              
-              <div className="pt-4 border-t border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-bold text-slate-800 uppercase tracking-wider">Salario a pagar</p>
-                    <p className="text-xs text-slate-400">Solo salario: los viáticos ya los recibió en ruta</p>
-                  </div>
-                  <p className="text-2xl font-black text-brand-600">
-                    ${Math.round(payrollData.payrollAmount || 0).toLocaleString()}
-                  </p>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-slate-500">Ya pagado este mes</span>
-                  <span className="font-bold text-slate-700">${Math.round(paid).toLocaleString()}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-slate-500">Pendiente</span>
-                  <span className="font-bold text-emerald-600">
-                    ${Math.round(pendingSalary(payrollData.payrollAmount || 0, paid)).toLocaleString()}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setIsPayFormOpen(true)}
-                  className="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-sm"
-                >
-                  {paid > 0 ? 'Registrar otro pago' : 'Registrar pago'}
-                </button>
-              </div>
+              <p className="text-xs text-slate-500">
+                Los días laborados son solo una referencia. El valor a pagar lo digitas tú al registrar el pago, y
+                puedes elegir si sale del dinero de la ruta o de otro dinero.
+              </p>
+
+              <button
+                onClick={() => setIsPayFormOpen(true)}
+                className="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-sm"
+              >
+                Registrar pago
+              </button>
             </div>
           ) : (
             <div className="py-12 text-center text-slate-500">
@@ -220,9 +187,6 @@ export function UserPayrollModal({ isOpen, onClose, user }: Props) {
       onSaved={() => calculatePayroll(year, month)}
       beneficiary={{ id: user.id, name: user.full_name }}
       periodMonth={periodMonthOf(year, month)}
-      defaultAmount={payrollData ? pendingSalary(payrollData.payrollAmount || 0, paid) : 0}
-      dueAmount={payrollData?.payrollAmount || 0}
-      alreadyPaid={paid}
     />
     </>
   );

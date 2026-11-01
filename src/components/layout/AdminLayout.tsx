@@ -9,6 +9,7 @@ import {
   LogOut,
   Activity,
   Wallet,
+  Landmark,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -16,6 +17,7 @@ import {
 const ADMIN_NAVIGATION = [
   { name: 'Dashboard', href: '/admin/dashboard', icon: Activity },
   { name: 'Liquidaciones', href: '/admin/liquidations', icon: Wallet },
+  { name: 'Dinero', href: '/admin/money', icon: Landmark },
   { name: 'Usuarios', href: '/admin/users', icon: Users },
   { name: 'Rutas', href: '/admin/routes', icon: Map },
   { name: 'Reportes', href: '/admin/reports', icon: BarChart3 },

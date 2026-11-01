@@ -23,6 +23,7 @@ import { AdminLayout } from '@/components/layout/AdminLayout';
 import { AdminDashboard } from '@/pages/admin/AdminDashboard';
 import { LiquidationsPage } from '@/pages/admin/LiquidationsPage';
 import { CashAccountsPage } from '@/pages/admin/CashAccountsPage';
+import { MoneyPage } from '@/pages/admin/MoneyPage';
 import { UsersPage } from '@/pages/admin/UsersPage';
 import { RoutesPage } from '@/pages/admin/RoutesPage';
 import { SettingsPage } from '@/pages/admin/SettingsPage';
@@ -135,6 +136,7 @@ const router = createBrowserRouter([
       { path: 'dashboard', element: <AdminDashboard /> },
       { path: 'liquidations', element: <LiquidationsPage /> },
       { path: 'cash-accounts', element: <CashAccountsPage /> },
+      { path: 'money', element: <MoneyPage /> },
       { path: 'users', element: <UsersPage /> },
       // Placeholders para el resto
       { path: 'routes', element: <RoutesPage /> },

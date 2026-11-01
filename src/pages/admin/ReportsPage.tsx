@@ -260,6 +260,7 @@ export function ReportsPage() {
             { Concepto: 'Retiro Salario Administrador', Monto: capitalTotals.salarioAdmin },
             { Concepto: 'Flujo Neto después del Salario del Administrador', Monto: flujoDespuesDelAdmin },
             { Concepto: 'Capital agregado a las rutas (no es ingreso)', Monto: capitalTotals.aportes },
+            { Concepto: 'Otros retiros de las rutas (no son gasto)', Monto: capitalTotals.otrosRetiros },
             { Concepto: 'Utilidad Proyectada', Monto: gananciaProyectada },
           ]},
           { sheetName: 'Gastos por Categoría', data: expensesByCategory.map(e => ({ Categoría: e.name, Monto: e.value })) },
@@ -655,6 +656,11 @@ export function ReportsPage() {
                   {capitalTotals.aportes > 0 && (
                     <p className="text-xs text-slate-500 mt-3">
                       Capital agregado a las rutas en el período: <strong>{formatCurrency(capitalTotals.aportes)}</strong>. No es ingreso: no entra al flujo neto.
+                    </p>
+                  )}
+                  {capitalTotals.otrosRetiros > 0 && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      Otros retiros de dinero de las rutas en el período: <strong>{formatCurrency(capitalTotals.otrosRetiros)}</strong>. No son gasto: no entran al flujo neto.
                     </p>
                   )}
                   {(personnelCosts.viaticumRate === 0 && personnelCosts.salaryMonthly === 0) && (

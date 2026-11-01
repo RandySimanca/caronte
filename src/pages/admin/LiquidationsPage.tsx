@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { Wallet, CheckCircle, Clock, HandCoins, Landmark } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
 import { LiquidationDetailModal } from '@/components/admin/LiquidationDetailModal';
-import { CapitalMovementsModal } from '@/components/admin/CapitalMovementsModal';
 import toast from 'react-hot-toast';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { showError } from '@/lib/swal';
@@ -20,7 +19,6 @@ export function LiquidationsPage() {
 
   const [selectedRoute, setSelectedRoute] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isCapitalOpen, setIsCapitalOpen] = useState(false);
 
   // `silent` = recarga en segundo plano (tiempo real) sin spinner; el contador descarta respuestas viejas.
   const liquidationsRequestRef = useRef(0);
@@ -99,14 +97,13 @@ export function LiquidationsPage() {
 
             Cuentas de efectivo
           </Link>
-          <button
-            type="button"
-            onClick={() => setIsCapitalOpen(true)}
+          <Link
+            to="/admin/money"
             className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-bold rounded-xl"
           >
             <Landmark className="w-4 h-4" />
-            Capital y salarios
-          </button>
+            Dinero
+          </Link>
           <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200">
             <label className="text-sm font-bold text-slate-600 pl-2">Fecha:</label>
             <input
@@ -229,14 +226,6 @@ export function LiquidationsPage() {
         onSuccess={() => fetchLiquidations()}
         route={selectedRoute}
         dateStr={selectedDate}
-      />
-
-      <CapitalMovementsModal
-        isOpen={isCapitalOpen}
-        onClose={() => {
-          setIsCapitalOpen(false);
-          fetchLiquidations(true);
-        }}
       />
     </div>
   );

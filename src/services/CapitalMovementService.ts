@@ -9,6 +9,7 @@ import {
   summarize,
   type CapitalKind,
   type CapitalMovement,
+  type CapitalSource,
   type CapitalTotals,
   type OpeningBase,
 } from '@/lib/capitalMovements';
@@ -45,11 +46,10 @@ export interface OpeningBaseResult extends OpeningBase {
 }
 
 export interface RegisterBase {
-  routeId: string;
   amount: number;
   method: 'EFECTIVO' | 'TRANSFERENCIA';
   note?: string;
-  /** Día desde el que cuenta para la base. Por defecto, el primer día aún no liquidado. */
+  /** Día desde el que cuenta. En movimientos de la ruta, por defecto el primer día aún no liquidado. */
   date?: string;
   adminId: string;
 }
@@ -64,6 +64,7 @@ export class CapitalMovementService {
     from?: string;
     to?: string;
     kind?: CapitalKind;
+    source?: CapitalSource;
     includeVoided?: boolean;
   } = {}): Promise<CapitalMovement[]> {
     let query = supabase
@@ -81,6 +82,7 @@ export class CapitalMovementService {
     if (filters.from) query = query.gte('movement_date', filters.from);
     if (filters.to) query = query.lte('movement_date', filters.to);
     if (filters.kind) query = query.eq('kind', filters.kind);
+    if (filters.source) query = query.eq('source', filters.source);
     if (!filters.includeVoided) query = query.is('voided_at', null);
 
     const { data, error } = await query;
@@ -159,25 +161,13 @@ export class CapitalMovementService {
     return (data || []).reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
   }
 
-  /**
-   * Monto del último retiro de salario del administrador (0 si nunca ha registrado uno). Se sugiere al abrir
-   * el formulario. No se guarda como parámetro: los parámetros los descarga el celular de cada cobrador.
-   */
-  static async getLastAdminSalary(adminId: string): Promise<number> {
-    const { data, error } = await supabase
-      .from('route_capital_movements')
-      .select('amount')
-      .eq('kind', 'SALARIO_ADMIN')
-      .eq('beneficiary_id', adminId)
-      .is('voided_at', null)
-      .order('movement_date', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(1);
-    if (error) {
-      if (isMissingTable(error)) return 0;
-      throw error;
-    }
-    return Number((data as any[])?.[0]?.amount || 0);
+  /** Cobradores activos, para elegir a quién se le paga (sin importar su asignación de ruta). */
+  static async getCollectors(): Promise<{ id: string; name: string }[]> {
+    const users = await AdminService.getUsers();
+    return users
+      .filter(u => u.roles?.name === 'COBRADOR')
+      .map(u => ({ id: u.id, name: u.full_name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
   }
 
   /** Ruta activa de un cobrador (para sugerirla al pagarle), o null si no tiene. */
@@ -220,13 +210,14 @@ export class CapitalMovementService {
 
   // ─── REGISTRO ───────────────────────────────────────────────────────────
 
-  /** El admin agrega dinero a la ruta. Sube la base desde la fecha indicada. */
-  static async registerAporte(p: RegisterBase) {
+  /** Ingreso: el admin agrega dinero a la ruta. Sube la base desde la fecha indicada. */
+  static async registerAporte(p: RegisterBase & { routeId: string }) {
     this.assertAmount(p.amount);
     const date = await this.resolveDate(p.routeId, p.date);
     return this.insert({
       route_id: p.routeId,
       kind: 'APORTE_CAPITAL',
+      source: 'RUTA',
       amount: p.amount,
       movement_date: date,
       method: p.method,
@@ -235,19 +226,52 @@ export class CapitalMovementService {
     });
   }
 
-  /** Pago de salario (cobrador o administrador) de un mes. Baja la base desde la fecha indicada. */
+  /** Retiro de dinero de la ruta que no es salario. Baja la base desde la fecha indicada. La nota es obligatoria. */
+  static async registerRetiro(p: RegisterBase & { routeId: string }) {
+    this.assertAmount(p.amount);
+    if ((p.note || '').trim().length < 3) throw new Error('Escribe en la nota para qué es el retiro.');
+    const date = await this.resolveDate(p.routeId, p.date);
+    return this.insert({
+      route_id: p.routeId,
+      kind: 'RETIRO_OTRO',
+      source: 'RUTA',
+      amount: p.amount,
+      movement_date: date,
+      method: p.method,
+      note: p.note!.trim(),
+      created_by: p.adminId,
+    });
+  }
+
+  /**
+   * Pago de salario (cobrador o administrador) de un mes. El monto lo digita el admin.
+   *  - source RUTA: sale del dinero de la ruta; baja la base desde la fecha indicada. Pide ruta.
+   *  - source EXTERNO: el admin paga con otro dinero; no toca la base ni las liquidaciones, pero cuenta como
+   *    salario pagado en los reportes. La ruta es opcional (sirve para que cuente en los reportes de esa ruta).
+   */
   static async registerSalary(p: RegisterBase & {
     kind: 'SALARIO_COBRADOR' | 'SALARIO_ADMIN';
+    source: CapitalSource;
+    routeId?: string | null;
     beneficiaryId: string;
     /** Mes que cubre el pago, siempre YYYY-MM-01. */
     periodMonth: string;
   }) {
     this.assertAmount(p.amount);
     if (!/^\d{4}-\d{2}-01$/.test(p.periodMonth)) throw new Error('El mes del pago no es válido.');
-    const date = await this.resolveDate(p.routeId, p.date);
+
+    let date: string;
+    if (p.source === 'RUTA') {
+      if (!p.routeId) throw new Error('Elige la ruta de la que sale el dinero.');
+      date = await this.resolveDate(p.routeId, p.date);
+    } else {
+      date = (p.date || colombiaToday()).slice(0, 10);
+    }
+
     return this.insert({
-      route_id: p.routeId,
+      route_id: p.routeId || null,
       kind: p.kind,
+      source: p.source,
       amount: p.amount,
       movement_date: date,
       method: p.method,
