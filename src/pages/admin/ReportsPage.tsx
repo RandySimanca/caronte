@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { BarChart3, Calendar, Filter, TrendingDown, DollarSign, Activity, FileDown, FileSpreadsheet, Briefcase, BookOpen, Download, UserCheck, Car, Wallet, CheckCheck, Users } from 'lucide-react';
 import { AdminService } from '@/services/AdminService';
+import { CapitalMovementService } from '@/services/CapitalMovementService';
+import { summarize, type CapitalTotals } from '@/lib/capitalMovements';
 import toast from 'react-hot-toast';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import {
@@ -32,6 +34,8 @@ export function ReportsPage() {
   
   const [routeStates, setRouteStates] = useState<any[]>([]);
   // Costos de personal: viático diario y salario mensual
+  // Aportes de capital y salarios pagados en el período (movimientos registrados en Liquidaciones > Capital y salarios)
+  const [capitalTotals, setCapitalTotals] = useState<CapitalTotals>(() => summarize([]));
   const [personnelCosts, setPersonnelCosts] = useState<{ viaticumRate: number; salaryMonthly: number }>({ viaticumRate: 0, salaryMonthly: 0 });
   
   // Filters
@@ -52,15 +56,18 @@ export function ReportsPage() {
   const fetchReports = async () => {
     setIsLoading(true);
     try {
-      const [resumen, cartera, ledger, pending, profit] = await Promise.all([
+      const [resumen, cartera, ledger, pending, profit, capital] = await Promise.all([
         AdminService.getReportsData(startDate, endDate, selectedRoute),
         AdminService.getPortfolioState(selectedRoute),
         AdminService.getLedgerTransactions(startDate, endDate, selectedRoute),
         AdminService.getPendingCollectionAmount(startDate, endDate, selectedRoute),
         // Si falla no tumba el resto del reporte
-        AdminService.getCompletedLoansProfit(startDate, endDate, selectedRoute).catch(() => null)
+        AdminService.getCompletedLoansProfit(startDate, endDate, selectedRoute).catch(() => null),
+        // Si falla (o falta la migración 045) el reporte sigue con el salario estimado
+        CapitalMovementService.getPeriodTotals(startDate, endDate, selectedRoute).catch(() => null)
       ]);
       setData(resumen);
+      setCapitalTotals(capital ?? summarize([]));
       setPortfolioData(cartera);
       setLedgerData(ledger);
       setPendingCollection(pending);
@@ -131,6 +138,12 @@ export function ReportsPage() {
 
     return { totalViaticos: computedViaticos, totalSalario: computedSalario, diasLaborales: totalAssignedDays };
   }, [startDate, endDate, data.assignments, personnelCosts]);
+
+  // Si ya hay pagos de salario del cobrador en el período se usa lo realmente pagado; si no, el estimado.
+  const salarioEsPagado = capitalTotals.salarioCobrador > 0;
+  const salarioCobrador = salarioEsPagado ? capitalTotals.salarioCobrador : totalSalario;
+  const flujoNeto = totalRecaudo - totalGastos - totalViaticos - salarioCobrador - totalPrestado;
+  const flujoDespuesDelAdmin = flujoNeto - capitalTotals.salarioAdmin;
 
   const dailyRecaudoData = useMemo(() => {
     const grouped: Record<string, number> = {};
@@ -241,9 +254,12 @@ export function ReportsPage() {
             { Concepto: 'Recaudo Total', Monto: totalRecaudo },
             { Concepto: 'Gastos Operativos', Monto: totalGastos },
             { Concepto: 'Viáticos del Período', Monto: totalViaticos },
-            { Concepto: 'Salario Estimado del Período', Monto: totalSalario },
+            { Concepto: salarioEsPagado ? 'Salario del Cobrador Pagado' : 'Salario Estimado del Período', Monto: salarioCobrador },
             { Concepto: 'Préstamos Entregados', Monto: totalPrestado },
-            { Concepto: 'Flujo Neto', Monto: totalRecaudo - totalGastos - totalViaticos - totalSalario - totalPrestado },
+            { Concepto: 'Flujo Neto', Monto: flujoNeto },
+            { Concepto: 'Retiro Salario Administrador', Monto: capitalTotals.salarioAdmin },
+            { Concepto: 'Flujo Neto después del Salario del Administrador', Monto: flujoDespuesDelAdmin },
+            { Concepto: 'Capital agregado a las rutas (no es ingreso)', Monto: capitalTotals.aportes },
             { Concepto: 'Utilidad Proyectada', Monto: gananciaProyectada },
           ]},
           { sheetName: 'Gastos por Categoría', data: expensesByCategory.map(e => ({ Categoría: e.name, Monto: e.value })) },
@@ -512,9 +528,9 @@ export function ReportsPage() {
                     <div className="p-2 bg-purple-200 rounded-lg"><UserCheck className="w-5 h-5" /></div>
                     Salario Período
                   </div>
-                  <div className="text-3xl font-black text-purple-800 relative z-10">{formatCurrency(totalSalario)}</div>
+                  <div className="text-3xl font-black text-purple-800 relative z-10">{formatCurrency(salarioCobrador)}</div>
                   <p className="text-xs text-purple-600 mt-2 relative z-10">
-                    Calculado por días exactos de asignación (/ 30)
+                    {salarioEsPagado ? 'Pagado en el período (registrado en Capital y salarios)' : 'Estimado por días exactos de asignación (/ 30)'}
                   </p>
                 </div>
 
@@ -605,10 +621,12 @@ export function ReportsPage() {
                       <tr className="hover:bg-purple-50">
                         <td className="py-3 px-4 font-medium flex items-center gap-2">
                           <UserCheck className="w-4 h-4 text-purple-500" />
-                          Salario Estimado del Período
-                          <span className="text-xs text-slate-400 font-normal">({formatCurrency(personnelCosts.salaryMonthly)}/mes)</span>
+                          {salarioEsPagado ? 'Salario del Cobrador Pagado' : 'Salario Estimado del Período'}
+                          <span className="text-xs text-slate-400 font-normal">
+                            {salarioEsPagado ? '(pagos registrados)' : `(${formatCurrency(personnelCosts.salaryMonthly)}/mes)`}
+                          </span>
                         </td>
-                        <td className="py-3 px-4 text-right font-bold text-purple-600">- {formatCurrency(totalSalario)}</td>
+                        <td className="py-3 px-4 text-right font-bold text-purple-600">- {formatCurrency(salarioCobrador)}</td>
                       </tr>
                       <tr className="hover:bg-slate-50">
                         <td className="py-3 px-4 font-medium">Préstamos Nuevos (Capital)</td>
@@ -618,12 +636,27 @@ export function ReportsPage() {
                     <tfoot>
                       <tr className="border-t-2 border-slate-200 bg-slate-50">
                         <td className="py-4 px-4 font-black text-slate-800">Flujo Neto Real del Período</td>
-                        <td className={`py-4 px-4 text-right font-black text-lg ${(totalRecaudo - totalGastos - totalViaticos - totalSalario - totalPrestado) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                          {formatCurrency(totalRecaudo - totalGastos - totalViaticos - totalSalario - totalPrestado)}
+                        <td className={`py-4 px-4 text-right font-black text-lg ${flujoNeto >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {formatCurrency(flujoNeto)}
+                        </td>
+                      </tr>
+                      <tr className="bg-white">
+                        <td className="py-3 px-4 font-medium">(−) Retiro salario del administrador</td>
+                        <td className="py-3 px-4 text-right font-bold text-purple-600">- {formatCurrency(capitalTotals.salarioAdmin)}</td>
+                      </tr>
+                      <tr className="border-t border-slate-200 bg-slate-50">
+                        <td className="py-4 px-4 font-black text-slate-800">Flujo Neto después de tu salario</td>
+                        <td className={`py-4 px-4 text-right font-black text-lg ${flujoDespuesDelAdmin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {formatCurrency(flujoDespuesDelAdmin)}
                         </td>
                       </tr>
                     </tfoot>
                   </table>
+                  {capitalTotals.aportes > 0 && (
+                    <p className="text-xs text-slate-500 mt-3">
+                      Capital agregado a las rutas en el período: <strong>{formatCurrency(capitalTotals.aportes)}</strong>. No es ingreso: no entra al flujo neto.
+                    </p>
+                  )}
                   {(personnelCosts.viaticumRate === 0 && personnelCosts.salaryMonthly === 0) && (
                     <p className="text-xs text-amber-600 mt-3 flex items-center gap-1">
                       ⚠️ Los viáticos y salario muestran $0. Configura los valores en <strong>Configuraciones → Parámetros</strong>.

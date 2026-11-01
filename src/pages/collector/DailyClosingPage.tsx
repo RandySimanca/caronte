@@ -25,7 +25,7 @@ export function DailyClosingPage() {
   const dayClosedSetting = settings?.find(s => s.key === `day_closed_${today}`);
   // Base automática: total a entregar del último cierre aprobado (la sincroniza el celular). Si fue 0 o negativo
   // (o no hay cierre previo) no se bloquea nada: la base es 0 y el cobrador puede digitar la que reciba hoy.
-  const previousClosing = settings?.find(s => s.key === 'previous_closing')?.value as { date: string | null; amount: number } | undefined;
+  const previousClosing = settings?.find(s => s.key === 'previous_closing')?.value as { date: string | null; amount: number; hasAdjustments?: boolean } | undefined;
   const autoBase = previousClosing && Number(previousClosing.amount) > 0 ? Number(previousClosing.amount) : 0;
   const baseIsAuto = autoBase > 0;
   const baseAmount = baseIsAuto ? autoBase : manualBase;
@@ -197,7 +197,7 @@ export function DailyClosingPage() {
           </div>
           <p className="text-xs text-slate-400 mt-2">
             {baseIsAuto
-              ? `Tomada automáticamente del cierre del ${previousClosing?.date || 'día anterior'}.`
+              ? `Tomada automáticamente del cierre del ${previousClosing?.date || 'día anterior'}${previousClosing?.hasAdjustments ? ', ajustada con los movimientos de capital que registró el administrador' : ''}.`
               : 'El cierre anterior quedó en $0 (o no hay cierre previo). Si hoy el jefe te entregó base, digítala; si no, déjala en 0.'}
           </p>
         </div>

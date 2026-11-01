@@ -12,6 +12,8 @@ import { FileDown, FileSpreadsheet, CheckCheck } from 'lucide-react';
 import { CashLedgerService } from '@/services/CashLedgerService';
 import { CollectorCashAccountModal } from './CollectorCashAccountModal';
 import { computeDifference, type CashBalances } from '@/lib/cashLedger';
+import { CapitalMovementService, type OpeningBaseResult } from '@/services/CapitalMovementService';
+import { CapitalBreakdown, type CapitalLine } from './CapitalBreakdown';
 
 
 interface LiquidationDetailModalProps {
@@ -29,6 +31,10 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
   const [baseAmount, setBaseAmount] = useState<number>(0);
   // Fecha del cierre anterior de donde se tomó la base automática (null = base manual o sin cierre previo)
   const [baseFromDate, setBaseFromDate] = useState<string | null>(null);
+  // De dónde sale la base: último cierre aprobado + aportes - retiros de capital (en vivo, o lo guardado al aprobar)
+  const [capital, setCapital] = useState<{ prev: { date: string; amount: number } | null; lines: CapitalLine[]; shortfall: number } | null>(null);
+  // Base que sugieren hoy los movimientos de capital cuando difiere de la ya guardada (día abierto o reabierto)
+  const [suggestedBase, setSuggestedBase] = useState<number | null>(null);
   // Cierre guardado en la base de datos para esta ruta y fecha (null si aún no existe)
   const [closing, setClosing] = useState<any | null>(null);
   // 'live': día abierto, se calcula en vivo | 'snapshot': liquidado con respaldo | 'legacy': liquidado sin respaldo
@@ -52,6 +58,8 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
       setDetail(null);
       setBaseAmount(0);
       setBaseFromDate(null);
+      setCapital(null);
+      setSuggestedBase(null);
       setClosing(null);
       setSource('live');
       setActualStr('');
@@ -65,27 +73,47 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
           // Día liquidado con respaldo: mostrar exactamente lo aprobado, sin recalcular
           setDetail(closingRow.snapshot.detail);
           setBaseAmount(Number(closingRow.base_amount ?? closingRow.snapshot.base_amount ?? 0));
+          setCapital(closingRow.snapshot.capital ?? null);
           setSource('snapshot');
         } else {
           // Día abierto, reabierto, o liquidado antes del respaldo: cálculo en vivo
           const data = await AdminService.getRouteLiquidationDetail(route.id, dateStr);
           if (cancelled) return;
           setDetail(data);
+          // Base sugerida: total a entregar del cierre anterior + aportes - retiros de capital desde entonces.
+          // Si no se puede calcular, la base queda en 0 y se puede digitar.
+          let opening: OpeningBaseResult | null = null;
+          try {
+            opening = await CapitalMovementService.getOpeningBase(route.id, dateStr);
+          } catch {
+            opening = null;
+          }
+          if (cancelled) return;
+          if (opening) {
+            setCapital({
+              prev: opening.prev,
+              lines: opening.movements.map(m => ({
+                kind: m.kind,
+                amount: m.amount,
+                movement_date: m.movement_date,
+                beneficiary_name: m.beneficiary_name ?? null,
+              })),
+              shortfall: opening.shortfall,
+            });
+          }
+
           // La base ya guardada se precarga (también al reabrir un día)
           if (closingRow) {
-            setBaseAmount(Number(closingRow.base_amount || 0));
-          } else {
-            // Día sin liquidación guardada: la base es el total a entregar del cierre anterior (editable por el admin)
-            try {
-              const prev = await AdminService.getPreviousClosing(route.id, dateStr);
-              if (cancelled) return;
-              if (prev && prev.amount > 0) {
-                setBaseAmount(prev.amount);
-                setBaseFromDate(prev.date);
-              }
-            } catch {
-              // Sin cierre anterior disponible: la base queda en 0 y se puede digitar
+            const saved = Number(closingRow.base_amount || 0);
+            setBaseAmount(saved);
+            // Si los movimientos de capital cambiaron después de guardarla, se avisa y se ofrece la sugerida
+            if (opening && opening.movements.length > 0 && Math.abs(opening.base - saved) > 0.5) {
+              setSuggestedBase(opening.base);
             }
+          } else if (opening) {
+            // Día sin liquidación guardada: la base se llena sola (editable por el admin)
+            if (opening.base > 0) setBaseAmount(opening.base);
+            if (opening.prev && opening.prev.amount > 0) setBaseFromDate(opening.prev.date);
           }
           setSource(closingRow?.is_closed ? 'legacy' : 'live');
         }
@@ -164,6 +192,7 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
         totalPrestado: detail.totalPrestado,
         totalTransferencias: detail.totalTransferencias || 0,
         baseAmount: baseAmount,
+        capital,
         adminId: currentUser.id,
         routeName: route.ruta,
         collectorName: route.cobrador,
@@ -380,6 +409,26 @@ export function LiquidationDetailModal({ isOpen, onClose, onSuccess, route, date
                   <p className="text-xs text-slate-400 -mt-1 px-1">
                     Tomada automáticamente del cierre del {baseFromDate}. Puedes ajustarla si hoy fue distinta.
                   </p>
+                )}
+                {capital && (capital.lines.length > 0 || capital.shortfall > 0) && (!isClosed || source === 'snapshot') && (
+                  <CapitalBreakdown
+                    prev={capital.prev && capital.prev.amount > 0 ? capital.prev : null}
+                    lines={capital.lines}
+                    shortfall={capital.shortfall}
+                    title={isClosed ? 'Movimientos de capital que entraron a la base' : 'Cómo se armó la base'}
+                  />
+                )}
+                {suggestedBase !== null && !isClosed && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium rounded-lg p-2.5">
+                    <span>Los movimientos de capital cambiaron: la base sugerida es {formatCurrency(suggestedBase)}.</span>
+                    <button
+                      type="button"
+                      onClick={() => { setBaseAmount(suggestedBase); setSuggestedBase(null); }}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-md"
+                    >
+                      Usar esa base
+                    </button>
+                  </div>
                 )}
 
                 <div className="flex justify-between items-center gap-3 pt-1">

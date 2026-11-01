@@ -993,6 +993,7 @@ export class AdminService {
         collector_name: payload.collectorName || null,
         date: payload.date,
         base_amount: payload.baseAmount || 0,
+        capital: payload.capital || null,
         total_entregar: payload.totalEntregar,
         actual_delivery: actual,
         difference,

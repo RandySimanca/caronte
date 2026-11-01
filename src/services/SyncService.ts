@@ -556,11 +556,39 @@ export class SyncService {
         .limit(1);
       if (error) throw error;
       const row = (data as any[])?.[0];
+
+      // Aportes y retiros de capital del admin desde ese cierre (migración 045). Solo llegan totales: el
+      // cobrador no ve los pagos de salario. Si la función aún no existe se sigue sin ajustes; cualquier
+      // otro error cae al catch y conserva el valor que ya había en el celular.
+      let net = 0;
+      let hasAdjustments = false;
+      const { data: cap, error: capError } = await supabase.rpc('get_route_pending_capital', {
+        p_route_id: routeId,
+        p_date: today,
+      });
+      if (capError) {
+        const msg = capError.message || '';
+        const missing =
+          capError.code === 'PGRST202' ||
+          capError.code === '42883' ||
+          (/get_route_pending_capital/i.test(msg) && /(could not find|does not exist)/i.test(msg));
+        if (!missing) throw capError;
+      } else {
+        const r: any = Array.isArray(cap) ? cap[0] : cap;
+        const aportes = Number(r?.aportes || 0);
+        const retiros = Number(r?.retiros || 0);
+        net = aportes - retiros;
+        hasAdjustments = aportes > 0 || retiros > 0;
+      }
+
+      const closingAmount = row ? Number(row.actual_delivery ?? row.expected_delivery ?? 0) : 0;
       return {
         key: 'previous_closing',
-        value: row
-          ? { date: String(row.closing_date).slice(0, 10), amount: Number(row.actual_delivery ?? row.expected_delivery ?? 0) }
-          : { date: null, amount: 0 },
+        value: {
+          date: row ? String(row.closing_date).slice(0, 10) : null,
+          amount: Math.max(0, closingAmount + net),
+          hasAdjustments,
+        },
       };
     } catch {
       const prev = await db.settings.get('previous_closing');
