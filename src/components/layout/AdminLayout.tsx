@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
-import { 
-  Users, 
-  Map, 
-  BarChart3, 
+import {
+  Users,
+  Map,
+  BarChart3,
   Settings,
   LogOut,
   Activity,
   Wallet,
   Landmark,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  MoreHorizontal,
+  X
 } from 'lucide-react';
 
 const ADMIN_NAVIGATION = [
@@ -23,6 +25,16 @@ const ADMIN_NAVIGATION = [
   { name: 'Reportes', href: '/admin/reports', icon: BarChart3 },
   { name: 'Ajustes', href: '/admin/settings', icon: Settings },
 ];
+
+// Barra inferior móvil: 4 secciones de uso diario + pestaña "Más" con el resto.
+const MOBILE_PRIMARY_HREFS = [
+  '/admin/dashboard',
+  '/admin/liquidations',
+  '/admin/money',
+  '/admin/routes',
+];
+const MOBILE_PRIMARY = ADMIN_NAVIGATION.filter((i) => MOBILE_PRIMARY_HREFS.includes(i.href));
+const MOBILE_SECONDARY = ADMIN_NAVIGATION.filter((i) => !MOBILE_PRIMARY_HREFS.includes(i.href));
 
 export function AdminLayout() {
   const { signOut, user } = useAuthStore();
@@ -36,19 +48,26 @@ export function AdminLayout() {
     localStorage.setItem('admin_sidebar_collapsed', String(isCollapsed));
   }, [isCollapsed]);
 
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  // Cierra el panel "Más" al navegar a otra sección
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [location.pathname]);
+
+  const isMoreActive = MOBILE_SECONDARY.some((i) => location.pathname.startsWith(i.href));
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
       {/* Sidebar for Desktop */}
-      <aside className={`bg-slate-900 text-white hidden md:flex flex-col flex-shrink-0 relative overflow-hidden transition-all duration-300 ease-in-out ${
-        isCollapsed ? 'w-20' : 'w-64'
-      }`}>
+      <aside className={`bg-slate-900 text-white hidden md:flex flex-col flex-shrink-0 relative overflow-hidden transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-64'
+        }`}>
         {/* Futuristic accent */}
         <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/20 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
-        
+
         {/* Sidebar Header */}
-        <div className={`p-4 border-b border-white/10 relative z-10 flex items-center ${
-          isCollapsed ? 'justify-center' : 'justify-between'
-        }`}>
+        <div className={`p-4 border-b border-white/10 relative z-10 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'
+          }`}>
           <div className="flex items-center gap-3 overflow-hidden">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white shadow-lg shadow-brand-500/30 shrink-0">
               <span className="font-bold text-xl">A</span>
@@ -63,9 +82,8 @@ export function AdminLayout() {
 
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className={`p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors ${
-              isCollapsed ? 'hidden' : 'block'
-            }`}
+            className={`p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors ${isCollapsed ? 'hidden' : 'block'
+              }`}
             title="Contraer menú"
           >
             <ChevronLeft className="w-5 h-5" />
@@ -99,13 +117,11 @@ export function AdminLayout() {
                 key={item.name}
                 to={item.href}
                 title={isCollapsed ? item.name : undefined}
-                className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group ${
-                  isCollapsed ? 'justify-center' : ''
-                } ${
-                  isActive 
-                    ? 'bg-brand-500/10 text-brand-400 font-medium' 
+                className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group ${isCollapsed ? 'justify-center' : ''
+                  } ${isActive
+                    ? 'bg-brand-500/10 text-brand-400 font-medium'
                     : 'text-slate-400 hover:bg-white/5 hover:text-white'
-                }`}
+                  }`}
               >
                 <item.icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-brand-400' : 'group-hover:text-white'}`} />
                 {!isCollapsed && (
@@ -135,9 +151,8 @@ export function AdminLayout() {
           <button
             onClick={() => signOut()}
             title={isCollapsed ? "Cerrar Sesión" : undefined}
-            className={`w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 hover:bg-red-500/10 text-slate-300 hover:text-red-400 rounded-xl transition-colors text-sm font-medium ${
-              isCollapsed ? 'px-0' : 'px-4'
-            }`}
+            className={`w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 hover:bg-red-500/10 text-slate-300 hover:text-red-400 rounded-xl transition-colors text-sm font-medium ${isCollapsed ? 'px-0' : 'px-4'
+              }`}
           >
             <LogOut className="w-4 h-4 shrink-0" />
             {!isCollapsed && <span>Cerrar Sesión</span>}
@@ -158,23 +173,70 @@ export function AdminLayout() {
         </button>
       </div>
 
+      {/* Mobile "Más" panel */}
+      {moreOpen && (
+        <div className="md:hidden fixed inset-0 z-[60]" onClick={() => setMoreOpen(false)}>
+          <div className="absolute inset-0 bg-slate-900/40" />
+          <div
+            className="absolute bottom-[72px] left-0 right-0 bg-white rounded-t-3xl shadow-2xl p-4 pb-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3 px-2">
+              <span className="text-sm font-semibold text-slate-700">Más opciones</span>
+              <button
+                onClick={() => setMoreOpen(false)}
+                className="p-1.5 rounded-full text-slate-400 hover:bg-slate-100"
+                aria-label="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {MOBILE_SECONDARY.map((item) => {
+                const isActive = location.pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.name}
+                    to={item.href}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-2xl transition-colors ${isActive ? 'bg-brand-50 text-brand-600' : 'bg-slate-50 text-slate-600 active:bg-slate-100'
+                      }`}
+                  >
+                    <item.icon className="w-6 h-6" />
+                    <span className="text-xs font-medium">{item.name}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile Bottom Navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 pb-safe z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-        {ADMIN_NAVIGATION.map((item) => {
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 pb-safe z-[70] shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        {MOBILE_PRIMARY.map((item) => {
           const isActive = location.pathname.startsWith(item.href);
           return (
             <Link
               key={item.name}
               to={item.href}
-              className={`flex flex-col items-center p-2 rounded-xl min-w-[64px] transition-colors ${
-                isActive ? 'text-brand-600' : 'text-slate-500'
-              }`}
+              onClick={() => setMoreOpen(false)}
+              className={`flex flex-col items-center p-2 rounded-xl flex-1 min-w-0 transition-colors ${isActive && !moreOpen ? 'text-brand-600' : 'text-slate-500'
+                }`}
             >
               <item.icon className={`w-6 h-6 mb-1 ${isActive ? 'stroke-2' : ''}`} />
-              <span className="text-[10px] font-medium">{item.name}</span>
+              <span className="text-[10px] font-medium truncate max-w-full">{item.name}</span>
             </Link>
           );
         })}
+        <button
+          type="button"
+          onClick={() => setMoreOpen((v) => !v)}
+          className={`flex flex-col items-center p-2 rounded-xl flex-1 min-w-0 transition-colors ${moreOpen || isMoreActive ? 'text-brand-600' : 'text-slate-500'
+            }`}
+        >
+          <MoreHorizontal className="w-6 h-6 mb-1" />
+          <span className="text-[10px] font-medium">Más</span>
+        </button>
       </div>
 
       {/* Main Content Area */}
