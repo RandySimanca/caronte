@@ -21,6 +21,7 @@ export function CompletedLoansTodayModal({ isOpen, onClose, loans }: Props) {
 
   const refinancedCount = loans.filter(l => l.refinanced).length;
   const paidCount = loans.length - refinancedCount;
+  const totalCollected = loans.reduce((acc, l) => acc + Number(l.totalPaid || 0), 0);
 
   return (
     <AnimatePresence>
@@ -70,6 +71,11 @@ export function CompletedLoansTodayModal({ isOpen, onClose, loans }: Props) {
                 <p className="text-white text-xl font-black">{refinancedCount}</p>
               </div>
             </div>
+          </div>
+
+          <div className="bg-white border-b border-emerald-100 px-5 py-3 flex items-center justify-between">
+            <span className="text-sm font-bold text-slate-600">Total recogido</span>
+            <span className="text-lg font-black text-emerald-600">{formatCurrency(totalCollected)}</span>
           </div>
 
           <div className="bg-emerald-50 border-b border-emerald-100 px-5 py-2.5">

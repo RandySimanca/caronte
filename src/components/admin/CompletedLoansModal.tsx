@@ -15,6 +15,15 @@ interface CompletedLoansModalProps {
 
 type Tab = 'today' | 'history';
 
+/** Monto recogido de un préstamo terminado (el mismo valor que muestra la tarjeta como "Total pagado"). */
+const paidAmount = (loan: any) =>
+  Math.max(
+    0,
+    Number(loan.initial_obligation ?? loan.amount_requested ?? 0) - Number(loan.current_balance ?? 0)
+  );
+
+const sumPaid = (list: any[]) => list.reduce((acc, l) => acc + paidAmount(l), 0);
+
 export function CompletedLoansModal({
   isOpen,
   onClose,
@@ -170,6 +179,10 @@ export function CompletedLoansModal({
               </span>
             </div>
 
+            {!isLoading && visibleLoans.length > 0 && (
+              <TotalCollected total={sumPaid(visibleLoans)} formatCurrency={formatCurrency} />
+            )}
+
             <div className="p-5 overflow-y-auto space-y-3 flex-1">
               {isLoading && (
                 <div className="py-10 text-center text-slate-500">Cargando…</div>
@@ -258,6 +271,10 @@ export function CompletedLoansModal({
               )}
             </div>
 
+            {histSearched && !histLoading && histLoans.length > 0 && (
+              <TotalCollected total={sumPaid(histLoans)} formatCurrency={formatCurrency} />
+            )}
+
             <div className="p-5 overflow-y-auto space-y-3 flex-1">
               {histLoading && (
                 <div className="py-10 text-center">
@@ -289,6 +306,25 @@ export function CompletedLoansModal({
           </>
         )}
       </section>
+    </div>
+  );
+}
+
+// Suma de lo recogido en los préstamos que se están viendo
+function TotalCollected({
+  total,
+  formatCurrency,
+}: {
+  total: number;
+  formatCurrency: (n: number) => string;
+}) {
+  return (
+    <div className="px-6 py-3 border-b border-emerald-100 bg-emerald-50 flex items-center justify-between gap-3 shrink-0">
+      <span className="text-sm font-bold text-emerald-800 flex items-center gap-2">
+        <Wallet className="w-4 h-4" />
+        Total recogido
+      </span>
+      <span className="text-lg font-black text-emerald-700">{formatCurrency(total)}</span>
     </div>
   );
 }
@@ -338,9 +374,7 @@ function LoanCard({
         <div className="bg-slate-50 rounded-xl p-3">
           <p className="text-xs text-slate-500">Total pagado</p>
           <p className="font-black text-emerald-700">
-            {formatCurrency(
-              Number(loan.initial_obligation ?? loan.amount_requested ?? 0) - Number(loan.current_balance ?? 0)
-            )}
+            {formatCurrency(paidAmount(loan))}
           </p>
         </div>
         <div className="bg-slate-50 rounded-xl p-3">
