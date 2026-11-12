@@ -27,6 +27,7 @@ export function ReportsPage() {
   const [data, setData] = useState<{ payments: any[], expenses: any[], loans: any[], assignments: any[] }>({ payments: [], expenses: [], loans: [], assignments: [] });
   const [portfolioData, setPortfolioData] = useState<{ loans: any[], arrearsInstallments: any[] }>({ loans: [], arrearsInstallments: [] });
   const [ledgerData, setLedgerData] = useState<any[]>([]);
+  const [ledgerBaseByDay, setLedgerBaseByDay] = useState<{ date: string; baseAmount: number; routeName: string }[]>([]);
   // Ganancias reales: salen de los préstamos TERMINADOS dentro del período seleccionado
   const [completedProfit, setCompletedProfit] = useState<{ count: number; capital: number; collected: number; profit: number; excludedLottery: number; refinancedCount: number; loans: CompletedProfitLoan[] }>({ count: 0, capital: 0, collected: 0, profit: 0, excludedLottery: 0, refinancedCount: 0, loans: [] });
   const [isProfitModalOpen, setIsProfitModalOpen] = useState(false);
@@ -69,7 +70,8 @@ export function ReportsPage() {
       setData(resumen);
       setCapitalTotals(capital ?? summarize([]));
       setPortfolioData(cartera);
-      setLedgerData(ledger);
+      setLedgerData(ledger.transactions);
+      setLedgerBaseByDay(ledger.baseByDay ?? []);
       setPendingCollection(pending);
       setCompletedProfit(profit ?? { count: 0, capital: 0, collected: 0, profit: 0, excludedLottery: 0, refinancedCount: 0, loans: [] });
     } catch (error: any) {
@@ -236,7 +238,7 @@ export function ReportsPage() {
         blob = await pdf(<PortfolioReportPdf routeName={getRouteName()} stats={portfolioStats} realProfit={{ count: completedProfit.count, capital: completedProfit.capital, collected: completedProfit.collected, profit: completedProfit.profit, period: dateRangeStr }} arrearsByRange={arrearsByRange} topDefaulters={topDefaulters} />).toBlob();
         filename = `Cartera_${getRouteName()}.pdf`;
       } else {
-        blob = await pdf(<LedgerReportPdf dateRange={dateRangeStr} routeName={getRouteName()} transactions={ledgerData} />).toBlob();
+        blob = await pdf(<LedgerReportPdf dateRange={dateRangeStr} routeName={getRouteName()} transactions={ledgerData} baseByDay={ledgerBaseByDay} />).toBlob();
         filename = `LibroAuxiliar_${getRouteName()}_${startDate}_${endDate}.pdf`;
       }
       downloadBlob(blob, filename);

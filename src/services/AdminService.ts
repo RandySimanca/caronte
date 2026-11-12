@@ -1686,7 +1686,7 @@ export class AdminService {
     }
 
     // Supabase devuelve máximo 1000 filas por consulta: se pide por páginas para no dejar movimientos por fuera.
-    const [pagos, gastos, prestamos] = await Promise.all([
+    const [pagos, gastos, prestamos, cierres] = await Promise.all([
       AdminService.traerTodasLasFilas(() =>
         supabase.from('payments')
           .select('id, collected_at, total_amount, collector_observation, loan:loans(client:clients(full_name)), collector:users!payments_collector_id_fkey(full_name)')
@@ -1708,6 +1708,13 @@ export class AdminService {
           .in('route_id', rutasAConsultar)
           .order('id', { ascending: true })
       ),
+      // Base entregada al cobrador cada día (daily_closings.base_amount)
+      supabase.from('daily_closings')
+        .select('closing_date, route_id, base_amount, route:routes(name)')
+        .gte('closing_date', startDate).lte('closing_date', endDate)
+        .in('route_id', rutasAConsultar)
+        .order('closing_date', { ascending: true })
+        .then(r => r.data || []),
     ]);
 
     const transactions: any[] = [];
@@ -1754,7 +1761,15 @@ export class AdminService {
       });
     });
 
-    return transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    return {
+      transactions: transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+      // Base entregada por día: { date: 'yyyy-MM-dd', baseAmount: number, routeName?: string }[]
+      baseByDay: (cierres as any[]).map((c: any) => ({
+        date: c.closing_date,
+        baseAmount: Number(c.base_amount || 0),
+        routeName: c.route?.name || '',
+      })),
+    };
   }
 
   /**
