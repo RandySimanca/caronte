@@ -1,4 +1,7 @@
 import { differenceInCalendarDays, format } from 'date-fns';
+import { db } from '@/db/schema';
+import { supabase } from '@/lib/supabase';
+import { colombiaDateFromIso } from '@/lib/dailyCollection';
 
 /** Lo mínimo que se necesita de una cuota para saber cuándo se pagó. */
 type CuotaConPago = {
@@ -35,4 +38,53 @@ export function textoFechaUltimoPago(fecha: string, hoy: string = format(new Dat
   if (dias === 1) return `${fechaLegible} · ayer`;
   if (dias > 1) return `${fechaLegible} · hace ${dias} días`;
   return fechaLegible;
+}
+
+/** Prefijo de la clave local donde se recuerda el último pago de cada préstamo (se conserva al sincronizar). */
+export const PREFIJO_ULTIMO_PAGO = 'ultimo_pago_';
+
+export interface UltimoPagoGuardado {
+  /** Fecha del pago, YYYY-MM-DD (hora de Colombia). */
+  fecha: string;
+  /** Valor total del pago. */
+  monto: number;
+  /** Momento exacto del cobro (ISO); sirve para saber cuál pago es más reciente. */
+  cobradoEn: string;
+}
+
+export function claveUltimoPago(prestamoId: string): string {
+  return `${PREFIJO_ULTIMO_PAGO}${prestamoId}`;
+}
+
+/** Guarda el último pago en el celular, solo si es más reciente que el que ya estaba guardado. */
+export async function guardarUltimoPago(prestamoId: string, pago: UltimoPagoGuardado): Promise<void> {
+  const actual = await db.settings.get(claveUltimoPago(prestamoId));
+  const anterior = actual?.value as UltimoPagoGuardado | undefined;
+  if (anterior?.cobradoEn && anterior.cobradoEn > pago.cobradoEn) return;
+  await db.settings.put({ key: claveUltimoPago(prestamoId), value: pago });
+}
+
+/**
+ * Consulta en el servidor el último pago del préstamo y lo guarda en el celular.
+ * Sin internet o si falla, no hace nada (se sigue mostrando lo que ya hay en el celular).
+ */
+export async function actualizarUltimoPagoDesdeServidor(prestamoId: string): Promise<void> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  try {
+    const { data, error } = await supabase
+      .from('payments')
+      .select('total_amount, collected_at')
+      .eq('loan_id', prestamoId)
+      .order('collected_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data?.collected_at) return;
+    await guardarUltimoPago(prestamoId, {
+      fecha: colombiaDateFromIso(String(data.collected_at)),
+      monto: Math.round(Number(data.total_amount || 0)),
+      cobradoEn: String(data.collected_at),
+    });
+  } catch (e) {
+    console.warn('[ultimoPago] No se pudo consultar el último pago:', e);
+  }
 }

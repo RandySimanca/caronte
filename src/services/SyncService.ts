@@ -1,3 +1,4 @@
+import { PREFIJO_ULTIMO_PAGO } from '@/lib/ultimoPago';
 import { format } from 'date-fns';
 import { db } from '@/db/schema';
 import { supabase } from '@/lib/supabase';
@@ -799,6 +800,7 @@ export class SyncService {
       const existingSettings = await db.settings.toArray();
       const settingsToKeep = existingSettings.filter(s => {
         if (s.key.startsWith('transfer_')) return true;
+        if (s.key.startsWith(PREFIJO_ULTIMO_PAGO)) return true;
         if (s.key.startsWith(LAST_COLLECTED_KEY)) return true;
         if (s.key.startsWith('day_closed_')) {
           // If the server explicitly has a record but it's NOT closed, it means admin reopened it.
@@ -1111,6 +1113,7 @@ export class SyncService {
       const existingSettings = await db.settings.toArray();
       const settingsToKeep = existingSettings.filter(s => {
         if (s.key.startsWith('transfer_')) return true;
+        if (s.key.startsWith(PREFIJO_ULTIMO_PAGO)) return true;
         if (s.key === LAST_COLLECTED_KEY) return true;
         if (s.key.startsWith('day_closed_')) {
           if (hasServerRecord && !isClosedOnServer) return false;

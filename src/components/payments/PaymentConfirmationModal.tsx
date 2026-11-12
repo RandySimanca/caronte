@@ -12,6 +12,7 @@ import { SyncService } from '@/services/SyncService';
 import { buildCreditStatusMessage, openWhatsAppWithMessage } from '@/lib/whatsapp';
 import { getLotteryLastDraw, isLotteryWinnerLoan, type LotteryLastDraw } from '@/lib/lottery';
 import { markLastCollected } from '@/lib/routeOrder';
+import { guardarUltimoPago } from '@/lib/ultimoPago';
 import { confirmAction } from '@/lib/swal';
 
 interface FinancialState {
@@ -308,6 +309,13 @@ export function PaymentConfirmationModal({
 
         // Recordar hasta dónde va la ruta hoy: un cliente nuevo se inserta justo después de este
         await markLastCollected(loan.client_id, today);
+
+        // Recordar fecha y valor de este pago para mostrarlo en el detalle del cliente
+        await guardarUltimoPago(loan.id, {
+          fecha: today,
+          monto: Math.round(distribution.numAmount),
+          cobradoEn: collectedAt,
+        });
 
         // 2. Queue sync operation with PAYMENT_BUNDLE
         await db.syncQueue.add({

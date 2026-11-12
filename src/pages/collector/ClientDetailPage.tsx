@@ -21,7 +21,13 @@ import {
 import { openWhatsAppWithMessage } from '@/lib/whatsapp';
 import { scheduleSnapshot, weekdayLabel, weekdayStyle, formatCollectionDate } from '@/lib/collectionSchedule';
 import { formatCurrency, cn } from '@/lib/utils';
-import { obtenerFechaUltimoPago, textoFechaUltimoPago } from '@/lib/ultimoPago';
+import {
+  obtenerFechaUltimoPago,
+  textoFechaUltimoPago,
+  claveUltimoPago,
+  actualizarUltimoPagoDesdeServidor,
+  type UltimoPagoGuardado,
+} from '@/lib/ultimoPago';
 
 export function ClientDetailPage() {
   const navigate = useNavigate();
@@ -180,10 +186,27 @@ export function ClientDetailPage() {
   }, [loan, installments, today]);
 
   // Fecha del último pago del préstamo (debe ir antes de cualquier return anticipado)
-  const fechaUltimoPago = useMemo(
+  const fechaCuotas = useMemo(
     () => obtenerFechaUltimoPago(installments ?? []),
     [installments]
   );
+  // Último pago recordado en el celular (con su valor); se refresca desde el servidor si hay internet
+  const ultimoPagoGuardado = useLiveQuery(
+    async () => (loan?.id ? (await db.settings.get(claveUltimoPago(loan.id)))?.value as UltimoPagoGuardado | undefined : undefined),
+    [loan?.id]
+  );
+  useEffect(() => {
+    if (loan?.id) actualizarUltimoPagoDesdeServidor(loan.id);
+  }, [loan?.id]);
+  // Se muestra la fecha más reciente; el valor solo si corresponde a esa misma fecha
+  const fechaUltimoPago = [fechaCuotas, ultimoPagoGuardado?.fecha]
+    .filter((f): f is string => !!f)
+    .sort()
+    .pop() ?? null;
+  const valorUltimoPago =
+    fechaUltimoPago && ultimoPagoGuardado?.fecha === fechaUltimoPago && ultimoPagoGuardado.monto > 0
+      ? ultimoPagoGuardado.monto
+      : null;
 
   // Mientras el modal de cobro está abierto usamos una "foto" de loan/financialState tomada
   // antes de cobrar: al guardar, Dexie cambia el préstamo (incluso a CANCELADO si el saldo
@@ -453,6 +476,12 @@ export function ClientDetailPage() {
                   <span className={cn('font-semibold', fechaUltimoPago ? 'text-slate-900' : 'text-slate-400')}>
                     {fechaUltimoPago ? textoFechaUltimoPago(fechaUltimoPago, today) : 'Sin pagos aún'}
                   </span>
+                </div>
+              )}
+              {!isLotteryWinner && valorUltimoPago !== null && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Valor del último pago</span>
+                  <span className="font-bold text-emerald-600">{formatCurrency(valorUltimoPago)}</span>
                 </div>
               )}
               <div className="flex justify-between">
