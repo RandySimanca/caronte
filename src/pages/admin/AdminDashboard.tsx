@@ -589,7 +589,7 @@ export function AdminDashboard() {
             <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center relative shadow-inner">
               <CalendarCheck className="w-7 h-7 text-indigo-600" />
               <span className="absolute -top-2 -right-2 w-7 h-7 bg-indigo-600 text-white text-xs font-black rounded-full flex items-center justify-center shadow-md">
-                {stats!.prepaidToday!.count}
+                {stats?.prepaidToday?.count ?? 0}
               </span>
             </div>
             <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-indigo-50 transition-colors">
@@ -599,10 +599,10 @@ export function AdminDashboard() {
           <div>
             <h3 className="text-xl font-black text-slate-800 leading-tight mb-1.5">Cuota de Hoy Ya Pagada</h3>
             <p className="text-sm text-slate-500 leading-relaxed">
-              <strong className="text-indigo-600">{stats!.prepaidToday!.count}</strong> cliente{stats!.prepaidToday!.count !== 1 ? 's' : ''} ya pagaron la cuota de hoy en días anteriores. No se cuentan en lo esperado del día.
+              <strong className="text-indigo-600">{stats?.prepaidToday?.count ?? 0}</strong> cliente{(stats?.prepaidToday?.count ?? 0) !== 1 ? 's' : ''} ya pagaron la cuota de hoy en días anteriores. No se cuentan en lo esperado del día.
             </p>
             <p className="text-sm font-black text-indigo-700 mt-1">
-              {formatCurrency((stats!.prepaidToday!.clients ?? []).reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0))}
+              {formatCurrency((stats?.prepaidToday?.clients ?? []).reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0))}
             </p>
           </div>
         </button>

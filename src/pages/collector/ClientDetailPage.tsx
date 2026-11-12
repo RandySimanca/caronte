@@ -117,20 +117,44 @@ export function ClientDetailPage() {
         : pending.reduce((sum, i) => sum + Number(i.balance || 0), 0)
     ));
 
+    // Fallback cuando las cuotas aún no se sincronizaron al celular:
+    // si no hay cuotas pendientes locales pero el préstamo sí tiene saldo,
+    // construimos un registro sintético para que el cobro pueda registrarse.
+    const noInstallmentsLoaded = installments.length === 0 && remainingBalance > 0;
+    const fallbackDailyInstallment = Math.round(Number(loan.daily_installment) || 0);
+    const effectivePending = noInstallmentsLoaded
+      ? [{
+          id: `fallback-${loan.id}`,
+          loan_id: loan.id,
+          installment_number: 1,
+          scheduled_date: today,
+          status: 'PENDIENTE' as const,
+          amount: fallbackDailyInstallment,
+          paid_amount: 0,
+          balance: remainingBalance,
+        }]
+      : pending;
+    const effectiveTodayInstallment = noInstallmentsLoaded
+      ? effectivePending[0]
+      : (isPaidToday ? null : (todayInstallment ?? null));
+    const effectiveTodayQuota = noInstallmentsLoaded ? Math.min(fallbackDailyInstallment, remainingBalance) : todayQuota;
+    const effectiveExpectedTotal = noInstallmentsLoaded ? effectiveTodayQuota : expectedTotal;
+
     return {
-      todayQuota,
+      todayQuota: effectiveTodayQuota,
       arrears,
       advances,
-      expectedTotal,
-      pendingInstallments: pending,
+      expectedTotal: effectiveExpectedTotal,
+      pendingInstallments: effectivePending,
       // Pass null as todayInstallment when already paid so modal won't try to re-apply it
-      todayInstallment: isPaidToday ? null : (todayInstallment ?? null),
-      isPaidToday,
+      todayInstallment: effectiveTodayInstallment,
+      isPaidToday: noInstallmentsLoaded ? false : isPaidToday,
       totalPaid,
       remainingBalance,
-      todayIsPartial,
-      todayPaidAmount,
-      todayPartialBalance,
+      todayIsPartial: noInstallmentsLoaded ? false : todayIsPartial,
+      todayPaidAmount: noInstallmentsLoaded ? 0 : todayPaidAmount,
+      todayPartialBalance: noInstallmentsLoaded ? 0 : todayPartialBalance,
+      noInstallmentsLoaded,
     };
   }, [loan, installments, today]);
 
@@ -413,6 +437,16 @@ export function ClientDetailPage() {
 
         {financialState && !isLotteryWinner && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+            {/* Aviso cuando las cuotas no se han sincronizado */}
+            {(financialState as any).noInstallmentsLoaded && (
+              <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 flex items-start gap-2">
+                <span className="text-amber-500 text-base mt-0.5">⚠</span>
+                <div>
+                  <p className="text-xs font-bold text-amber-800">Cuotas no sincronizadas</p>
+                  <p className="text-xs text-amber-700 mt-0.5">Las cuotas de este préstamo aún no llegaron al celular. Sincroniza para ver el historial completo. El cobro se puede registrar igualmente.</p>
+                </div>
+              </div>
+            )}
             {isPaidAndClear ? (
               <div className="flex flex-col items-center py-4 mb-4">
                 <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mb-3">

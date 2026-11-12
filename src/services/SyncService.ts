@@ -949,13 +949,21 @@ export class SyncService {
         if (loansToDelete.length > 0) await db.loans.bulkDelete(loansToDelete);
 
         // Installments: upsert server records, then remove stale ones.
-        // IMPORTANTE: NO sobreescribir cuotas de préstamos con pagos pendientes de sincronizar
-        // (protectedInstLoanIds). Si lo hiciéramos, el pull revertiría visualmente el cobro
-        // registrado offline/con latencia antes de que llegue al servidor.
+        // IMPORTANTE: NO sobreescribir cuotas que ya existen localmente en préstamos con pagos
+        // pendientes de sincronizar (protectedInstLoanIds). Si lo hiciéramos, el pull revertiría
+        // visualmente el cobro registrado offline/con latencia antes de que llegue al servidor.
+        // SIN EMBARGO, si las cuotas nunca llegaron al celular (no existen localmente), sí deben
+        // descargarse aunque el préstamo esté protegido — de lo contrario la tarjeta de cobros
+        // y el modal de pago quedan en blanco para siempre.
         if (installments && installments.length > 0) {
-          const installmentsToUpsert = (installments as any[]).filter(
-            i => !protectedInstLoanIds.has(i.loan_id)
-          );
+          const localInstIds = new Set((await db.installments.toArray()).map(i => i.id));
+          const installmentsToUpsert = (installments as any[]).filter(i => {
+            // Si el préstamo no está protegido: siempre upsert
+            if (!protectedInstLoanIds.has(i.loan_id)) return true;
+            // Si el préstamo está protegido: solo insertar cuotas que NO existen localmente
+            // (las que ya existen se mantienen con su estado local — el cobro registrado).
+            return !localInstIds.has(i.id);
+          });
           if (installmentsToUpsert.length > 0) {
             await db.installments.bulkPut(installmentsToUpsert);
           }
