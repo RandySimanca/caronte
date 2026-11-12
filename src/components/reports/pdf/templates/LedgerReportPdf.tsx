@@ -1,5 +1,5 @@
 import { View, Text } from '@react-pdf/renderer';
-import { PdfLayout, pdfStyles } from '../PdfLayout';
+import { PdfLayout, pdfStyles, pdfColors } from '../PdfLayout';
 import { formatCurrency, formatDate } from '../formatters';
 
 interface LedgerReportPdfProps {
@@ -23,9 +23,20 @@ export function LedgerReportPdf({ dateRange, routeName, transactions }: LedgerRe
     return { ...t, runningBalance };
   });
 
+  // Totales por tipo de transaccion
+  const totalRecaudos = transactions
+    .filter(t => t.type === 'INGRESO')
+    .reduce((sum, t) => sum + t.amount, 0);
+  const totalDesembolsos = transactions
+    .filter(t => t.type === 'DESEMBOLSO')
+    .reduce((sum, t) => sum + t.amount, 0);
+  const totalGastos = transactions
+    .filter(t => t.type === 'GASTO')
+    .reduce((sum, t) => sum + t.amount, 0);
+
   return (
-    <PdfLayout 
-      title="Libro Auxiliar de Transacciones" 
+    <PdfLayout
+      title="Libro Auxiliar de Transacciones"
       subtitle={`Ruta: ${routeName}`}
       dateRange={dateRange}
       orientation="landscape"
@@ -39,7 +50,7 @@ export function LedgerReportPdf({ dateRange, routeName, transactions }: LedgerRe
             <View style={[pdfStyles.tableCol, { width: '15%' }]}><Text style={pdfStyles.textRight}>Valor</Text></View>
             <View style={[pdfStyles.tableCol, { width: '20%' }]}><Text style={pdfStyles.textRight}>Saldo Acumulado</Text></View>
           </View>
-          
+
           {dataWithBalance.map((t) => (
             <View style={pdfStyles.tableRow} key={t.id}>
               <View style={[pdfStyles.tableCol, { width: '15%' }]}>
@@ -47,8 +58,8 @@ export function LedgerReportPdf({ dateRange, routeName, transactions }: LedgerRe
               </View>
               <View style={[pdfStyles.tableCol, { width: '12%' }]}>
                 <Text style={
-                  t.type === 'INGRESO' ? pdfStyles.textEmerald : 
-                  t.type === 'DESEMBOLSO' ? pdfStyles.textBlue : pdfStyles.textRed
+                  t.type === 'INGRESO' ? pdfStyles.textEmerald :
+                    t.type === 'DESEMBOLSO' ? pdfStyles.textBlue : pdfStyles.textRed
                 }>
                   {t.type}
                 </Text>
@@ -69,7 +80,7 @@ export function LedgerReportPdf({ dateRange, routeName, transactions }: LedgerRe
               </View>
             </View>
           ))}
-          
+
           {dataWithBalance.length === 0 && (
             <View style={pdfStyles.tableRow}>
               <View style={[pdfStyles.tableCol, { width: '100%' }]}><Text style={pdfStyles.textCenter}>No hay transacciones registradas en este período</Text></View>
@@ -77,6 +88,52 @@ export function LedgerReportPdf({ dateRange, routeName, transactions }: LedgerRe
           )}
         </View>
       </View>
+
+      {/* Totals summary */}
+      {transactions.length > 0 && (
+        <View style={{ marginTop: 16, borderTopWidth: 2, borderTopColor: pdfColors.slate200, paddingTop: 10 }}>
+          <Text style={[pdfStyles.sectionTitle, { marginBottom: 8 }]}>Resumen de Totales</Text>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+
+            {/* Recaudos */}
+            <View style={{ flex: 1, borderWidth: 1, borderColor: '#059669', borderRadius: 4, padding: 10, backgroundColor: '#f0fdf4' }}>
+              <Text style={[pdfStyles.subtitle, { marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }]}>Total Recaudos</Text>
+              <Text style={[pdfStyles.textBold, { fontSize: 14, color: '#059669' }]}>{formatCurrency(totalRecaudos)}</Text>
+              <Text style={[pdfStyles.subtitle, { marginTop: 4 }]}>
+                {transactions.filter(t => t.type === 'INGRESO').length} transacción(es)
+              </Text>
+            </View>
+
+            {/* Desembolsos */}
+            <View style={{ flex: 1, borderWidth: 1, borderColor: '#2563eb', borderRadius: 4, padding: 10, backgroundColor: '#eff6ff' }}>
+              <Text style={[pdfStyles.subtitle, { marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }]}>Total Desembolsos</Text>
+              <Text style={[pdfStyles.textBold, { fontSize: 14, color: '#2563eb' }]}>{formatCurrency(totalDesembolsos)}</Text>
+              <Text style={[pdfStyles.subtitle, { marginTop: 4 }]}>
+                {transactions.filter(t => t.type === 'DESEMBOLSO').length} transacción(es)
+              </Text>
+            </View>
+
+            {/* Gastos */}
+            <View style={{ flex: 1, borderWidth: 1, borderColor: '#dc2626', borderRadius: 4, padding: 10, backgroundColor: '#fef2f2' }}>
+              <Text style={[pdfStyles.subtitle, { marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }]}>Total Gastos</Text>
+              <Text style={[pdfStyles.textBold, { fontSize: 14, color: '#dc2626' }]}>{formatCurrency(totalGastos)}</Text>
+              <Text style={[pdfStyles.subtitle, { marginTop: 4 }]}>
+                {transactions.filter(t => t.type === 'GASTO').length} transacción(es)
+              </Text>
+            </View>
+
+            {/* Saldo neto */}
+            <View style={{ flex: 1, borderWidth: 1, borderColor: pdfColors.slate500, borderRadius: 4, padding: 10, backgroundColor: pdfColors.slate50 }}>
+              <Text style={[pdfStyles.subtitle, { marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }]}>Saldo Neto</Text>
+              <Text style={[pdfStyles.textBold, { fontSize: 14, color: pdfColors.slate800 }]}>{formatCurrency(runningBalance)}</Text>
+              <Text style={[pdfStyles.subtitle, { marginTop: 4 }]}>
+                {transactions.length} transacción(es) total
+              </Text>
+            </View>
+
+          </View>
+        </View>
+      )}
     </PdfLayout>
   );
 }
