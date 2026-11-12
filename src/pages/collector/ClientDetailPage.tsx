@@ -132,15 +132,15 @@ export function ClientDetailPage() {
     const fallbackDailyInstallment = Math.round(Number(loan.daily_installment) || 0);
     const effectivePending = noInstallmentsLoaded
       ? [{
-          id: `fallback-${loan.id}`,
-          loan_id: loan.id,
-          installment_number: 1,
-          scheduled_date: today,
-          status: 'PENDIENTE' as const,
-          amount: fallbackDailyInstallment,
-          paid_amount: 0,
-          balance: remainingBalance,
-        }]
+        id: `fallback-${loan.id}`,
+        loan_id: loan.id,
+        installment_number: 1,
+        scheduled_date: today,
+        status: 'PENDIENTE' as const,
+        amount: fallbackDailyInstallment,
+        paid_amount: 0,
+        balance: remainingBalance,
+      }]
       : pending;
     const effectiveTodayInstallment = noInstallmentsLoaded
       ? effectivePending[0]
@@ -503,13 +503,18 @@ export function ClientDetailPage() {
                 <span className="font-bold text-emerald-600 text-lg">{formatCurrency(loan.amount_delivered)}</span>
               </div>
 
+              {/* Boton de Registrar Cobro y Cobro adicional si ya se realizo el cobro de la cuota */}
               <button
-                onClick={() => setIsCardModalOpen(true)}
-                className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold rounded-xl transition-colors text-sm"
+                onClick={() => setIsPaymentModalOpen(true)}
+                className={
+                  isPaidAndClear
+                    ? "w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-3.5 rounded-xl transition-all active:scale-[0.98]"
+                    : "w-full bg-brand-600 hover:bg-brand-700 active:scale-[0.98] transition-all text-white font-bold py-3.5 rounded-xl shadow-md shadow-brand-500/30"
+                }
               >
-                <Calendar className="w-4 h-4" />
-                Ver Tarjeta de Cobros
+                {isPaidAndClear ? 'Registrar cobro adicional' : 'Registrar Cobro'}
               </button>
+
             </div>
           </div>
         )}
@@ -606,15 +611,13 @@ export function ClientDetailPage() {
                 }`}>{formatCurrency(financialState.remainingBalance)}</span>
             </div>
 
+            {/* Boton de las Tarjetas de pago */}
             <button
-              onClick={() => setIsPaymentModalOpen(true)}
-              className={
-                isPaidAndClear
-                  ? "w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-3.5 rounded-xl transition-all active:scale-[0.98]"
-                  : "w-full bg-brand-600 hover:bg-brand-700 active:scale-[0.98] transition-all text-white font-bold py-3.5 rounded-xl shadow-md shadow-brand-500/30"
-              }
+              onClick={() => setIsCardModalOpen(true)}
+              className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold rounded-xl transition-colors text-sm"
             >
-              {isPaidAndClear ? 'Registrar cobro adicional' : 'Registrar Cobro'}
+              <Calendar className="w-4 h-4" />
+              Ver Tarjeta de Cobros
             </button>
 
             {loan && loan.status === 'ACTIVO' && (
