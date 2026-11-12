@@ -1,13 +1,29 @@
+import { useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Home, Map as MapIcon, DollarSign, Wallet, MoreHorizontal, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/schema';
 import { format } from 'date-fns';
+import { useAuthStore } from '@/stores/authStore';
+import { ReleaseNotesModal } from '@/components/collector/ReleaseNotesModal';
+import { RELEASE_NOTES, hasSeenReleaseNotes, markReleaseNotesSeen } from '@/lib/releaseNotes';
 
 export function CollectorLayout() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const userId = useAuthStore((s) => s.user?.id);
+  // Aviso de novedades: se muestra una vez por usuario en este celular, hasta que lo cierre
+  const [dismissedNotesId, setDismissedNotesId] = useState<string | null>(null);
+  const showReleaseNotes = !!RELEASE_NOTES
+    && !!userId
+    && dismissedNotesId !== RELEASE_NOTES.id
+    && !hasSeenReleaseNotes(userId, RELEASE_NOTES.id);
+  const closeReleaseNotes = () => {
+    if (!RELEASE_NOTES) return;
+    markReleaseNotesSeen(userId, RELEASE_NOTES.id);
+    setDismissedNotesId(RELEASE_NOTES.id);
+  };
   const navItems = [
     { to: '/', icon: Home, label: 'Inicio' },
     { to: '/route', icon: MapIcon, label: 'Mi Ruta' },
@@ -80,6 +96,15 @@ export function CollectorLayout() {
           ))}
         </ul>
       </nav>
+
+      {RELEASE_NOTES && (
+        <ReleaseNotesModal
+          isOpen={showReleaseNotes}
+          onClose={closeReleaseNotes}
+          notes={RELEASE_NOTES}
+          showWeekdayLegend
+        />
+      )}
     </div>
   );
 }
