@@ -17,6 +17,7 @@ import { PaidTodayModal, type PaidTodayEntry } from '@/components/admin/PaidToda
 import { CompletedLoansTodayModal } from '@/components/collector/CompletedLoansTodayModal';
 import { VisitedTodayModal, type VisitedClientEntry } from '@/components/collector/VisitedTodayModal';
 import { buildCompletedToday, completedLoansSettingKey, countWithCompleted, type CompletedLoanEntry } from '@/lib/completedLoans';
+import { scheduleSnapshot } from '@/lib/collectionSchedule';
 import { applyLotteryDrawLocally, isLotteryWinnerLoan, parseLotteryLastDraw } from '@/lib/lottery';
 import { NavLink } from 'react-router-dom';
 import { SyncIssuesPanel } from '@/components/sync/SyncIssuesPanel';
@@ -209,13 +210,23 @@ export function CollectorDashboard() {
       }
 
       // 3. Current arrears
-      const loanCurrentArrears = arrearsInsts.reduce((s, i) => s + Number(i.balance || 0), 0);
+      let loanCurrentArrears = arrearsInsts.reduce((s, i) => s + Number(i.balance || 0), 0);
+
+      // Cobro semanal: solo se cobra en su día. Ese día la meta es lo acumulado de la semana;
+      // los demás días no suma a la meta de hoy y el atraso solo cuenta lo que ya debió pagar.
+      const snap = scheduleSnapshot(loan, loanInsts, today);
+      if (snap.weekly) {
+        const notCollectable = loan.start_date > today || !!loanEnded;
+        loanTargetToday = notCollectable ? 0 : snap.dueTarget;
+        loanCurrentToday = notCollectable ? 0 : snap.dueQuota;
+        loanCurrentArrears = snap.arrears;
+      }
 
       targetTodayOnly += loanTargetToday;
       currentTodayOnly += loanCurrentToday;
       currentArrears += loanCurrentArrears;
 
-      if (todayInst && todayInst.balance <= 0 && todayInst.paid_date && todayInst.paid_date < today) {
+      if (!snap.weekly && todayInst && todayInst.balance <= 0 && todayInst.paid_date && todayInst.paid_date < today) {
         prepaidTodayClients.push({
           loanId: loan.id,
           clientName: client.full_name || 'Cliente desconocido',

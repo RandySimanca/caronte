@@ -16,6 +16,7 @@ import { SyncService } from '@/services/SyncService';
 import { getLastCollectedToday, insertAfterLastCollected, markLastCollected } from '@/lib/routeOrder';
 import { confirmAction } from '@/lib/swal';
 import { supabase } from '@/lib/supabase';
+import { COLLECTION_WEEKDAY_OPTIONS, weekdayLabel, weekdayOfDate, weekdayStyle } from '@/lib/collectionSchedule';
 
 export function NewLoanWizard() {
   const navigate = useNavigate();
@@ -246,6 +247,15 @@ export function NewLoanWizard() {
   const [sundays, setSundays] = useState(() => Number(localStorage.getItem('nlw_sundays')) || 0);
   const [receiptFee, setReceiptFee] = useState(() => Number(localStorage.getItem('nlw_receiptFee')) || 0);
   const [wantsRaffle, setWantsRaffle] = useState(() => localStorage.getItem('nlw_wantsRaffle') === 'true');
+  // Frecuencia de cobro: las cuotas siguen siendo diarias; esto solo define cuándo se visita al cliente.
+  const [frequency, setFrequency] = useState<'DIARIO' | 'SEMANAL'>(() => (localStorage.getItem('nlw_frequency') === 'SEMANAL' ? 'SEMANAL' : 'DIARIO'));
+  // Día de cobro semanal (1 = lunes … 6 = sábado). Por defecto el día de la primera cuota (mañana); si cae domingo, lunes.
+  const [collectionWeekday, setCollectionWeekday] = useState<number>(() => {
+    const saved = Number(localStorage.getItem('nlw_weekday'));
+    if (Number.isInteger(saved) && saved >= 1 && saved <= 6) return saved;
+    const tomorrow = weekdayOfDate(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
+    return tomorrow === 0 ? 1 : tomorrow;
+  });
   const [confirmed, setConfirmed] = useState(false);
 
   // Auto-save draft
@@ -260,7 +270,9 @@ export function NewLoanWizard() {
     localStorage.setItem('nlw_sundays', sundays.toString());
     localStorage.setItem('nlw_receiptFee', receiptFee.toString());
     localStorage.setItem('nlw_wantsRaffle', wantsRaffle.toString());
-  }, [clientName, document, phone, address, amount, term, interestRate, sundays, receiptFee, wantsRaffle]);
+    localStorage.setItem('nlw_frequency', frequency);
+    localStorage.setItem('nlw_weekday', collectionWeekday.toString());
+  }, [clientName, document, phone, address, amount, term, interestRate, sundays, receiptFee, wantsRaffle, frequency, collectionWeekday]);
 
   // Calculations (Rule 1: exact, no rounding)
   const numAmount = parseFloat(amount) || 0;
@@ -420,7 +432,9 @@ export function NewLoanWizard() {
           initial_obligation: money.initial_obligation,
           term_days: term,
           daily_installment: money.daily_installment,
-          frequency: 'DIARIO',
+          frequency,
+          // Solo los préstamos semanales llevan día de cobro; los diarios se cobran todos los días
+          collection_weekday: frequency === 'SEMANAL' ? collectionWeekday : null,
           sundays_prepaid_count: sundays,
           sundays_prepaid_amount: money.sundays_prepaid_amount,
           receipt_fee: receiptFee,
@@ -513,7 +527,7 @@ export function NewLoanWizard() {
       });
 
       // Clear draft upon successful creation
-      ['nlw_clientName', 'nlw_document', 'nlw_phone', 'nlw_address', 'nlw_amount', 'nlw_term', 'nlw_interestRate', 'nlw_sundays', 'nlw_receiptFee', 'nlw_wantsRaffle'].forEach(key => localStorage.removeItem(key));
+      ['nlw_clientName', 'nlw_document', 'nlw_phone', 'nlw_address', 'nlw_amount', 'nlw_term', 'nlw_interestRate', 'nlw_sundays', 'nlw_receiptFee', 'nlw_wantsRaffle', 'nlw_frequency', 'nlw_weekday'].forEach(key => localStorage.removeItem(key));
 
       toast.success(`${refinancing ? 'Refinanciación' : 'Préstamo'} de ${formatCurrency(numAmount)} creado para ${clientName}${isOnline ? '' : ' (se sincronizará en línea)'}`);
       if (isOnline && userId) {
@@ -806,6 +820,51 @@ export function NewLoanWizard() {
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">días</span>
                   </div>
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-2">Frecuencia de cobro</label>
+                  <div className="flex space-x-2">
+                    {([['DIARIO', 'Diario'], ['SEMANAL', 'Semanal']] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setFrequency(value)}
+                        className={cn(
+                          'flex-1 py-2 rounded-xl text-sm font-bold transition-all border',
+                          frequency === value
+                            ? 'bg-brand-600 text-white border-brand-600 shadow-md shadow-brand-500/20'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {frequency === 'SEMANAL' ? (
+                    <>
+                      <p className="text-xs font-semibold text-slate-600 mt-3 mb-2">Día de cobro</p>
+                      <div className="grid grid-cols-6 gap-1.5">
+                        {COLLECTION_WEEKDAY_OPTIONS.map(d => (
+                          <button
+                            key={d.value}
+                            type="button"
+                            onClick={() => setCollectionWeekday(d.value)}
+                            className={cn(
+                              'py-2 rounded-lg text-[11px] font-bold border transition-all',
+                              collectionWeekday === d.value ? weekdayStyle(d.value).selected : 'bg-white text-slate-600 border-slate-200'
+                            )}
+                          >
+                            {d.short}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-2">
+                        Las cuotas siguen siendo diarias: el cliente paga lo acumulado de la semana el {weekdayLabel(collectionWeekday).toLowerCase()}.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 mt-2">Se cobra todos los días.</p>
+                  )}
+                </div>
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-semibold text-slate-700">Domingos a descontar</label>
                   <input type="text" inputMode="numeric" value={sundays === 0 ? '' : sundays} onChange={e => setSundays(parseInt(parseNumberInput(e.target.value)) || 0)} className="w-16 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-center text-sm font-bold focus:outline-none" placeholder="0" />
@@ -857,6 +916,7 @@ export function NewLoanWizard() {
                 <div className="flex justify-between text-sm"><span className="text-slate-500">Monto solicitado</span><span className="font-bold text-slate-800">{formatCurrency(numAmount)}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-slate-500">Obligación total (+{(interestRate * 100).toFixed(0)}%)</span><span className="font-bold text-slate-800">{formatCurrency(obligation)}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-slate-500">Plazo</span><span className="font-bold text-slate-800">{term} días</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-500">Frecuencia de cobro</span><span className="font-bold text-slate-800">{frequency === 'SEMANAL' ? `Semanal · ${weekdayLabel(collectionWeekday)}` : 'Diario'}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-slate-500">Cuota diaria exacta</span><span className="font-bold text-brand-600">{formatCurrency(dailyQuota)}</span></div>
                 {sundays > 0 && <div className="flex justify-between text-sm text-rose-600"><span>Domingos descontados</span><span className="font-semibold">{sundays} (-{formatCurrency(totalSundaysDiscount)})</span></div>}
                 {receiptFee > 0 && <div className="flex justify-between text-sm text-rose-600"><span>Boleta</span><span className="font-semibold">-{formatCurrency(receiptFee)}</span></div>}

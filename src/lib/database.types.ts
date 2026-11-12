@@ -119,6 +119,8 @@ export interface Loan {
   term_days: 30 | 40 | 45 | 60
   daily_installment: number        // EXACTO sin redondeo
   frequency: PaymentFrequency
+  // Día de cobro (0=domingo … 6=sábado) cuando frequency = 'SEMANAL'; null si es diario
+  collection_weekday?: number | null
   // Domingos prepagados
   sundays_prepaid_count: number
   sundays_prepaid_amount: number

@@ -17,6 +17,7 @@ import { SyncService } from '@/services/SyncService';
 import { sortByRouteOrder } from '@/lib/routeOrder';
 import { colombiaDateFromIso, mergeTodayPayments, paymentsTodaySettingKey } from '@/lib/dailyCollection';
 import { daysExpired as calcDaysExpired } from '@/lib/expiredLoan';
+import { scheduleSnapshot, weekdayOfDate, formatCollectionDate } from '@/lib/collectionSchedule';
 import { buildCompletedToday, completedLoansSettingKey, countWithCompleted, type CompletedLoanEntry } from '@/lib/completedLoans';
 
 // Posición del scroll de la lista: se guarda por día para volver "por donde vas" después de cobrar
@@ -137,6 +138,11 @@ export function RouteClientList() {
       let isAdelantado = false;
       let hasPaymentToday = false;
       let daysExpired = 0;
+      // Frecuencia/día de cobro: por defecto "diario" = se cobra hoy (toma el color del día de hoy)
+      let collectionWeekday = weekdayOfDate(today);
+      let isWeekly = false;
+      let isCollectionDay = true;
+      let nextCollectionLabel = '';
 
       if (winnerLoan && !activeLoan) {
         status = 'GANADOR';
@@ -188,6 +194,22 @@ export function RouteClientList() {
           (todayInstallment?.status === 'PAGADA_ANTICIPADAMENTE' || (todayInstallment?.paid_date && todayInstallment.paid_date < today))
         );
 
+        // Cobro semanal: las cuotas siguen siendo diarias, pero solo se cobra en su día.
+        // Ese día "Hoy" es lo acumulado de la semana; los demás días no hay cuota de hoy y
+        // el atraso solo cuenta lo que ya debió pagar en una visita anterior.
+        const snap = scheduleSnapshot(loan, loanInstallments, today);
+        collectionWeekday = snap.weekday;
+        isWeekly = snap.weekly;
+        isCollectionDay = snap.isCollectionDay;
+        if (snap.weekly) {
+          nextCollectionLabel = snap.nextDate ? formatCollectionDate(snap.nextDate) : '';
+          arrears = snap.arrears;
+          todayQuota = loan.start_date > today ? 0 : snap.dueQuota;
+          isTodayPaid = snap.isCollectionDay && snap.windowPaid;
+          // Semana saldada sin que hoy haya habido cobro = ya la había pagado antes
+          isPrepaidToday = isTodayPaid && !hasPaymentToday;
+        }
+
         // Es abono si pagó hoy pero la cuota de hoy no quedó completamente saldada
         isAbono = hasPaymentToday && !isTodayPaid;
         isAdelantado = advances > 0 || (isPrepaidToday && !hasPaymentToday);
@@ -220,6 +242,10 @@ export function RouteClientList() {
         todayPaidAmount,
         isAbono,
         raffleNumber: winnerLoan?.raffle_number ?? loan?.raffle_number,
+        collectionWeekday,
+        isWeekly,
+        isCollectionDay,
+        nextCollectionLabel,
         avatarUrl: client.photo_face_url
       };
     })

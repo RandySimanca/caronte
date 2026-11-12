@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { ArrowLeft, Edit, CheckCircle2, CheckCircle, Trophy, Ticket, MessageCircle, Calendar } from 'lucide-react';
 import { useNavigate, useParams, NavLink } from 'react-router-dom';
-import { formatCurrency } from '@/lib/utils';
 import { PaymentConfirmationModal } from '@/components/payments/PaymentConfirmationModal';
 import { CollectorPaymentCardModal } from '@/components/payments/CollectorPaymentCardModal';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -20,6 +19,8 @@ import {
   type LotteryLastDraw,
 } from '@/lib/lottery';
 import { openWhatsAppWithMessage } from '@/lib/whatsapp';
+import { scheduleSnapshot, weekdayLabel, weekdayStyle, formatCollectionDate } from '@/lib/collectionSchedule';
+import { formatCurrency, cn } from '@/lib/utils';
 
 export function ClientDetailPage() {
   const navigate = useNavigate();
@@ -140,9 +141,28 @@ export function ClientDetailPage() {
     const effectiveTodayQuota = noInstallmentsLoaded ? Math.min(fallbackDailyInstallment, remainingBalance) : todayQuota;
     const effectiveExpectedTotal = noInstallmentsLoaded ? effectiveTodayQuota : expectedTotal;
 
+    // Frecuencia/día de cobro. Para el cobro semanal solo se ajusta lo que se MUESTRA como
+    // "cuota de hoy" y "atrasos"; el modal de cobro sigue usando los valores diarios de arriba
+    // (el total esperado en el día de cobro es el mismo).
+    const schedule = scheduleSnapshot(loan, installments, today);
+    const display = (schedule.weekly && !noInstallmentsLoaded)
+      ? { todayQuota: loan.start_date > today ? 0 : Math.round(schedule.dueQuota), arrears: Math.round(schedule.arrears) }
+      : { todayQuota: effectiveTodayQuota, arrears };
+    // Semana saldada en su día: tratarla como "pagado al día" aunque la cuota exacta de hoy tenga otro estado
+    const weeklyClear = schedule.weekly && !noInstallmentsLoaded && schedule.isCollectionDay && schedule.windowPaid && display.arrears === 0;
+    // Semanal fuera de su día: no hay cuota de hoy; está "al día" si no tiene atrasos
+    const weeklyNotDue = schedule.weekly && !schedule.isCollectionDay;
+    // Lo acumulado hasta hoy (lo que pagaría si decide cobrar antes de su día)
+    const accumulatedToday = effectiveExpectedTotal;
+
     return {
       todayQuota: effectiveTodayQuota,
       arrears,
+      schedule,
+      display,
+      weeklyClear,
+      weeklyNotDue,
+      accumulatedToday,
       advances,
       expectedTotal: effectiveExpectedTotal,
       pendingInstallments: effectivePending,
@@ -290,7 +310,9 @@ export function ClientDetailPage() {
     );
   }
 
-  const isPaidAndClear = financialState?.isPaidToday && financialState?.arrears === 0;
+  const isPaidAndClear = financialState?.schedule.weekly
+    ? !!financialState.weeklyClear
+    : financialState?.isPaidToday && financialState?.arrears === 0;
 
   return (
     <div className="flex flex-col h-full bg-slate-50">
@@ -405,6 +427,19 @@ export function ClientDetailPage() {
                 <span className="text-slate-500">Cuota diaria</span>
                 <span className="font-semibold text-slate-900">{formatCurrency(loan.daily_installment)}</span>
               </div>
+              {financialState && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Frecuencia de cobro</span>
+                  <span className={cn(
+                    'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold',
+                    weekdayStyle(financialState.schedule.weekday).chip
+                  )}>
+                    {financialState.schedule.weekly
+                      ? `Semanal · ${weekdayLabel(financialState.schedule.weekday)}`
+                      : 'Diario'}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-slate-500">Domingos descontados</span>
                 <span className="font-semibold text-slate-900">
@@ -462,14 +497,32 @@ export function ClientDetailPage() {
               </div>
             ) : (
               <>
+                {financialState.schedule.weekly && (
+                  <div className={cn(
+                    'mb-3 rounded-xl border p-3 text-sm',
+                    weekdayStyle(financialState.schedule.weekday).chip
+                  )}>
+                    {financialState.schedule.isCollectionDay ? (
+                      <p className="font-bold">Hoy le toca cobro semanal ({weekdayLabel(financialState.schedule.weekday)})</p>
+                    ) : (
+                      <>
+                        <p className="font-bold">Hoy no le toca cobro</p>
+                        <p className="text-xs mt-0.5">
+                          Cobro semanal: {weekdayLabel(financialState.schedule.weekday)}. Próximo cobro: {financialState.schedule.nextDate ? formatCollectionDate(financialState.schedule.nextDate) : ''}.
+                          {' '}Acumulado a hoy: {formatCurrency(financialState.accumulatedToday)}.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   <div className="text-center p-2 rounded-xl bg-slate-50 border border-slate-100">
-                    <p className="text-[10px] uppercase text-slate-500 font-semibold mb-1">Cuota de hoy</p>
-                    <p className="text-sm font-bold text-brand-600">{formatCurrency(financialState.todayQuota)}</p>
+                    <p className="text-[10px] uppercase text-slate-500 font-semibold mb-1">{financialState.schedule.weekly && financialState.schedule.isCollectionDay ? 'Cobro de la semana' : 'Cuota de hoy'}</p>
+                    <p className="text-sm font-bold text-brand-600">{formatCurrency(financialState.display.todayQuota)}</p>
                   </div>
                   <div className="text-center p-2 rounded-xl bg-rose-50 border border-rose-100">
                     <p className="text-[10px] uppercase text-rose-500 font-semibold mb-1">Atrasos</p>
-                    <p className="text-sm font-bold text-rose-600">{formatCurrency(financialState.arrears)}</p>
+                    <p className="text-sm font-bold text-rose-600">{formatCurrency(financialState.display.arrears)}</p>
                   </div>
                   <div className="text-center p-2 rounded-xl bg-emerald-50 border border-emerald-100">
                     <p className="text-[10px] uppercase text-emerald-600 font-semibold mb-1">Adelantos</p>

@@ -4,6 +4,7 @@ import { NavLink } from 'react-router-dom';
 import { User, MapPin, Trophy, GripVertical, CalendarCheck } from 'lucide-react';
 import { formatCurrency, cn } from '@/lib/utils';
 import { expiredLabel } from '@/lib/expiredLoan';
+import { weekdayShort, weekdayStyle } from '@/lib/collectionSchedule';
 
 export function SortableClientItem({ client, isReordering, position, onMoveTo }: { client: any, isReordering: boolean, position?: number, onMoveTo?: (clientId: string) => void }) {
   const {
@@ -25,10 +26,14 @@ export function SortableClientItem({ client, isReordering, position, onMoveTo }:
   // Cobrado hoy (pago completo o abono): se pinta toda el área en verde, además de la palomita
   const isCollected = client.status === 'VISITADO' && !isReordering;
 
+  // Color del día de cobro: semanal = su día elegido; diario = el día de hoy
+  const dayStyle = weekdayStyle(client.collectionWeekday);
+  const showDayColor = !isReordering && !isCollected && client.status !== 'GANADOR';
+
   const Content = (
     <div className={cn(
       "flex items-center p-4",
-      isReordering ? "bg-white border shadow-sm rounded-lg my-1 mx-2" : (isCollected ? "border-l-4 border-emerald-500 active:bg-emerald-200" : "active:bg-slate-100"),
+      isReordering ? "bg-white border shadow-sm rounded-lg my-1 mx-2" : (isCollected ? "border-l-4 border-emerald-500 active:bg-emerald-200" : cn("border-l-4 active:bg-slate-100", client.status === 'GANADOR' ? "border-l-transparent" : dayStyle.stripe)),
       isDragging && "shadow-md ring-2 ring-brand-500 opacity-90"
     )}>
       {isReordering && (
@@ -122,6 +127,14 @@ export function SortableClientItem({ client, isReordering, position, onMoveTo }:
           <MapPin className="w-3 h-3 mr-1 flex-shrink-0" />
           {client.address}
         </p>
+        {!isReordering && client.status !== 'GANADOR' && (
+          <span className={cn(
+            "mt-1 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none",
+            dayStyle.chip
+          )}>
+            {weekdayShort(client.collectionWeekday)} · {client.isWeekly ? 'Semanal' : 'Diario'}
+          </span>
+        )}
       </div>
 
       {/* Money */}
@@ -139,12 +152,18 @@ export function SortableClientItem({ client, isReordering, position, onMoveTo }:
             </>
           ) : (
             <>
-              <p className={cn(
-                "text-xs font-medium",
-                (client.isTodayPaid || client.status === 'ADELANTADO') ? "text-slate-400 line-through" : "text-slate-600"
-              )}>
-                Hoy: <span className="font-semibold">{formatCurrency(client.todayQuota)}</span>
-              </p>
+              {client.isWeekly && !client.isCollectionDay ? (
+                <p className="text-xs font-medium text-slate-500">
+                  Cobra: <span className="font-semibold">{client.nextCollectionLabel}</span>
+                </p>
+              ) : (
+                <p className={cn(
+                  "text-xs font-medium",
+                  (client.isTodayPaid || client.status === 'ADELANTADO') ? "text-slate-400 line-through" : "text-slate-600"
+                )}>
+                  Hoy: <span className="font-semibold">{formatCurrency(client.todayQuota)}</span>
+                </p>
+              )}
               <div className="flex flex-col items-end gap-1 mt-0.5">
                 {client.isAbono ? (
                   <span className="text-[10px] text-orange-700 bg-orange-100 border border-orange-200 px-1.5 py-0.5 rounded font-bold leading-none">
@@ -187,8 +206,8 @@ export function SortableClientItem({ client, isReordering, position, onMoveTo }:
   return (
     <li id={`route-client-${client.id}`} ref={setNodeRef} style={style} className={cn(
       "transition-colors",
-      isCollected ? "bg-emerald-100" : "bg-white",
-      !isReordering && (isCollected ? "hover:bg-emerald-100" : "hover:bg-slate-50")
+      isCollected ? "bg-emerald-100" : (showDayColor ? dayStyle.row : "bg-white"),
+      !isReordering && (isCollected ? "hover:bg-emerald-100" : "hover:brightness-95")
     )}>
       {isReordering ? (
         Content
