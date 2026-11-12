@@ -257,7 +257,7 @@ export function PaymentConfirmationModal({
             paid_amount: inst.paid_amount + allocated,
             balance: newBalance,
             status: newBalance <= 0 ? 'PAGADA' : 'PARCIAL',
-            paid_date: newBalance <= 0 ? today : null,
+            paid_date: today, // fecha del pago (también en abonos parciales) para mostrar "Último pago"
           };
           await db.installments.update(inst.id, updateData as any);
           updatedInstallments.push({ id: inst.id, ...updateData });
@@ -274,7 +274,7 @@ export function PaymentConfirmationModal({
             paid_amount: newPaidAmount,
             balance: newBalance,
             status: newBalance <= 0 ? 'PAGADA' : 'PARCIAL',
-            paid_date: newBalance <= 0 ? today : null,
+            paid_date: today, // fecha del pago (también en abonos parciales) para mostrar "Último pago"
           };
           await db.installments.update(inst.id, updateData as any);
           updatedInstallments.push({ id: inst.id, ...updateData });
@@ -293,7 +293,7 @@ export function PaymentConfirmationModal({
             paid_amount: inst.paid_amount + allocated,
             balance: newBalance,
             status: newBalance <= 0 ? 'PAGADA' : 'PARCIAL',
-            paid_date: newBalance <= 0 ? today : null,
+            paid_date: today, // fecha del pago (también en abonos parciales) para mostrar "Último pago"
           };
           await db.installments.update(inst.id, updateData as any);
           updatedInstallments.push({ id: inst.id, ...updateData });

@@ -2241,7 +2241,7 @@ export class AdminService {
         paid_amount: newPaidAmount,
         balance: newBalance,
         status: newStatus,
-        paid_date: newBalance === 0 ? todayStr : inst.paid_date
+        paid_date: todayStr
       });
 
       let allocationType = 'DIA_ACTUAL';
@@ -2593,7 +2593,7 @@ export class AdminService {
           paid_amount: newPaid,
           balance: newBalance,
           status,
-          paid_date: newBalance === 0 ? todayStr : inst.paid_date,
+          paid_date: todayStr,
         })
         .eq('id', inst.id);
 

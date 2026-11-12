@@ -21,6 +21,7 @@ import {
 import { openWhatsAppWithMessage } from '@/lib/whatsapp';
 import { scheduleSnapshot, weekdayLabel, weekdayStyle, formatCollectionDate } from '@/lib/collectionSchedule';
 import { formatCurrency, cn } from '@/lib/utils';
+import { obtenerFechaUltimoPago, textoFechaUltimoPago } from '@/lib/ultimoPago';
 
 export function ClientDetailPage() {
   const navigate = useNavigate();
@@ -177,6 +178,12 @@ export function ClientDetailPage() {
       noInstallmentsLoaded,
     };
   }, [loan, installments, today]);
+
+  // Fecha del último pago del préstamo (debe ir antes de cualquier return anticipado)
+  const fechaUltimoPago = useMemo(
+    () => obtenerFechaUltimoPago(installments ?? []),
+    [installments]
+  );
 
   // Mientras el modal de cobro está abierto usamos una "foto" de loan/financialState tomada
   // antes de cobrar: al guardar, Dexie cambia el préstamo (incluso a CANCELADO si el saldo
@@ -437,6 +444,14 @@ export function ClientDetailPage() {
                     {financialState.schedule.weekly
                       ? `Semanal · ${weekdayLabel(financialState.schedule.weekday)}`
                       : 'Diario'}
+                  </span>
+                </div>
+              )}
+              {!isLotteryWinner && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Último pago</span>
+                  <span className={cn('font-semibold', fechaUltimoPago ? 'text-slate-900' : 'text-slate-400')}>
+                    {fechaUltimoPago ? textoFechaUltimoPago(fechaUltimoPago, today) : 'Sin pagos aún'}
                   </span>
                 </div>
               )}
