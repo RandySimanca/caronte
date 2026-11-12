@@ -1511,36 +1511,9 @@ export class AdminService {
    * Obtiene datos agregados para el módulo de reportes
    */
   static async getReportsData(startDate: string, endDate: string, routeId?: string) {
-    const startIso = `${startDate}T00:00:00.000Z`;
-    const endIso = `${endDate}T23:59:59.999Z`;
-
-    // 1. Pagos (Recaudos)
-    let paymentsQuery = supabase
-      .from('payments')
-      .select('total_amount, collected_at')
-      .gte('collected_at', startIso)
-      .lte('collected_at', endIso);
-
-    // 2. Gastos
-    let expensesQuery = supabase
-      .from('expenses')
-      .select('amount, expense_date, category:expense_categories(name)')
-      .gte('expense_date', startDate)
-      .lte('expense_date', endDate);
-
-    // 3. Préstamos Nuevos
-    let loansQuery = supabase
-      .from('loans')
-      .select('amount_delivered, amount_requested, interest_amount, disbursement_date, current_balance, status')
-      .gte('disbursement_date', startDate)
-      .lte('disbursement_date', endDate);
-
-    // 4. Asignaciones de ruta activas en el periodo
-    let assignmentsQuery = supabase
-      .from('route_assignments')
-      .select('date_start, date_end, viaticum, salary, route_id')
-      .lte('date_start', endDate)
-      .or(`date_end.is.null,date_end.gte.${startDate}`);
+    // Rango en hora de Colombia (UTC-5), igual que la liquidación diaria
+    const startIso = dayRangeIso(startDate).start;
+    const endIso = dayRangeIso(endDate).end;
 
     const { data: activeAssignments } = await supabase
       .from('route_assignments')
@@ -1548,50 +1521,58 @@ export class AdminService {
       .is('date_end', null);
     const activeRouteIds = activeAssignments?.map((a: any) => a.route_id) || [];
 
+    // Ruta(s) a consultar: la elegida (si está activa) o todas las activas; una ruta pausada no devuelve datos
+    const SIN_RUTA = '00000000-0000-0000-0000-000000000000';
+    let rutasAConsultar: string[];
     if (routeId && routeId !== 'all') {
-      if (!activeRouteIds.includes(routeId)) {
-        // La ruta seleccionada está pausada, no devolver datos
-        paymentsQuery = paymentsQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        expensesQuery = expensesQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        loansQuery = loansQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        assignmentsQuery = assignmentsQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-      } else {
-        paymentsQuery = paymentsQuery.eq('route_id', routeId);
-        expensesQuery = expensesQuery.eq('route_id', routeId);
-        loansQuery = loansQuery.eq('route_id', routeId);
-        assignmentsQuery = assignmentsQuery.eq('route_id', routeId);
-      }
+      rutasAConsultar = activeRouteIds.includes(routeId) ? [routeId] : [SIN_RUTA];
     } else {
-      // Si es 'all', filtrar las rutas pausadas
-      if (activeRouteIds.length > 0) {
-        paymentsQuery = paymentsQuery.in('route_id', activeRouteIds);
-        expensesQuery = expensesQuery.in('route_id', activeRouteIds);
-        loansQuery = loansQuery.in('route_id', activeRouteIds);
-        assignmentsQuery = assignmentsQuery.in('route_id', activeRouteIds);
-      } else {
-        paymentsQuery = paymentsQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        expensesQuery = expensesQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        loansQuery = loansQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        assignmentsQuery = assignmentsQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-      }
+      rutasAConsultar = activeRouteIds.length > 0 ? activeRouteIds : [SIN_RUTA];
     }
 
-    const [paymentsRes, expensesRes, loansRes, assignmentsRes] = await Promise.all([
-      paymentsQuery,
-      expensesQuery,
-      loansQuery,
-      assignmentsQuery
+    // 4. Asignaciones de ruta activas en el periodo (pocas filas)
+    const assignmentsQuery = supabase
+      .from('route_assignments')
+      .select('date_start, date_end, viaticum, salary, route_id')
+      .lte('date_start', endDate)
+      .or(`date_end.is.null,date_end.gte.${startDate}`)
+      .in('route_id', rutasAConsultar);
+
+    // Pagos, gastos y préstamos se piden por páginas (Supabase corta en 1000 filas por consulta)
+    const [payments, expenses, loans, assignmentsRes] = await Promise.all([
+      // 1. Pagos (Recaudos)
+      AdminService.traerTodasLasFilas(() =>
+        supabase.from('payments')
+          .select('total_amount, collected_at')
+          .gte('collected_at', startIso).lte('collected_at', endIso)
+          .in('route_id', rutasAConsultar)
+          .order('collected_at', { ascending: true }).order('id', { ascending: true })
+      ),
+      // 2. Gastos
+      AdminService.traerTodasLasFilas(() =>
+        supabase.from('expenses')
+          .select('amount, expense_date, category:expense_categories(name)')
+          .gte('expense_date', startDate).lte('expense_date', endDate)
+          .in('route_id', rutasAConsultar)
+          .order('id', { ascending: true })
+      ),
+      // 3. Préstamos Nuevos
+      AdminService.traerTodasLasFilas(() =>
+        supabase.from('loans')
+          .select('amount_delivered, amount_requested, interest_amount, disbursement_date, current_balance, status')
+          .gte('disbursement_date', startDate).lte('disbursement_date', endDate)
+          .in('route_id', rutasAConsultar)
+          .order('id', { ascending: true })
+      ),
+      assignmentsQuery,
     ]);
 
-    if (paymentsRes.error) throw paymentsRes.error;
-    if (expensesRes.error) throw expensesRes.error;
-    if (loansRes.error) throw loansRes.error;
     if (assignmentsRes.error) throw assignmentsRes.error;
 
     return {
-      payments: paymentsRes.data || [],
-      expenses: expensesRes.data || [],
-      loans: loansRes.data || [],
+      payments,
+      expenses,
+      loans,
       assignments: assignmentsRes.data || []
     };
   }
@@ -1665,15 +1646,29 @@ export class AdminService {
   }
 
   /**
+   * Trae TODAS las filas de una consulta, página por página (Supabase corta en 1000 filas por consulta).
+   * Recibe una función que arma la consulta desde cero y debe incluir un orden estable (order por id).
+   */
+  private static async traerTodasLasFilas(armarConsulta: () => any, tamanoPagina = 1000): Promise<any[]> {
+    const filas: any[] = [];
+    for (let desde = 0; ; desde += tamanoPagina) {
+      const { data, error } = await armarConsulta().range(desde, desde + tamanoPagina - 1);
+      if (error) throw error;
+      const pagina = data || [];
+      filas.push(...pagina);
+      if (pagina.length < tamanoPagina) break;
+    }
+    return filas;
+  }
+
+  /**
    * Obtiene el Libro Auxiliar de transacciones cronológico
    */
   static async getLedgerTransactions(startDate: string, endDate: string, routeId?: string) {
-    const startIso = `${startDate}T00:00:00.000Z`;
-    const endIso = `${endDate}T23:59:59.999Z`;
-
-    let pQuery = supabase.from('payments').select('id, collected_at, total_amount, collector_observation, loan:loans(client:clients(full_name)), collector:users!payments_collector_id_fkey(full_name)').gte('collected_at', startIso).lte('collected_at', endIso);
-    let eQuery = supabase.from('expenses').select('id, expense_date, amount, description, category:expense_categories(name), route:routes(name)').gte('expense_date', startDate).lte('expense_date', endDate);
-    let lQuery = supabase.from('loans').select('id, disbursement_date, amount_delivered, client:clients(full_name), route:routes(name)').gte('disbursement_date', startDate).lte('disbursement_date', endDate);
+    // Rango en hora de Colombia (UTC-5), igual que la liquidación diaria. Con horas UTC se perdían
+    // los cobros hechos después de las 7:00 p.m. y se colaban los de la noche del día anterior.
+    const inicioIso = dayRangeIso(startDate).start;
+    const finIso = dayRangeIso(endDate).end;
 
     const { data: activeAssignments } = await supabase
       .from('route_assignments')
@@ -1681,37 +1676,43 @@ export class AdminService {
       .is('date_end', null);
     const activeRouteIds = activeAssignments?.map((a: any) => a.route_id) || [];
 
+    // Ruta(s) a consultar: la elegida (si está activa) o todas las activas
+    const SIN_RUTA = '00000000-0000-0000-0000-000000000000';
+    let rutasAConsultar: string[];
     if (routeId && routeId !== 'all') {
-      if (!activeRouteIds.includes(routeId)) {
-        pQuery = pQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        eQuery = eQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        lQuery = lQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-      } else {
-        pQuery = pQuery.eq('route_id', routeId);
-        eQuery = eQuery.eq('route_id', routeId);
-        lQuery = lQuery.eq('route_id', routeId);
-      }
+      rutasAConsultar = activeRouteIds.includes(routeId) ? [routeId] : [SIN_RUTA];
     } else {
-      if (activeRouteIds.length > 0) {
-        pQuery = pQuery.in('route_id', activeRouteIds);
-        eQuery = eQuery.in('route_id', activeRouteIds);
-        lQuery = lQuery.in('route_id', activeRouteIds);
-      } else {
-        pQuery = pQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        eQuery = eQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-        lQuery = lQuery.eq('route_id', '00000000-0000-0000-0000-000000000000');
-      }
+      rutasAConsultar = activeRouteIds.length > 0 ? activeRouteIds : [SIN_RUTA];
     }
 
-    const [pRes, eRes, lRes] = await Promise.all([pQuery, eQuery, lQuery]);
-
-    if (pRes.error) throw pRes.error;
-    if (eRes.error) throw eRes.error;
-    if (lRes.error) throw lRes.error;
+    // Supabase devuelve máximo 1000 filas por consulta: se pide por páginas para no dejar movimientos por fuera.
+    const [pagos, gastos, prestamos] = await Promise.all([
+      AdminService.traerTodasLasFilas(() =>
+        supabase.from('payments')
+          .select('id, collected_at, total_amount, collector_observation, loan:loans(client:clients(full_name)), collector:users!payments_collector_id_fkey(full_name)')
+          .gte('collected_at', inicioIso).lte('collected_at', finIso)
+          .in('route_id', rutasAConsultar)
+          .order('collected_at', { ascending: true }).order('id', { ascending: true })
+      ),
+      AdminService.traerTodasLasFilas(() =>
+        supabase.from('expenses')
+          .select('id, expense_date, amount, description, category:expense_categories(name), route:routes(name)')
+          .gte('expense_date', startDate).lte('expense_date', endDate)
+          .in('route_id', rutasAConsultar)
+          .order('id', { ascending: true })
+      ),
+      AdminService.traerTodasLasFilas(() =>
+        supabase.from('loans')
+          .select('id, disbursement_date, amount_delivered, refinanced_balance, client:clients(full_name), route:routes(name)')
+          .gte('disbursement_date', startDate).lte('disbursement_date', endDate)
+          .in('route_id', rutasAConsultar)
+          .order('id', { ascending: true })
+      ),
+    ]);
 
     const transactions: any[] = [];
 
-    pRes.data?.forEach((p: any) => transactions.push({
+    pagos.forEach((p: any) => transactions.push({
       id: `p_${p.id}`,
       date: p.collected_at,
       type: 'INGRESO',
@@ -1720,7 +1721,7 @@ export class AdminService {
       observation: p.collector_observation || ''
     }));
 
-    eRes.data?.forEach((e: any) => transactions.push({
+    gastos.forEach((e: any) => transactions.push({
       id: `e_${e.id}`,
       date: `${e.expense_date}T12:00:00.000Z`, // Approximation
       type: 'GASTO',
@@ -1729,14 +1730,29 @@ export class AdminService {
       observation: ''
     }));
 
-    lRes.data?.forEach((l: any) => transactions.push({
-      id: `l_${l.id}`,
-      date: `${l.disbursement_date}T08:00:00.000Z`, // Approximation
-      type: 'DESEMBOLSO',
-      description: `Desembolso - ${l.client?.full_name || 'Desconocido'}`,
-      amount: -Number(l.amount_delivered),
-      observation: ''
-    }));
+    prestamos.forEach((l: any) => {
+      const saldoRefinanciado = refinancedBalanceOf(l);
+      // Refinanciación: el saldo anterior que se recoge cuenta como ingreso (igual que en la liquidación)
+      // y el préstamo nuevo se muestra por su valor completo; el efectivo neto no cambia.
+      if (saldoRefinanciado > 0) {
+        transactions.push({
+          id: `r_${l.id}`,
+          date: `${l.disbursement_date}T08:00:00.000Z`, // Approximation
+          type: 'INGRESO',
+          description: `Saldo refinanciado - ${l.client?.full_name || 'Desconocido'}`,
+          amount: saldoRefinanciado,
+          observation: 'Saldo del préstamo anterior recogido al refinanciar'
+        });
+      }
+      transactions.push({
+        id: `l_${l.id}`,
+        date: `${l.disbursement_date}T08:00:00.000Z`, // Approximation
+        type: 'DESEMBOLSO',
+        description: `Desembolso - ${l.client?.full_name || 'Desconocido'}`,
+        amount: -loanValueOf(l),
+        observation: ''
+      });
+    });
 
     return transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }
