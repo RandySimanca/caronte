@@ -1,26 +1,37 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Lock, Phone, Eye, EyeOff, Wifi } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { SyncService } from '@/services/SyncService';
 import toast from 'react-hot-toast';
+import { TurnstileWidget, TURNSTILE_ENABLED, type TurnstileHandle } from '@/components/auth/TurnstileWidget';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileHandle>(null);
   const { signIn } = useAuthStore();
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
+    if (TURNSTILE_ENABLED && !captchaToken) {
+      toast.error('Espera a que termine la verificación de seguridad e inténtalo de nuevo.');
+      return;
+    }
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+        options: captchaToken ? { captchaToken } : undefined,
+      });
       if (error) throw error;
       if (!data.session) throw new Error('No se pudo iniciar sesión');
 
@@ -64,6 +75,8 @@ export function LoginPage() {
     } catch (error: any) {
       if (error.message === 'NO_ROUTE_ASSIGNED') {
         toast.error('No puedes iniciar sesión porque no tienes ninguna ruta asignada en este momento. Contacta al administrador.', { duration: 5000 });
+      } else if (/captcha/i.test(error?.message || '')) {
+        toast.error('No se pudo verificar que eres una persona. Inténtalo de nuevo.');
       } else {
         toast.error(error.message === 'Invalid login credentials'
           ? 'Correo o contraseña incorrectos'
@@ -71,6 +84,8 @@ export function LoginPage() {
         );
       }
     } finally {
+      // El token de Turnstile es de un solo uso: se pide uno nuevo después de cada intento.
+      turnstileRef.current?.reset();
       setIsLoading(false);
     }
   };
@@ -150,9 +165,11 @@ export function LoginPage() {
             </div>
           </div>
 
+          <TurnstileWidget ref={turnstileRef} onToken={setCaptchaToken} />
+
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || (TURNSTILE_ENABLED && !captchaToken)}
             className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-bold py-3.5 rounded-xl shadow-md shadow-brand-500/30 transition-all active:scale-[0.98] mt-2"
           >
             {isLoading ? 'Entrando...' : 'Entrar'}

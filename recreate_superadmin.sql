@@ -6,8 +6,8 @@
 -- REEMPLAZA ESTOS VALORES CON LOS DEL USUARIO QUE QUIERES CREAR
 DO $$
 DECLARE
-  v_email VARCHAR := 'randysimancamercado@gmail.com';  -- CAMBIAR ESTO
-  v_password VARCHAR := 'Valeria13.';  -- CAMBIAR ESTO
+  v_email VARCHAR := 'escribir correo aqui';  -- CAMBIAR ESTO
+  v_password VARCHAR := 'escribir contraseña de la base de datos aqui';  -- CAMBIAR ESTO
   v_full_name VARCHAR := 'Randy Simanca';  -- CAMBIAR ESTO
   v_user_id UUID;
   v_role_id UUID;
