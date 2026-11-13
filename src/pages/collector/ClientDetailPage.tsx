@@ -457,19 +457,6 @@ export function ClientDetailPage() {
                 <span className="text-slate-500">Cuota diaria</span>
                 <span className="font-semibold text-slate-900">{formatCurrency(loan.daily_installment)}</span>
               </div>
-              {financialState && (
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Frecuencia de cobro</span>
-                  <span className={cn(
-                    'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold',
-                    weekdayStyle(financialState.schedule.weekday).chip
-                  )}>
-                    {financialState.schedule.weekly
-                      ? `Semanal · ${weekdayLabel(financialState.schedule.weekday)}`
-                      : 'Diario'}
-                  </span>
-                </div>
-              )}
               {!isLotteryWinner && (
                 <div className="flex justify-between items-center">
                   <span className="text-slate-500">Último pago</span>
@@ -484,20 +471,24 @@ export function ClientDetailPage() {
                   <span className="font-bold text-emerald-600">{formatCurrency(valorUltimoPago)}</span>
                 </div>
               )}
-              <div className="flex justify-between">
-                <span className="text-slate-500">Domingos descontados</span>
-                <span className="font-semibold text-slate-900">
-                  {loan.sundays_prepaid_count} ({formatCurrency(loan.sundays_prepaid_amount)})
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">
-                  Boleta{loan.raffle_number && (
-                    <span className="ml-1 font-bold text-purple-600">No. {loan.raffle_number}</span>
-                  )}
-                </span>
-                <span className="font-semibold text-slate-900">{formatCurrency(loan.receipt_fee)}</span>
-              </div>
+              {((loan.sundays_prepaid_count ?? 0) > 0 || (loan.sundays_prepaid_amount ?? 0) > 0) && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Domingos descontados</span>
+                  <span className="font-semibold text-slate-900">
+                    {loan.sundays_prepaid_count} ({formatCurrency(loan.sundays_prepaid_amount)})
+                  </span>
+                </div>
+              )}
+              {Boolean((loan.raffle_number && loan.raffle_number.trim() !== '') || (loan.receipt_fee ?? 0) > 0) && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">
+                    Boleta{loan.raffle_number && (
+                      <span className="ml-1 font-bold text-purple-600">No. {loan.raffle_number}</span>
+                    )}
+                  </span>
+                  <span className="font-semibold text-slate-900">{formatCurrency(loan.receipt_fee)}</span>
+                </div>
+              )}
               <div className="pt-2 mt-2 border-t border-slate-100 flex justify-between items-center">
                 <span className="text-slate-600 font-medium">Dinero entregado</span>
                 <span className="font-bold text-emerald-600 text-lg">{formatCurrency(loan.amount_delivered)}</span>
