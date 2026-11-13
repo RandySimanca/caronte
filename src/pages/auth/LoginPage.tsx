@@ -73,6 +73,7 @@ export function LoginPage() {
       // Redirigir al dashboard después del sync
       navigate('/');
     } catch (error: any) {
+      console.error('[Login error]:', error);
       if (error.message === 'NO_ROUTE_ASSIGNED') {
         toast.error('No puedes iniciar sesión porque no tienes ninguna ruta asignada en este momento. Contacta al administrador.', { duration: 5000 });
       } else if (/captcha/i.test(error?.message || '')) {
