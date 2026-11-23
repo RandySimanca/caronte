@@ -19,6 +19,8 @@ import { colombiaDateFromIso, mergeTodayPayments, paymentsTodaySettingKey } from
 import { daysExpired as calcDaysExpired } from '@/lib/expiredLoan';
 import { scheduleSnapshot, weekdayOfDate, formatCollectionDate } from '@/lib/collectionSchedule';
 import { buildCompletedToday, completedLoansSettingKey, countWithCompleted, type CompletedLoanEntry } from '@/lib/completedLoans';
+import { useClientesEnEspera, quitarClienteDeEspera } from '@/lib/clientesEnEspera';
+import { BannerEsperas } from '@/components/collector/BannerEsperas';
 
 // Posición del scroll de la lista: se guarda por día para volver "por donde vas" después de cobrar
 const SCROLL_KEY = 'route_list_scroll';
@@ -39,6 +41,7 @@ export function RouteClientList() {
   const [isReordering, setIsReordering] = useState(false);
   const [orderedClients, setOrderedClients] = useState<any[]>([]);
   const { isOnline } = useSyncStore();
+  const clientesEnEspera = useClientesEnEspera();
 
   // Real data from Dexie
   const clients = useLiveQuery(() => db.clients.toArray()) || [];
@@ -276,6 +279,24 @@ export function RouteClientList() {
     return map;
   }, [fullSortedClients]);
 
+  // Clientes en espera que pertenecen a la ruta de este cobrador
+  const esperasDeLaRuta = useMemo(
+    () => clientesEnEspera.filter(e => positionById.has(e.clienteId)),
+    [clientesEnEspera, positionById]
+  );
+  const esperaPorCliente = useMemo(
+    () => new Map(esperasDeLaRuta.map(e => [e.clienteId, e] as const)),
+    [esperasDeLaRuta]
+  );
+
+  // Si ya se le cobró algo hoy al cliente, deja de estar en espera
+  useEffect(() => {
+    for (const espera of clientesEnEspera) {
+      const cliente = enrichedClients.find(c => c.id === espera.clienteId);
+      if (cliente?.hasPaymentToday) quitarClienteDeEspera(espera.clienteId);
+    }
+  }, [enrichedClients, clientesEnEspera]);
+
   // La búsqueda solo filtra lo que se muestra; no altera el orden ni la numeración
   const sortedClients = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -460,6 +481,9 @@ export function RouteClientList() {
         </div>
       </div>
 
+      {/* Recordatorio de clientes en espera */}
+      <BannerEsperas esperas={esperasDeLaRuta} />
+
       {/* Client List */}
       <div className="flex-1 overflow-y-auto">
         <DndContext
@@ -485,6 +509,7 @@ export function RouteClientList() {
                     isReordering={isReordering}
                     position={positionById.get(client.id) ?? index + 1}
                     onMoveTo={moveClientTo}
+                    espera={esperaPorCliente.get(client.id)}
                   />
                 ))}
               </SortableContext>

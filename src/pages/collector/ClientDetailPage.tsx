@@ -19,6 +19,7 @@ import {
   type LotteryLastDraw,
 } from '@/lib/lottery';
 import { openWhatsAppWithMessage } from '@/lib/whatsapp';
+import { EsperaClienteDetalle } from '@/components/collector/EsperaClienteDetalle';
 import { scheduleSnapshot, weekdayLabel, weekdayStyle, formatCollectionDate } from '@/lib/collectionSchedule';
 import { formatCurrency, cn } from '@/lib/utils';
 import {
@@ -505,6 +506,10 @@ export function ClientDetailPage() {
               >
                 {isPaidAndClear ? 'Registrar cobro adicional' : 'Registrar Cobro'}
               </button>
+
+              {!isPaidAndClear && (
+                <EsperaClienteDetalle clienteId={client.id} nombreCliente={client.full_name} />
+              )}
 
             </div>
           </div>

@@ -5,8 +5,9 @@ import { User, MapPin, Trophy, GripVertical, CalendarCheck } from 'lucide-react'
 import { formatCurrency, cn } from '@/lib/utils';
 import { expiredLabel } from '@/lib/expiredLoan';
 import { weekdayShort, weekdayStyle } from '@/lib/collectionSchedule';
+import { InsigniaEspera } from '@/components/collector/BannerEsperas';
 
-export function SortableClientItem({ client, isReordering, position, onMoveTo }: { client: any, isReordering: boolean, position?: number, onMoveTo?: (clientId: string) => void }) {
+export function SortableClientItem({ client, isReordering, position, onMoveTo, espera }: { client: any, isReordering: boolean, position?: number, onMoveTo?: (clientId: string) => void, espera?: { hasta: number } }) {
   const {
     attributes,
     listeners,
@@ -135,6 +136,7 @@ export function SortableClientItem({ client, isReordering, position, onMoveTo }:
             {weekdayShort(client.collectionWeekday)} · {client.isWeekly ? 'Semanal' : 'Diario'}
           </span>
         )}
+        {!isReordering && espera && <InsigniaEspera hasta={espera.hasta} />}
       </div>
 
       {/* Money */}
