@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ArrowLeft, CheckCircle, HandCoins, TrendingDown, TrendingUp, Smartphone } from 'lucide-react';
+import { ArrowLeft, CheckCircle, HandCoins, TrendingDown, TrendingUp, Smartphone, KeyRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency, formatNumberInput, parseNumberInput } from '@/lib/utils';
 import { mergeTodayPayments, paymentsTodaySettingKey, sumTodayPayments, colombiaDateFromIso } from '@/lib/dailyCollection';
@@ -10,11 +10,13 @@ import { db } from '@/db/schema';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { confirmDanger } from '@/lib/swal';
+import { CambiarClaveModal } from '@/components/admin/CambiarClaveModal';
 
 export function DailyClosingPage() {
   const navigate = useNavigate();
   // Base digitada a mano: solo se usa cuando no hay un cierre anterior con valor que se tome automáticamente
   const [manualBase, setManualBase] = useState(0);
+  const [modalCambiarClaveAbierto, setModalCambiarClaveAbierto] = useState(false);
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -316,40 +318,44 @@ export function DailyClosingPage() {
         </div>
       </div>
 
-      {!closed && (
-        <div className="p-4 bg-white border-t border-slate-100 space-y-3">
+      <div className="p-4 bg-white border-t border-slate-100 space-y-3">
+        {!closed && (
           <button
             onClick={handleClose}
             className="w-full bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] transition-all text-white font-bold py-3.5 rounded-xl shadow-md shadow-emerald-500/30"
           >
             Cerrar Dia
           </button>
+        )}
 
-          <button
-            onClick={async () => {
-              const { useAuthStore } = await import('@/stores/authStore');
-              useAuthStore.getState().signOut();
-            }}
-            className="w-full bg-slate-100 hover:bg-slate-200 active:scale-[0.98] transition-all text-slate-700 font-bold py-3.5 rounded-xl border border-slate-200"
-          >
-            Cerrar Sesion
-          </button>
-        </div>
-      )}
+        <button
+          type="button"
+          onClick={() => setModalCambiarClaveAbierto(true)}
+          className="w-full bg-slate-50 hover:bg-slate-100 active:scale-[0.98] transition-all text-slate-700 font-bold py-3.5 rounded-xl border border-slate-200 flex items-center justify-center gap-2"
+        >
+          <KeyRound className="w-4 h-4 text-slate-500" />
+          Cambiar contraseña
+        </button>
 
-      {closed && (
-        <div className="p-4 bg-white border-t border-slate-100">
-          <button
-            onClick={async () => {
-              const { useAuthStore } = await import('@/stores/authStore');
-              useAuthStore.getState().signOut();
-            }}
-            className="w-full bg-rose-50 hover:bg-rose-100 active:scale-[0.98] transition-all text-rose-600 font-bold py-3.5 rounded-xl border border-rose-200"
-          >
-            Cerrar Sesion
-          </button>
-        </div>
-      )}
+        <button
+          onClick={async () => {
+            const { useAuthStore } = await import('@/stores/authStore');
+            useAuthStore.getState().signOut();
+          }}
+          className={
+            closed
+              ? 'w-full bg-rose-50 hover:bg-rose-100 active:scale-[0.98] transition-all text-rose-600 font-bold py-3.5 rounded-xl border border-rose-200'
+              : 'w-full bg-slate-100 hover:bg-slate-200 active:scale-[0.98] transition-all text-slate-700 font-bold py-3.5 rounded-xl border border-slate-200'
+          }
+        >
+          Cerrar Sesion
+        </button>
+      </div>
+
+      <CambiarClaveModal
+        isOpen={modalCambiarClaveAbierto}
+        onClose={() => setModalCambiarClaveAbierto(false)}
+      />
     </div>
   );
 }

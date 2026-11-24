@@ -13,8 +13,10 @@ import {
   ChevronLeft,
   ChevronRight,
   MoreHorizontal,
-  X
+  X,
+  KeyRound
 } from 'lucide-react';
+import { CambiarClaveModal } from '@/components/admin/CambiarClaveModal';
 
 const ADMIN_NAVIGATION = [
   { name: 'Dashboard', href: '/admin/dashboard', icon: Activity },
@@ -49,6 +51,7 @@ export function AdminLayout() {
   }, [isCollapsed]);
 
   const [moreOpen, setMoreOpen] = useState(false);
+  const [modalCambiarClaveAbierto, setModalCambiarClaveAbierto] = useState(false);
 
   // Cierra el panel "Más" al navegar a otra sección
   useEffect(() => {
@@ -149,6 +152,15 @@ export function AdminLayout() {
             )}
           </div>
           <button
+            type="button"
+            onClick={() => setModalCambiarClaveAbierto(true)}
+            title={isCollapsed ? 'Cambiar contraseña' : undefined}
+            className={`w-full flex items-center justify-center gap-2 py-2.5 mb-2 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white rounded-xl transition-colors text-sm font-medium ${isCollapsed ? 'px-0' : 'px-4'}`}
+          >
+            <KeyRound className="w-4 h-4 shrink-0" />
+            {!isCollapsed && <span>Cambiar contraseña</span>}
+          </button>
+          <button
             onClick={() => signOut()}
             title={isCollapsed ? "Cerrar Sesión" : undefined}
             className={`w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 hover:bg-red-500/10 text-slate-300 hover:text-red-400 rounded-xl transition-colors text-sm font-medium ${isCollapsed ? 'px-0' : 'px-4'
@@ -168,9 +180,18 @@ export function AdminLayout() {
           </div>
           <h1 className="font-bold">AdminPanel</h1>
         </div>
-        <button onClick={() => signOut()} className="p-2 text-slate-400 hover:text-white">
-          <LogOut className="w-6 h-6" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setModalCambiarClaveAbierto(true)}
+            className="p-2 text-slate-400 hover:text-white"
+            title="Cambiar contraseña"
+          >
+            <KeyRound className="w-5 h-5" />
+          </button>
+          <button onClick={() => signOut()} className="p-2 text-slate-400 hover:text-white">
+            <LogOut className="w-6 h-6" />
+          </button>
+        </div>
       </div>
 
       {/* Mobile "Más" panel */}
@@ -248,6 +269,11 @@ export function AdminLayout() {
           <Outlet />
         </div>
       </main>
+
+      <CambiarClaveModal
+        isOpen={modalCambiarClaveAbierto}
+        onClose={() => setModalCambiarClaveAbierto(false)}
+      />
     </div>
   );
 }

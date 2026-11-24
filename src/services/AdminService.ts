@@ -118,6 +118,46 @@ export class AdminService {
     if (error) throw error;
   }
 
+  /**
+   * Restablece la contraseña de un usuario vía la Edge Function admin-restablecer-clave.
+   * Solo puede ser llamado por ADMINISTRADOR o SUPER_ADMIN.
+   * La validación de permisos se realiza en el servidor.
+   */
+  static async restablecerClave(idUsuario: string, nuevaClave: string): Promise<void> {
+    if (!navigator.onLine) {
+      throw new Error('Sin conexión a internet. Restablecer la contraseña requiere conexión.');
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('No hay sesión activa.');
+    }
+
+    const urlFuncion = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-restablecer-clave`;
+
+    const respuesta = await fetch(urlFuncion, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ user_id: idUsuario, password: nuevaClave }),
+    });
+
+    const texto = await respuesta.text();
+    let datos: { success?: boolean; error?: string } = {};
+    try {
+      datos = texto ? JSON.parse(texto) : {};
+    } catch {
+      datos = {};
+    }
+
+    if (!respuesta.ok || !datos.success) {
+      throw new Error(datos.error || `Error al restablecer la contraseña (${respuesta.status}).`);
+    }
+  }
+
   // ─── GESTIÓN DE RUTAS ────────────────────────────────────────────────────────
 
   /**
