@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { X, KeyRound, Eye, EyeOff, Wifi } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, Swal } from '@/lib/swal';
 import toast from 'react-hot-toast';
+import { TurnstileWidget, TURNSTILE_ENABLED, type TurnstileHandle } from '@/components/auth/TurnstileWidget';
 
 interface CambiarClaveModalProps {
   isOpen: boolean;
@@ -17,6 +18,8 @@ export function CambiarClaveModal({ isOpen, onClose }: CambiarClaveModalProps) {
   const [verNueva, setVerNueva] = useState(false);
   const [verConfirmacion, setVerConfirmacion] = useState(false);
   const [cargando, setCargando] = useState(false);
+  const [tokenCaptcha, setTokenCaptcha] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   const limpiarFormulario = () => {
     setClaveActual('');
@@ -25,6 +28,7 @@ export function CambiarClaveModal({ isOpen, onClose }: CambiarClaveModalProps) {
     setVerActual(false);
     setVerNueva(false);
     setVerConfirmacion(false);
+    setTokenCaptcha(null);
   };
 
   const handleCerrar = () => {
@@ -65,6 +69,11 @@ export function CambiarClaveModal({ isOpen, onClose }: CambiarClaveModalProps) {
       return;
     }
 
+    if (TURNSTILE_ENABLED && !tokenCaptcha) {
+      toast.error('Espera a que termine la verificación de seguridad e inténtalo de nuevo.');
+      return;
+    }
+
     setCargando(true);
     try {
       // Paso 1: verificar la contraseña actual con signInWithPassword
@@ -74,13 +83,26 @@ export function CambiarClaveModal({ isOpen, onClose }: CambiarClaveModalProps) {
       const { error: errorVerificacion } = await supabase.auth.signInWithPassword({
         email: user.email,
         password: claveActual,
+        options: tokenCaptcha ? { captchaToken: tokenCaptcha } : undefined,
       });
 
       if (errorVerificacion) {
-        await showError({
-          title: 'Contraseña actual incorrecta',
-          text: 'La contraseña actual que ingresaste no es correcta.',
-        });
+        if (/captcha/i.test(errorVerificacion.message || '')) {
+          await showError({
+            title: 'Verificación de seguridad',
+            text: 'No se pudo verificar que eres una persona. Inténtalo de nuevo.',
+          });
+        } else if (errorVerificacion.message === 'Invalid login credentials') {
+          await showError({
+            title: 'Contraseña actual incorrecta',
+            text: 'La contraseña actual que ingresaste no es correcta.',
+          });
+        } else {
+          await showError({
+            title: 'No se pudo verificar la contraseña',
+            text: errorVerificacion.message || 'Ocurrió un error al verificar tu contraseña actual.',
+          });
+        }
         return;
       }
 
@@ -122,6 +144,8 @@ export function CambiarClaveModal({ isOpen, onClose }: CambiarClaveModalProps) {
         text: error.message || 'Ocurrió un error desconocido.',
       });
     } finally {
+      // El token de Turnstile es de un solo uso: se pide uno nuevo después de cada intento.
+      turnstileRef.current?.reset();
       setCargando(false);
     }
   };
@@ -246,6 +270,8 @@ export function CambiarClaveModal({ isOpen, onClose }: CambiarClaveModalProps) {
             )}
           </div>
 
+          <TurnstileWidget ref={turnstileRef} onToken={setTokenCaptcha} />
+
           {/* Botones */}
           <div className="pt-2 flex gap-3">
             <button
@@ -258,7 +284,7 @@ export function CambiarClaveModal({ isOpen, onClose }: CambiarClaveModalProps) {
             </button>
             <button
               type="submit"
-              disabled={cargando}
+              disabled={cargando || (TURNSTILE_ENABLED && !tokenCaptcha)}
               className="flex-1 py-3 px-4 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl shadow-lg shadow-brand-500/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {cargando ? (
