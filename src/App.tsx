@@ -94,8 +94,12 @@ function RequireAuth({ children, allowedRoles }: { children: React.ReactNode, al
 function SplashScreen() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-brand-700 to-brand-500 flex flex-col items-center justify-center">
-      <div className="w-20 h-20 bg-white/10 backdrop-blur-sm rounded-3xl flex items-center justify-center mb-4 border border-white/20">
-        <span className="text-4xl">💰</span>
+      <div className="w-20 h-20 bg-white/10 backdrop-blur-sm rounded-3xl flex items-center justify-center mb-4 border border-white/20 overflow-hidden">
+        <img
+          src="/caronte.png"
+          alt="Logo de Caronte"
+          className="w-16 h-16 object-contain"
+        />
       </div>
       <h1 className="text-3xl font-black text-white">Caronte</h1>
       <div className="mt-8 flex space-x-1">
